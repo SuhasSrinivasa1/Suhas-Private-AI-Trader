@@ -1,5 +1,7 @@
 const DEFAULT_POLICY={enabled:true,allowLiveExecution:false,maxRiskPerTradePct:1,minRewardRiskRatio:2,maxChasePct:1.5,maxPriceAgeSeconds:120,minConfirmationSources:2};
+const DEFAULT_LOCAL_AI={enabled:true,baseUrl:'http://127.0.0.1:11434',model:'gpt-oss:20b'};
 let policy=JSON.parse(localStorage.getItem('pai_policy')||'null')||{...DEFAULT_POLICY};
+let localAi=JSON.parse(localStorage.getItem('pai_local_ai')||'null')||{...DEFAULT_LOCAL_AI};
 let portfolio=JSON.parse(localStorage.getItem('pai_portfolio')||'[]');
 let evaluations=Number(localStorage.getItem('pai_evaluations')||'0');
 let liveState={connected:false,lastEvent:null,prices:{},news:[],holdings:[],positions:[],orders:[],recommendations:{},opportunities:[],live_execution_enabled:false,market_regime:{score:50,label:'neutral'},scan_at:null,scanner_universe_size:0};
@@ -25,7 +27,7 @@ function renderDashboard(){
   const value=source.reduce((s,p)=>{const symbol=p.trading_symbol||p.symbol||p.tradingsymbol||'';const qty=Number(p.quantity??p.qty??0);const avg=Number(p.average_price??p.avg??p.averagePrice??0);const lp=latestPrice(symbol);return s+qty*(Number(lp)||avg)},0);
   $('kpiPortfolio').textContent=money(value);
   $('kpiPositions').textContent=(liveState.positions.length||source.length);
-  $('kpiEvaluations').textContent=evaluations;
+  const evalKpi=$('kpiEvaluations');if(evalKpi)evalKpi.textContent=evaluations;
   const execution=$('liveExecutionStatus');if(execution){execution.textContent=liveState.live_execution_enabled?'ON':'OFF';execution.className=liveState.live_execution_enabled?'':'off'}
   const regime=$('marketRegime');if(regime)regime.textContent=`${String(liveState.market_regime?.label||'neutral').toUpperCase()} · ${Number(liveState.market_regime?.score||50).toFixed(0)}`;
   const scanned=$('scannerUniverse');if(scanned)scanned.textContent=String(liveState.scanner_universe_size||0);
@@ -57,6 +59,7 @@ function renderRecommendations(){
         ${veto?`<div class="veto-text">Risk veto: ${veto}</div>`:''}
       </div>
       <div class="opportunity-actions">
+        <button class="secondary" onclick="reviewWithLocalAI('${esc(r.recommendation_id)}')">AI REVIEW</button>
         ${isBuy&&!skipped?`<button ${canExecute?'':'disabled'} onclick="buyRecommendation('${esc(r.recommendation_id)}')">${canExecute?'BUY NOW':'LIVE OFF'}</button><button class="secondary" onclick="skipRecommendation('${esc(r.recommendation_id)}')">SKIP</button>`:skipped?'<button class="secondary" disabled>SKIPPED</button>':`<button class="secondary" disabled>${esc(r.state||'WAIT')}</button>`}
       </div>
     </div>`
@@ -70,7 +73,7 @@ function showBuyAlert(items){
   playAlert();
   const modal=$('buyAlertModal'),body=$('buyAlertBody'),title=$('buyAlertTitle');if(!modal||!body||!title)return;
   title.textContent=fresh.length===1?`BUY opportunity: ${fresh[0].symbol}`:`${fresh.length} BUY opportunities detected`;
-  body.innerHTML=fresh.map((r,index)=>`<div class="alert-opportunity"><div><b>#${index+1} ${esc(r.symbol)} · ${Number(r.confidence||0).toFixed(0)}%</b><div class="muted">Buy ${money(r.entry_price)} · Target ${money(r.target_price)} · Stop ${money(r.stop_loss)} · Qty ${Number(r.quantity||0)}</div></div><div class="actions"><button ${liveState.live_execution_enabled?'':'disabled'} onclick="buyRecommendation('${esc(r.recommendation_id)}')">${liveState.live_execution_enabled?'BUY':'LIVE OFF'}</button><button class="secondary" onclick="skipRecommendation('${esc(r.recommendation_id)}')">SKIP</button></div></div>`).join('');
+  body.innerHTML=fresh.map((r,index)=>`<div class="alert-opportunity"><div><b>#${index+1} ${esc(r.symbol)} · ${Number(r.confidence||0).toFixed(0)}%</b><div class="muted">Buy ${money(r.entry_price)} · Target ${money(r.target_price)} · Stop ${money(r.stop_loss)} · Qty ${Number(r.quantity||0)}</div></div><div class="actions"><button class="secondary" onclick="reviewWithLocalAI('${esc(r.recommendation_id)}')">AI REVIEW</button><button ${liveState.live_execution_enabled?'':'disabled'} onclick="buyRecommendation('${esc(r.recommendation_id)}')">${liveState.live_execution_enabled?'BUY':'LIVE OFF'}</button><button class="secondary" onclick="skipRecommendation('${esc(r.recommendation_id)}')">SKIP</button></div></div>`).join('');
   modal.classList.add('open');
 }
 function closeAlertModal(){const modal=$('buyAlertModal');if(modal)modal.classList.remove('open')}
@@ -101,9 +104,21 @@ function loadRejected(){setValues({symbol:'TEST',market:'NSE',direction:'long',c
 
 const brokers=['Groww'];$('brokerCards').innerHTML=brokers.map(b=>`<div class="broker"><div><b>${b}</b><div class="muted">Backend API integration</div></div><button class="secondary" onclick="showBrokerInfo('${b}')">Connection info</button></div>`).join('');
 function showBrokerInfo(name){$('brokerInfo').innerHTML=`<b>${esc(name)}</b><br>Official broker API runs only in the backend. Secrets remain in backend/.env and are never stored in this page.`}
-function loadSettings(){$('sRisk').value=policy.maxRiskPerTradePct;$('sRR').value=policy.minRewardRiskRatio;$('sChase').value=policy.maxChasePct;$('sQuoteAge').value=policy.maxPriceAgeSeconds;$('sSources').value=policy.minConfirmationSources}
+function loadSettings(){$('sRisk').value=policy.maxRiskPerTradePct;$('sRR').value=policy.minRewardRiskRatio;$('sChase').value=policy.maxChasePct;$('sQuoteAge').value=policy.maxPriceAgeSeconds;$('sSources').value=policy.minConfirmationSources;$('aiModel').value=localAi.model;$('aiBaseUrl').value=localAi.baseUrl}
 function saveSettings(){policy.maxRiskPerTradePct=num('sRisk');policy.minRewardRiskRatio=num('sRR');policy.maxChasePct=num('sChase');policy.maxPriceAgeSeconds=num('sQuoteAge');policy.minConfirmationSources=num('sSources');localStorage.setItem('pai_policy',JSON.stringify(policy));alert('Local evaluator settings saved. Live scanner risk settings remain server-side in backend/.env.')}
-function clearLocalData(){if(confirm('Clear all locally saved portfolio, settings, and skipped signals?')){localStorage.removeItem('pai_policy');localStorage.removeItem('pai_portfolio');localStorage.removeItem('pai_evaluations');sessionStorage.removeItem('pai_skipped_signals');location.reload()}}
+function saveLocalAiSettings(){const model=$('aiModel').value.trim();const baseUrl=$('aiBaseUrl').value.trim().replace(/\/$/,'');if(!model||!/^https?:\/\//.test(baseUrl)){alert('Enter a valid local Ollama model and http://127.0.0.1:11434 style URL.');return}localAi={enabled:true,model,baseUrl};localStorage.setItem('pai_local_ai',JSON.stringify(localAi));checkLocalAi(true)}
+function clearLocalData(){if(confirm('Clear all locally saved portfolio, settings, local AI settings, and skipped signals?')){localStorage.removeItem('pai_policy');localStorage.removeItem('pai_local_ai');localStorage.removeItem('pai_portfolio');localStorage.removeItem('pai_evaluations');sessionStorage.removeItem('pai_skipped_signals');location.reload()}}
+
+async function checkLocalAi(showAlert=false){const dash=$('localAiStatus'),settings=$('localAiSettingsStatus');const setStatus=(text,ok)=>{if(dash){dash.textContent=text;dash.className=ok?'':'off'}if(settings){settings.className=ok?'safe':'warn';settings.innerHTML=`<b>${ok?'Local AI ready':'Local AI unavailable'}</b><br>${esc(text)}`}};try{const response=await fetch(`${localAi.baseUrl}/api/tags`,{signal:AbortSignal.timeout(2500)});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();const names=(data.models||[]).map(m=>m.name);const exact=names.includes(localAi.model)||names.some(n=>n.split(':')[0]===localAi.model.split(':')[0]);if(!exact){setStatus(`Ollama online · pull ${localAi.model}`,false);if(showAlert)alert(`Ollama is running, but ${localAi.model} is not installed. Run: ollama pull ${localAi.model}`);return false}setStatus(`${localAi.model} · READY`,true);if(showAlert)alert(`Local AI is ready: ${localAi.model}`);return true}catch(err){setStatus('OFFLINE',false);if(showAlert)alert(`Local AI is not reachable at ${localAi.baseUrl}. Start Ollama on this Mac and try again.\n\n${err.message}`);return false}}
+
+function closeLocalAiModal(){const modal=$('localAiModal');if(modal)modal.classList.remove('open')}
+async function reviewWithLocalAI(recommendationId){
+  const rec=Object.values(liveState.recommendations).find(r=>r.recommendation_id===recommendationId);if(!rec){alert('Opportunity not found.');return}
+  const modal=$('localAiModal'),title=$('localAiTitle'),body=$('localAiBody');if(!modal||!title||!body)return;
+  title.textContent=`Local AI review: ${rec.symbol}`;body.innerHTML=`<div class="muted">Running ${esc(localAi.model)} locally on this Mac. The deterministic ${esc(rec.state||rec.action)} decision remains authoritative.</div><p>Reviewing…</p>`;modal.classList.add('open');
+  const snapshot={symbol:rec.symbol,exchange:rec.exchange,deterministic_state:rec.state||rec.action,confidence:rec.confidence,entry_price:rec.entry_price,target_price:rec.target_price,stop_loss:rec.stop_loss,quantity:rec.quantity,reward_risk_ratio:rec.reward_risk_ratio,day_change_pct:rec.day_change_pct,intraday_range_pct:rec.intraday_range_pct,range_position:rec.range_position,spread_pct:rec.spread_pct,buy_pressure:rec.buy_pressure,market_regime:liveState.market_regime,agent_scores:rec.agent_scores,risk_vetoes:rec.risk_vetoes,reasons:rec.reasons,generated_at:rec.generated_at,valid_for_seconds:rec.valid_for_seconds};
+  const system=`You are the private local AI reviewer inside a safety-first trading decision-support app. You are advisory only. Never override the deterministic decision, never invent live prices or news, never ask for passwords, OTPs, PINs, recovery codes, API secrets, broker credentials, or bank information, and never suggest bypassing a risk veto. Review only the supplied snapshot. Be concise and use these headings: Decision context, Strongest evidence, Main risks, What would invalidate the setup. Explicitly state when data is missing or stale.`;
+  try{const response=await fetch(`${localAi.baseUrl}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:localAi.model,stream:false,keep_alive:'10m',messages:[{role:'system',content:system},{role:'user',content:`Review this machine-generated trade snapshot. Do not change its deterministic state.\n\n${JSON.stringify(snapshot,null,2)}`}],options:{temperature:.2,num_ctx:4096}})});const data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);const content=data.message?.content||'No review returned.';body.innerHTML=`<div class="warn"><b>Advisory only</b><br>The local LLM cannot change BUY / WAIT logic or place an order.</div><div style="white-space:pre-wrap;margin-top:14px">${esc(content)}</div>`;checkLocalAi(false)}catch(err){body.innerHTML=`<div class="warn"><b>Local AI review failed</b><br>${esc(err.message)}<br><br>Start Ollama and make sure the selected model is installed.</div>`}}
 
 async function hydrateLiveState(){try{const r=await fetch(`${backendHttp()}/api/live/state`);if(!r.ok)return;const s=await r.json();liveState={...liveState,...s};if(Array.isArray(s.opportunities))applyOpportunitySnapshot(s.opportunities,s.market_regime,s.scan_at);renderPortfolio();renderNews();renderRecommendations()}catch(_){}}
 function handleLiveEvent(msg){
@@ -128,6 +143,7 @@ function handleLiveEvent(msg){
 function connectLive(){clearTimeout(reconnectTimer);try{liveSocket=new WebSocket(backendWs());liveSocket.onopen=()=>{liveState.connected=true;renderLiveStatus();hydrateLiveState()};liveSocket.onmessage=e=>{try{handleLiveEvent(JSON.parse(e.data))}catch(_){}};liveSocket.onerror=()=>liveSocket.close();liveSocket.onclose=()=>{liveState.connected=false;renderLiveStatus();reconnectTimer=setTimeout(connectLive,1500)}}catch(_){reconnectTimer=setTimeout(connectLive,1500)}}
 
 document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));btn.classList.add('active');$(btn.dataset.section).classList.add('active')}));
-window.addEventListener('click',e=>{if(e.target===$('buyAlertModal'))closeAlertModal()});
+window.addEventListener('click',e=>{if(e.target===$('buyAlertModal'))closeAlertModal();if(e.target===$('localAiModal'))closeLocalAiModal()});
 setInterval(()=>{renderRecommendations();renderOpportunityCount()},1000);
-renderPortfolio();loadSettings();loadValid();renderNews();renderRecommendations();connectLive();
+setInterval(()=>checkLocalAi(false),30000);
+renderPortfolio();loadSettings();loadValid();renderNews();renderRecommendations();checkLocalAi(false);connectLive();
