@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Private AI Intraday Trader</title>
-  <meta name="description" content="Private agentic intraday opportunity scanner and controlled Groww execution dashboard">
+  <meta name="description" content="Private agentic intraday opportunity scanner with local Mac AI review and controlled Groww execution dashboard">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">Private AI Trader<small>Agentic intraday scanner · Groww</small></div>
+    <div class="brand">Private AI Trader<small>Agentic intraday scanner · Local AI · Groww</small></div>
     <nav class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
       <button data-section="evaluator">Trade Evaluator</button>
@@ -18,14 +18,14 @@
       <button data-section="brokers">Broker Connections</button>
       <button data-section="settings">Privacy & Settings</button>
     </nav>
-    <div class="side-note">Intraday only. Every live BUY is revalidated server-side before submission. Never enter broker passwords, OTPs, PINs, recovery codes, or TOTP seeds into this page.</div>
+    <div class="side-note">Intraday only. Local AI is advisory and cannot override risk vetoes or place orders. Never enter broker passwords, OTPs, PINs, recovery codes, TOTP seeds, or API secrets into this page.</div>
   </aside>
 
   <main>
     <section id="dashboard" class="section active">
       <div class="topbar">
-        <div><h1>Intraday Opportunity Command Center</h1><p>The scanner ranks current opportunities continuously and alerts you when a BUY setup survives the risk veto.</p></div>
-        <div class="pills"><span>Agentic ranking</span><span>Intraday only</span><span>Fresh quote recheck</span><span>Human click to execute</span></div>
+        <div><h1>Intraday Opportunity Command Center</h1><p>The scanner ranks current opportunities continuously. A local Mac LLM can explain a signal, but deterministic guardrails remain authoritative.</p></div>
+        <div class="pills"><span>Agentic ranking</span><span>Local AI review</span><span>Intraday only</span><span>Fresh quote recheck</span><span>Human click to execute</span></div>
       </div>
 
       <div class="grid">
@@ -35,7 +35,7 @@
         <div class="card kpi"><label>Live execution</label><strong id="liveExecutionStatus" class="off">OFF</strong></div>
 
         <div class="card wide">
-          <div class="section-head"><div><h3>Ranked intraday opportunities</h3><p class="muted">Momentum, technical structure, liquidity, order flow, market regime, news context, portfolio exposure, and risk veto are combined before ranking.</p></div><button id="scanNowButton" class="secondary" onclick="scanNow()">SCAN NOW</button></div>
+          <div class="section-head"><div><h3>Ranked intraday opportunities</h3><p class="muted">Momentum, technical structure, liquidity, order flow, market regime, news context, portfolio exposure, and risk veto are combined before ranking. Use AI REVIEW for a private local explanation.</p></div><button id="scanNowButton" class="secondary" onclick="scanNow()">SCAN NOW</button></div>
           <div id="recommendationBoard"><div class="muted">Waiting for the first market scan.</div></div>
         </div>
 
@@ -45,12 +45,13 @@
           <div class="status-grid">
             <div><small>Market regime</small><b id="marketRegime">NEUTRAL · 50</b></div>
             <div><small>Universe size</small><b id="scannerUniverse">0</b></div>
+            <div><small>Local AI</small><b id="localAiStatus" class="off">CHECKING…</b></div>
           </div>
-          <div class="warn"><b>Execution safeguard</b><br>The browser sends only the opportunity ID. The backend re-runs the agents and blocks stale, changed, chased, or out-of-session trades.</div>
+          <div class="warn"><b>Execution safeguard</b><br>The browser sends only the opportunity ID for execution. The backend re-runs the agents and blocks stale, changed, chased, or out-of-session trades. Local AI cannot bypass this.</div>
         </div>
 
         <div class="card wide"><h3>Live positions / holdings</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg price</th><th>Live value</th></tr></thead><tbody id="dashboardPositions"></tbody></table></div></div>
-        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Market-wide coarse scan</li><li>Top candidates deep-scanned</li><li>Multi-agent ensemble ranks them</li><li>Risk agent can veto any BUY</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
+        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Market-wide coarse scan</li><li>Top candidates deep-scanned</li><li>Multi-agent ensemble ranks them</li><li>Risk agent can veto any BUY</li><li>Optional local AI explains the snapshot</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
         <div class="card wide"><h3>Market news agent</h3><div id="liveNews"><div class="muted">News agent is neutral until a configured provider is connected.</div></div></div>
       </div>
     </section>
@@ -101,8 +102,12 @@
     </section>
 
     <section id="settings" class="section">
-      <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control local evaluator guardrails and review the security boundary.</p></div></div>
-      <div class="grid two"><div class="card"><h3>Trading guardrails</h3><div class="form-grid"><div><label>Max risk per trade (%)</label><input id="sRisk" type="number" step="0.1"></div><div><label>Minimum reward/risk</label><input id="sRR" type="number" step="0.1"></div><div><label>Max chase (%)</label><input id="sChase" type="number" step="0.1"></div><div><label>Max quote age (seconds)</label><input id="sQuoteAge" type="number"></div><div><label>Minimum confirmation sources</label><input id="sSources" type="number"></div></div><div class="actions"><button onclick="saveSettings()">Save locally</button></div></div><div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs only.</li><li>Store credentials in backend/.env, never in browser JavaScript or GitHub.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearLocalData()">Clear all local data</button></div></div></div>
+      <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control local evaluator guardrails, the local Mac AI reviewer, and the security boundary.</p></div></div>
+      <div class="grid two">
+        <div class="card"><h3>Trading guardrails</h3><div class="form-grid"><div><label>Max risk per trade (%)</label><input id="sRisk" type="number" step="0.1"></div><div><label>Minimum reward/risk</label><input id="sRR" type="number" step="0.1"></div><div><label>Max chase (%)</label><input id="sChase" type="number" step="0.1"></div><div><label>Max quote age (seconds)</label><input id="sQuoteAge" type="number"></div><div><label>Minimum confirmation sources</label><input id="sSources" type="number"></div></div><div class="actions"><button onclick="saveSettings()">Save locally</button></div></div>
+        <div class="card"><h3>Local AI reviewer (Ollama)</h3><p class="muted">Default: OpenAI gpt-oss:20b. The review runs on this Mac and cannot change scanner decisions or execute trades.</p><div class="form-grid"><div><label>Model</label><input id="aiModel" value="gpt-oss:20b"></div><div><label>Ollama URL</label><input id="aiBaseUrl" value="http://127.0.0.1:11434"></div></div><div class="actions"><button onclick="saveLocalAiSettings()">Save & test</button><button class="secondary" onclick="checkLocalAi(true)">Test connection</button></div><div id="localAiSettingsStatus" class="warn"><b>Checking local AI…</b></div></div>
+        <div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs only.</li><li>Store credentials in backend/.env, never in browser JavaScript or GitHub.</li><li>Local AI receives only the selected trade snapshot—not broker credentials.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearLocalData()">Clear all local data</button></div></div>
+      </div>
     </section>
   </main>
 </div>
@@ -112,6 +117,14 @@
     <div class="modal-head"><div><span class="alert-kicker">LIVE INTRADAY SIGNAL</span><h2 id="buyAlertTitle">BUY opportunity detected</h2></div><button class="secondary icon-button" onclick="closeAlertModal()">×</button></div>
     <div id="buyAlertBody"></div>
     <div class="modal-foot muted">Signals expire automatically. BUY triggers a fresh server-side revalidation before any Groww order is sent.</div>
+  </div>
+</div>
+
+<div id="localAiModal" class="modal" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-head"><div><span class="alert-kicker">PRIVATE LOCAL AI</span><h2 id="localAiTitle">Local AI review</h2></div><button class="secondary icon-button" onclick="closeLocalAiModal()">×</button></div>
+    <div id="localAiBody"></div>
+    <div class="modal-foot muted">Advisory only. The local LLM cannot override deterministic BUY / WAIT logic, risk vetoes, or execution controls.</div>
   </div>
 </div>
 
