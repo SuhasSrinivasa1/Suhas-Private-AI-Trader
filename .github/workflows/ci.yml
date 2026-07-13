@@ -1,6 +1,7 @@
 name: Validate Private AI Trader
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, feature/mac-local-llm]
   pull_request:
