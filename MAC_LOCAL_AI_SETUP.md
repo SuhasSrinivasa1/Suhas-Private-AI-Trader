@@ -1,98 +1,152 @@
 # MacBook Pro local AI setup
 
-This project can use a free local LLM through Ollama. The LLM runs on the Mac and is used only to explain a selected trade snapshot. It does not control BUY / WAIT logic and cannot place orders.
+This project uses Ollama for a free local LLM reviewer. The model runs on the Mac and receives only a selected machine-generated trade snapshot. It is outside the order-execution path.
 
-## 1. Requirements
+## Automatic setup
 
-- macOS 14 Sonoma or later for the current Ollama macOS app.
-- Enough free storage for the selected model.
-- The frontend should be opened from `http://127.0.0.1:8080` so it can call the local Ollama service on `127.0.0.1:11434`.
-
-## 2. Install Ollama
-
-Install the official Ollama macOS application, then verify in Terminal:
+The recommended path is the full Mac bootstrap:
 
 ```bash
-ollama --version
+bash scripts/mac/bootstrap.sh
 ```
 
-## 3. Choose the model for the Mac
+The bootstrap:
 
-### Recommended default: 16 GB unified memory or more
+1. verifies macOS compatibility;
+2. installs the reproducible Homebrew dependencies;
+3. installs and starts the local Ollama service;
+4. disables Ollama cloud features through the local server configuration;
+5. detects the Mac architecture and available memory;
+6. selects and downloads a suitable local model;
+7. writes local runtime hints that are ignored by Git;
+8. runs the repository verification suite.
 
-```bash
-ollama pull gpt-oss:20b
-```
+## Model selection policy
 
-Use this in **Privacy & Settings**:
+Unless `AI_MODEL` is explicitly supplied, the bootstrap chooses:
+
+### Apple Silicon with 24 GB or more
 
 ```text
-Model: gpt-oss:20b
-Ollama URL: http://127.0.0.1:11434
+gpt-oss:20b
 ```
 
-### Lighter fallback: 12–15 GB memory
+This is the quality-first default for a Mac with enough headroom.
 
-```bash
-ollama pull qwen3:8b
-```
-
-Set the model to `qwen3:8b`.
-
-### Small-memory fallback: below 12 GB
-
-```bash
-ollama pull qwen3:4b
-```
-
-Set the model to `qwen3:4b`.
-
-## 4. Optional strict local-only mode
-
-To disable Ollama cloud features for the macOS application:
-
-```bash
-launchctl setenv OLLAMA_NO_CLOUD 1
-```
-
-Then fully quit and reopen Ollama.
-
-## 5. Start the project
-
-Terminal 1:
-
-```bash
-cd Suhas-Private-AI-Trader
-python -m http.server 8080 --bind 127.0.0.1
-```
-
-Terminal 2:
-
-```bash
-cd Suhas-Private-AI-Trader/backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Open:
+### Apple Silicon with 16–23 GB
 
 ```text
-http://127.0.0.1:8080
+qwen3:8b
 ```
 
-Go to **Privacy & Settings**, confirm the model and Ollama URL, and click **Save & test**.
+This reduces memory pressure while retaining a stronger local reviewer than the smallest fallback.
 
-## 6. How AI REVIEW works
+### Smaller-memory or Intel fallback
 
-The browser sends only the currently selected machine-generated trade snapshot to the local Ollama API. The prompt explicitly instructs the model to:
+```text
+qwen3:4b
+```
+
+Intel Macs can run Ollama, but local inference is CPU-only and may be substantially slower. The application itself remains usable without AI REVIEW.
+
+## Override the automatic model choice
+
+Run the bootstrap with an explicit model:
+
+```bash
+AI_MODEL=qwen3:8b bash scripts/mac/bootstrap.sh
+```
+
+or:
+
+```bash
+AI_MODEL=gpt-oss:20b bash scripts/mac/bootstrap.sh
+```
+
+The selected model is saved only in local runtime files ignored by Git.
+
+## Local-only Ollama configuration
+
+The bootstrap creates or updates:
+
+```text
+~/.ollama/server.json
+```
+
+with:
+
+```json
+{
+  "disable_ollama_cloud": true
+}
+```
+
+The application uses:
+
+```text
+http://127.0.0.1:11434
+```
+
+as the local Ollama API address.
+
+## Start and test
+
+Start the project:
+
+```bash
+make start
+```
+
+Then open **Privacy & Settings**. The selected local model should be shown automatically. Use **Test connection** to verify the local model.
+
+The Mac doctor can also check Ollama:
+
+```bash
+make doctor
+```
+
+## How AI REVIEW works
+
+When **AI REVIEW** is selected, the browser sends only the selected opportunity snapshot to the local Ollama API. The snapshot can include:
+
+- symbol and exchange;
+- deterministic state;
+- confidence;
+- entry, target, stop, and quantity;
+- reward/risk;
+- market-regime summary;
+- agent scores;
+- risk vetoes;
+- machine-generated reasons;
+- signal timestamp and validity.
+
+It does not need or receive:
+
+- broker passwords;
+- OTPs;
+- PINs;
+- recovery codes;
+- TOTP seeds;
+- bank credentials;
+- Groww API secrets.
+
+The local prompt instructs the model to:
 
 - preserve the deterministic BUY / WAIT state;
 - never invent live prices or news;
-- never ask for credentials or secrets;
-- never suggest bypassing a risk veto;
-- explain the strongest evidence, main risks, missing data, and invalidation conditions.
+- state when data is missing or stale;
+- never suggest bypassing a veto;
+- explain the strongest evidence, main risks, and invalidation conditions.
 
-The order path remains separate. The LLM is not given authority to submit or approve trades.
+## Execution boundary
+
+The LLM cannot:
+
+- convert WAIT into BUY;
+- remove a risk veto;
+- change position sizing;
+- enable live execution;
+- submit an order;
+- approve a broker request.
+
+The deterministic scanner and backend safety checks remain authoritative.
