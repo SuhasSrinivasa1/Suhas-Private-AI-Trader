@@ -85,7 +85,7 @@
 
     const validation = byId('gttValidation');
     if (reasons.length) {
-      if (validation) validation.innerHTML = `<b>WAIT — plan not saved</b><br>${reasons.map(escapeHtml).join('<br>')}`;
+      if (validation) { validation.className = 'warn'; validation.innerHTML = `<b>WAIT — plan not saved</b><br>${reasons.map(escapeHtml).join('<br>')}`; }
       return;
     }
 
@@ -111,7 +111,7 @@
     }
     body.innerHTML = journalEntries.slice().reverse().slice(0,100).map(entry => `
       <tr>
-        <td>${escapeHtml(new Date(entry.createdAt).toLocaleString('en-IN'))}</td>
+        <td>${escapeHtml(new Date(entry.createdAt).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))}</td>
         <td>${escapeHtml(entry.symbol)}</td>
         <td>${escapeHtml(entry.outcome)}</td>
         <td>${escapeHtml(entry.rule || '—')}</td>
@@ -208,6 +208,60 @@
     }
   }
 
+  function installProfitDisciplinePlanner() {
+    const grid = document.querySelector('#portfolio .grid.two');
+    if (!grid || byId('profitPlannerCard')) return;
+    grid.insertAdjacentHTML('beforeend', `
+      <div class="card" id="profitPlannerCard">
+        <h3>Profit discipline planner</h3>
+        <p class="muted">Planning only. This tool never submits a sell order.</p>
+        <div class="form-grid">
+          <div><label>Average price</label><input id="profitAvg" type="number" step="0.01" placeholder="100"></div>
+          <div><label>Current price</label><input id="profitCurrent" type="number" step="0.01" placeholder="105"></div>
+          <div><label>Quantity</label><input id="profitQty" type="number" step="1" placeholder="20"></div>
+        </div>
+        <div class="actions"><button onclick="calculateProfitPlan()">Calculate plan</button></div>
+        <div id="profitPlanResult" class="warn"><b>No profit plan calculated yet.</b></div>
+      </div>`);
+  }
+
+  globalThis.calculateProfitPlan = function calculateProfitPlan() {
+    const average = numberValue('profitAvg');
+    const current = numberValue('profitCurrent');
+    const quantity = numberValue('profitQty');
+    const result = byId('profitPlanResult');
+    if (!result) return;
+    if (!(average > 0 && current > 0 && quantity > 0)) {
+      result.className = 'warn';
+      result.innerHTML = '<b>Enter valid average price, current price, and quantity.</b>';
+      return;
+    }
+
+    const profitPct = (current - average) / average * 100;
+    const pnl = (current - average) * quantity;
+    const exactTrim = quantity * 0.15;
+    const wholeShareTrim = Math.max(1, Math.round(exactTrim));
+    let headline = 'Below the 1% profit reference';
+    let guidance = 'No profit-booking preference has been triggered. Continue to follow the live setup, stop, and risk rules rather than forcing an exit.';
+
+    if (profitPct < 0) {
+      headline = 'Position is below average price';
+      guidance = 'Profit-booking rules do not apply. Review the original invalidation and stop-loss logic; do not average down automatically.';
+    } else if (profitPct >= 5) {
+      headline = '5% trim trigger reached';
+      guidance = `Planning preference: consider trimming about 15% of the quantity. 15% is ${exactTrim.toFixed(2)} share(s); the nearest whole-share planning quantity is ${wholeShareTrim}. Manage the remainder using the active setup and current market conditions.`;
+    } else if (profitPct >= 3) {
+      headline = '3% base profit-booking reference reached';
+      guidance = 'The base booking reference is reached. Review current momentum, fresh price action, taxes/fees where relevant, and the remaining risk before deciding how much to book.';
+    } else if (profitPct >= 1) {
+      headline = '1% acceptable-profit zone reached';
+      guidance = 'A 1% profit is considered acceptable for the intraday/short-swing preference. Booking remains a human decision; do not turn this planning rule into an automatic order.';
+    }
+
+    result.className = profitPct >= 1 ? 'safe' : 'warn';
+    result.innerHTML = `<b>${escapeHtml(headline)}</b><br>Return: ${profitPct.toFixed(2)}% · Approx. P&amp;L: ${escapeHtml(money(pnl))}<br>${escapeHtml(guidance)}`;
+  };
+
   function applyMacRuntime() {
     const runtime = globalThis.PAI_RUNTIME || {};
     if (!runtime.ollamaModel && !runtime.ollamaBaseUrl) return;
@@ -230,6 +284,37 @@
     }
   }
 
+  function installBackendStatusEnhancements() {
+    if (typeof renderLiveStatus !== 'function') return;
+    renderLiveStatus = function renderLiveStatusMacAware() {
+      const status = byId('liveStatus');
+      if (!status) return;
+      if (!liveState.connected) {
+        status.className = 'warn';
+        status.innerHTML = '<b>Backend disconnected</b><br>Waiting for the local FastAPI service.';
+        return;
+      }
+
+      const state = liveState.scanner_status || 'connecting';
+      const messages = {
+        active: ['safe', 'Agentic scanner active', liveState.scan_at ? `Last scan: ${new Date(liveState.scan_at).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})}` : 'Waiting for the first live scan.'],
+        market_closed: ['warn', 'Backend connected · market closed', 'The live intraday scanner is safely paused outside the configured NSE session window.'],
+        broker_not_configured: ['warn', 'Backend connected · Groww not configured', 'Add official API credentials only to backend/.env when ready. Paper tools remain available.'],
+        profile_disabled: ['warn', 'Trading profile disabled', 'The backend profile is disabled by configuration.'],
+        connecting: ['safe', 'Backend connected', 'Loading scanner state…'],
+      };
+      const [className, title, detail] = messages[state] || messages.connecting;
+      status.className = className;
+      status.innerHTML = `<b>${escapeHtml(title)}</b><br>${escapeHtml(detail)}`;
+    };
+    renderLiveStatus();
+  }
+
+  function installPeriodicBackendHydration() {
+    if (typeof hydrateLiveState !== 'function') return;
+    setInterval(() => hydrateLiveState(), 15000);
+  }
+
   globalThis.clearAllPrivateLocalData = function clearAllPrivateLocalData() {
     if (!confirm('Clear locally saved portfolio, evaluator settings, GTT plans, journal entries, AI settings, evaluation counts, and skipped signals?')) return;
     ['pai_policy','pai_local_ai','pai_portfolio','pai_evaluations',GTT_KEY,JOURNAL_KEY].forEach(key => localStorage.removeItem(key));
@@ -243,4 +328,7 @@
   setInterval(updateRoutineClock, 1000);
   loadRulesContract();
   applyMacRuntime();
+  installProfitDisciplinePlanner();
+  installBackendStatusEnhancements();
+  installPeriodicBackendHydration();
 })();
