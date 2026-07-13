@@ -14,11 +14,18 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Node/build
 node_modules/
 dist/
 build/
+
+# Local application runtime
+.runtime/
+local.runtime.json
+*.pid
 
 # Local data and databases
 data/
@@ -30,6 +37,9 @@ data/
 .vscode/
 .idea/
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
 Thumbs.db
 
 # Logs
