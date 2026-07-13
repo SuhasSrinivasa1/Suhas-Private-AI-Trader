@@ -45,6 +45,9 @@ else
   printf '[verify] pytest not installed; tests skipped.\n'
 fi
 
+printf '[verify] Python dependency consistency...\n'
+"$PYTHON_BIN" -m pip check
+
 if command -v shellcheck >/dev/null 2>&1; then
   printf '[verify] Shell lint...\n'
   while IFS= read -r -d '' script; do
