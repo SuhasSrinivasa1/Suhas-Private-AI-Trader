@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "timezone": "Asia/Kolkata",
+  "markets": {
+    "supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"],
+    "automatic_live_scanner": ["NSE"],
+    "nse_entry_window": {
+      "start": "09:15",
+      "end": "15:20"
+    }
+  },
+  "execution": {
+    "paper_mode_default": true,
+    "live_execution_default": false,
+    "human_confirmation_required": true,
+    "server_side_revalidation_required": true,
+    "live_time_check_required": true,
+    "fresh_live_quote_required": true,
+    "max_quote_age_seconds": 120,
+    "signal_valid_seconds": 20,
+    "never_auto_execute_from_llm": true
+  },
+  "risk": {
+    "max_risk_per_trade_pct": 1.0,
+    "min_reward_risk_ratio": 2.0,
+    "max_chase_pct": 1.5,
+    "max_position_value_pct": 20.0,
+    "max_spread_pct": 0.35,
+    "max_intraday_range_pct": 7.0,
+    "min_buy_confidence": 72.0,
+    "min_watch_confidence": 58.0,
+    "min_independent_confirmation_sources": 2
+  },
+  "mandatory_checks": [
+    "news",
+    "technical_setup",
+    "portfolio_exposure"
+  ],
+  "scanner": {
+    "scan_interval_seconds": 15,
+    "deep_scan_candidates": 10,
+    "max_display_opportunities": 8,
+    "dynamic_universe": true,
+    "fixed_watchlist_only": false,
+    "agents": [
+      "momentum",
+      "technical_structure",
+      "liquidity",
+      "order_flow",
+      "market_regime",
+      "news_context",
+      "portfolio_exposure",
+      "risk_veto"
+    ]
+  },
+  "intraday_routine": {
+    "pre_market_call_sheet": "08:00",
+    "pre_open_recheck": "09:20",
+    "opening_revalidation": "09:25",
+    "opening_volatility_caution": true,
+    "post_11am_slowdown_advisory": "11:00",
+    "do_not_chase_missed_move": true
+  },
+  "profit_discipline": {
+    "one_pct_profit_is_acceptable": true,
+    "base_profit_booking_pct": 3.0,
+    "trim_quantity_pct_at_five_pct_profit": 15.0,
+    "trim_trigger_profit_pct": 5.0,
+    "automatic_exit_orders_enabled": false,
+    "note": "These are user preference defaults for planning and alerts. They are not automatic live sell instructions."
+  },
+  "gtt": {
+    "planner_enabled": true,
+    "local_storage_only": true,
+    "broker_submission_enabled": false,
+    "fresh_validation_required_before_live_submission": true
+  },
+  "missed_trade_postmortem": {
+    "enabled": true,
+    "record_reason": true,
+    "record_market_context": true,
+    "record_rule_that_blocked_or_delayed_entry": true,
+    "never_relax_anti_chase_rule_only_because_a_trade_was_missed": true
+  },
+  "news_policy": {
+    "neutral_when_provider_not_connected": true,
+    "never_invent_headlines_or_sentiment": true,
+    "minimum_independent_sources": 2
+  },
+  "research_sources": {
+    "screeners": [
+      "TradingView",
+      "Economic Times",
+      "Reuters",
+      "Investing.com",
+      "Moneycontrol",
+      "Screener.in",
+      "MarketsMojo",
+      "Tickertape",
+      "TipRanks",
+      "ChartInk"
+    ],
+    "news": [
+      "Yahoo Finance",
+      "Economic Times",
+      "Moneycontrol",
+      "CNBC",
+      "CNBC-TV18",
+      "Reuters"
+    ],
+    "integration_rule": "Use official, licensed, or explicitly permitted APIs/feeds. Until connected, the application must not fabricate data from these providers."
+  },
+  "privacy": {
+    "frontend_must_not_store_secrets": true,
+    "forbidden_frontend_data": [
+      "passwords",
+      "OTPs",
+      "PINs",
+      "TOTP seeds",
+      "recovery codes",
+      "API secrets",
+      "broker credentials",
+      "bank credentials"
+    ],
+    "backend_env_only_for_secrets": true,
+    "local_llm_advisory_only": true,
+    "local_llm_must_not_receive_broker_secrets": true
+  }
+}
