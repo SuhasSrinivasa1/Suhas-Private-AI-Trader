@@ -3,29 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>Private AI Intraday Trader</title>
-  <meta name="description" content="Private agentic intraday opportunity scanner with local Mac AI review and controlled Groww execution dashboard">
+  <meta name="description" content="Private Mac-first agentic intraday opportunity scanner with local AI review and controlled Groww execution dashboard">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">Private AI Trader<small>Agentic intraday scanner · Local AI · Groww</small></div>
+    <div class="brand">Private AI Trader<small>Mac-first · Agentic scanner · Local AI · Groww</small></div>
     <nav class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
       <button data-section="evaluator">Trade Evaluator</button>
+      <button data-section="gtt">GTT Planner</button>
       <button data-section="portfolio">Portfolio</button>
+      <button data-section="journal">Trade Journal</button>
       <button data-section="brokers">Broker Connections</button>
       <button data-section="settings">Privacy & Settings</button>
     </nav>
-    <div class="side-note">Intraday only. Local AI is advisory and cannot override risk vetoes or place orders. Never enter broker passwords, OTPs, PINs, recovery codes, TOTP seeds, or API secrets into this page.</div>
+    <div class="side-note">Intraday first. Local AI is advisory and cannot override risk vetoes or place orders. Never enter broker passwords, OTPs, PINs, recovery codes, TOTP seeds, or API secrets into this page.</div>
   </aside>
 
   <main>
     <section id="dashboard" class="section active">
       <div class="topbar">
         <div><h1>Intraday Opportunity Command Center</h1><p>The scanner ranks current opportunities continuously. A local Mac LLM can explain a signal, but deterministic guardrails remain authoritative.</p></div>
-        <div class="pills"><span>Agentic ranking</span><span>Local AI review</span><span>Intraday only</span><span>Fresh quote recheck</span><span>Human click to execute</span></div>
+        <div class="pills"><span>Agentic ranking</span><span>Local AI review</span><span>Fresh quote recheck</span><span>Risk veto</span><span>Human click to execute</span></div>
       </div>
 
       <div class="grid">
@@ -51,13 +54,15 @@
         </div>
 
         <div class="card wide"><h3>Live positions / holdings</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg price</th><th>Live value</th></tr></thead><tbody id="dashboardPositions"></tbody></table></div></div>
-        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Market-wide coarse scan</li><li>Top candidates deep-scanned</li><li>Multi-agent ensemble ranks them</li><li>Risk agent can veto any BUY</li><li>Optional local AI explains the snapshot</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
+        <div class="card narrow"><h3>IST trading routine</h3><div id="routineClock" class="decision wait"><strong>--:--:--</strong><span>Loading Asia/Kolkata time…</span></div><div id="routineStatus" class="warn"><b>Routine loading…</b></div></div>
+
         <div class="card wide"><h3>Market news agent</h3><div id="liveNews"><div class="muted">News agent is neutral until a configured provider is connected.</div></div></div>
+        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Market-wide coarse scan</li><li>Top candidates deep-scanned</li><li>Multi-agent ensemble ranks them</li><li>Risk agent can veto any BUY</li><li>Optional local AI explains the snapshot</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
       </div>
     </section>
 
     <section id="evaluator" class="section">
-      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Manually inspect a proposed setup against your local guardrails.</p></div></div>
+      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Manually inspect a proposed BUY or SELL setup against your local guardrails.</p></div></div>
       <div class="grid two">
         <div class="card">
           <div class="form-grid">
@@ -90,9 +95,58 @@
       </div>
     </section>
 
+    <section id="gtt" class="section">
+      <div class="topbar"><div><h1>GTT Planner</h1><p>Plan an entry, target, and stop locally. This page never submits a broker GTT order and every saved plan requires fresh validation before future execution.</p></div></div>
+      <div class="grid two">
+        <div class="card">
+          <h3>Create local GTT plan</h3>
+          <div class="form-grid">
+            <div><label>Symbol</label><input id="gttSymbol" placeholder="RELIANCE"></div>
+            <div><label>Market</label><select id="gttMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div>
+            <div><label>Direction</label><select id="gttDirection"><option value="long">Long / Buy</option><option value="short">Short / Sell</option></select></div>
+            <div><label>Entry price</label><input id="gttEntry" type="number" step="0.01"></div>
+            <div><label>Stop loss</label><input id="gttStop" type="number" step="0.01"></div>
+            <div><label>Target price</label><input id="gttTarget" type="number" step="0.01"></div>
+            <div><label>Quantity</label><input id="gttQty" type="number"></div>
+            <div><label>Portfolio value</label><input id="gttCapital" type="number" value="500000"></div>
+            <div class="full-field"><label>Plan note</label><input id="gttNote" placeholder="Why this level? Support, breakout, event, or invalidation note"></div>
+          </div>
+          <div class="actions"><button onclick="saveGttPlan()">Validate & save locally</button><button class="secondary" onclick="clearGttForm()">Clear</button></div>
+          <div id="gttValidation" class="warn"><b>No GTT plan evaluated yet.</b></div>
+        </div>
+        <div class="card">
+          <h3>Saved local GTT plans</h3>
+          <div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Direction</th><th>Entry</th><th>Target</th><th>Stop</th><th>R:R</th><th>Risk</th><th></th></tr></thead><tbody id="gttRows"></tbody></table></div>
+          <div class="warn"><b>Broker boundary</b><br>Saved plans stay in this browser. No broker GTT submission is enabled.</div>
+        </div>
+      </div>
+    </section>
+
     <section id="portfolio" class="section">
       <div class="topbar"><div><h1>Portfolio</h1><p>Groww holdings take priority when the backend is connected; local entries remain available for testing.</p></div></div>
       <div class="grid two"><div class="card"><h3>Add local position</h3><div class="form-grid"><div><label>Symbol</label><input id="pSymbol" placeholder="RELIANCE"></div><div><label>Market</label><select id="pMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div><div><label>Quantity</label><input id="pQty" type="number"></div><div><label>Average price</label><input id="pAvg" type="number" step="0.01"></div></div><div class="actions"><button onclick="addPosition()">Add position</button></div></div><div class="card"><h3>Saved local positions</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg</th><th>Value</th><th></th></tr></thead><tbody id="portfolioRows"></tbody></table></div></div></div>
+    </section>
+
+    <section id="journal" class="section">
+      <div class="topbar"><div><h1>Trade Journal & Missed-Trade Review</h1><p>Capture the reason behind entries, skips, missed moves, and exits. Regret must become a process improvement—not a chase trade.</p></div></div>
+      <div class="grid two">
+        <div class="card">
+          <h3>Add journal entry</h3>
+          <div class="form-grid">
+            <div><label>Symbol</label><input id="journalSymbol" placeholder="TRENT"></div>
+            <div><label>Outcome</label><select id="journalOutcome"><option>Missed</option><option>Skipped</option><option>Entered</option><option>Closed</option><option>Rule blocked</option></select></div>
+            <div><label>Rule / reason</label><input id="journalRule" placeholder="Anti-chase, stale quote, waited for revalidation…"></div>
+            <div><label>Market context</label><input id="journalContext" placeholder="Gap-up, weak index, news event, opening volatility…"></div>
+            <div class="full-field"><label>Lesson / note</label><input id="journalNote" placeholder="What should change next time without weakening risk controls?"></div>
+          </div>
+          <div class="actions"><button onclick="saveJournalEntry()">Save locally</button></div>
+          <div class="warn"><b>Trent rule</b><br>A missed move must be reviewed, but it must never be used as justification to chase beyond the configured limit.</div>
+        </div>
+        <div class="card">
+          <h3>Recent journal entries</h3>
+          <div class="table-wrap"><table><thead><tr><th>Time</th><th>Symbol</th><th>Outcome</th><th>Rule / reason</th><th>Lesson</th><th></th></tr></thead><tbody id="journalRows"></tbody></table></div>
+        </div>
+      </div>
     </section>
 
     <section id="brokers" class="section">
@@ -102,11 +156,12 @@
     </section>
 
     <section id="settings" class="section">
-      <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control local evaluator guardrails, the local Mac AI reviewer, and the security boundary.</p></div></div>
+      <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control local evaluator guardrails, the local Mac AI reviewer, and review the canonical rule contract.</p></div></div>
       <div class="grid two">
         <div class="card"><h3>Trading guardrails</h3><div class="form-grid"><div><label>Max risk per trade (%)</label><input id="sRisk" type="number" step="0.1"></div><div><label>Minimum reward/risk</label><input id="sRR" type="number" step="0.1"></div><div><label>Max chase (%)</label><input id="sChase" type="number" step="0.1"></div><div><label>Max quote age (seconds)</label><input id="sQuoteAge" type="number"></div><div><label>Minimum confirmation sources</label><input id="sSources" type="number"></div></div><div class="actions"><button onclick="saveSettings()">Save locally</button></div></div>
-        <div class="card"><h3>Local AI reviewer (Ollama)</h3><p class="muted">Default: OpenAI gpt-oss:20b. The review runs on this Mac and cannot change scanner decisions or execute trades.</p><div class="form-grid"><div><label>Model</label><input id="aiModel" value="gpt-oss:20b"></div><div><label>Ollama URL</label><input id="aiBaseUrl" value="http://127.0.0.1:11434"></div></div><div class="actions"><button onclick="saveLocalAiSettings()">Save & test</button><button class="secondary" onclick="checkLocalAi(true)">Test connection</button></div><div id="localAiSettingsStatus" class="warn"><b>Checking local AI…</b></div></div>
-        <div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs only.</li><li>Store credentials in backend/.env, never in browser JavaScript or GitHub.</li><li>Local AI receives only the selected trade snapshot—not broker credentials.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearLocalData()">Clear all local data</button></div></div>
+        <div class="card"><h3>Local AI reviewer (Ollama)</h3><p class="muted">The Mac bootstrap selects a model based on available memory. The review runs locally and cannot change scanner decisions or execute trades.</p><div class="form-grid"><div><label>Model</label><input id="aiModel" value="gpt-oss:20b"></div><div><label>Ollama URL</label><input id="aiBaseUrl" value="http://127.0.0.1:11434"></div></div><div class="actions"><button onclick="saveLocalAiSettings()">Save & test</button><button class="secondary" onclick="checkLocalAi(true)">Test connection</button></div><div id="localAiSettingsStatus" class="warn"><b>Checking local AI…</b></div></div>
+        <div class="card"><h3>Canonical rules contract</h3><div id="rulesContractStatus" class="warn"><b>Loading config/trading_rules.json…</b></div><div id="researchSourceSummary" class="muted"></div></div>
+        <div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs only.</li><li>Store credentials in backend/.env, never in browser JavaScript or GitHub.</li><li>Local AI receives only the selected trade snapshot—not broker credentials.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearAllPrivateLocalData()">Clear all local data</button></div></div>
       </div>
     </section>
   </main>
@@ -128,6 +183,8 @@
   </div>
 </div>
 
+<script src="local.runtime.js" onerror="window.PAI_RUNTIME=window.PAI_RUNTIME||{}"></script>
 <script src="app.js"></script>
+<script src="features.js"></script>
 </body>
 </html>
