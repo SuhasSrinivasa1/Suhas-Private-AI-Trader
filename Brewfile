@@ -1,7 +1,7 @@
 brew "git"
 brew "gh"
 brew "python@3.12"
-brew "node@22"
+brew "node"
 brew "jq"
 brew "shellcheck"
 brew "ollama"
