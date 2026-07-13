@@ -37,7 +37,7 @@ for cmd in brew git gh jq node ollama curl; do
 done
 
 if [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
-  pass "Python virtual environment exists: $($BACKEND_DIR/.venv/bin/python --version 2>&1)"
+  pass "Python virtual environment exists: $("$BACKEND_DIR/.venv/bin/python" --version 2>&1)"
   RUNTIME_PYTHON="$BACKEND_DIR/.venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   fail "backend/.venv is missing."
@@ -66,7 +66,7 @@ fi
 if [[ -f "$ROOT_DIR/local.runtime.json" ]]; then
   pass "local.runtime.json exists."
   if [[ -n "$RUNTIME_PYTHON" ]]; then
-    MODEL="$($RUNTIME_PYTHON - "$ROOT_DIR/local.runtime.json" <<'PY' 2>/dev/null || true
+    MODEL="$("$RUNTIME_PYTHON" - "$ROOT_DIR/local.runtime.json" <<'PY' 2>/dev/null || true
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
