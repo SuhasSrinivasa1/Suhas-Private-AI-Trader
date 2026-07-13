@@ -25,6 +25,7 @@ build/
 # Local application runtime
 .runtime/
 local.runtime.json
+local.runtime.js
 *.pid
 
 # Local data and databases
