@@ -38,8 +38,13 @@ done
 
 if [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
   pass "Python virtual environment exists: $($BACKEND_DIR/.venv/bin/python --version 2>&1)"
-else
+  RUNTIME_PYTHON="$BACKEND_DIR/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
   fail "backend/.venv is missing."
+  RUNTIME_PYTHON="$(command -v python3)"
+else
+  fail "Python is unavailable."
+  RUNTIME_PYTHON=""
 fi
 
 if [[ -f "$BACKEND_DIR/.env" ]]; then
@@ -49,14 +54,27 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   else
     pass "Live execution is disabled in backend/.env."
   fi
+  if grep -Eq '^GROWW_API_KEY=.+$' "$BACKEND_DIR/.env" && grep -Eq '^GROWW_API_SECRET=.+$' "$BACKEND_DIR/.env"; then
+    pass "Groww API credential fields are populated locally."
+  else
+    warn "Groww API credentials are not configured yet; live scanner data will remain unavailable."
+  fi
 else
   fail "backend/.env is missing."
 fi
 
 if [[ -f "$ROOT_DIR/local.runtime.json" ]]; then
   pass "local.runtime.json exists."
-  MODEL="$(python3 -c 'import json; print(json.load(open("local.runtime.json")).get("ollamaModel", ""))' 2>/dev/null || true)"
-  [[ -n "$MODEL" ]] && printf '      Selected local model: %s\n' "$MODEL"
+  if [[ -n "$RUNTIME_PYTHON" ]]; then
+    MODEL="$($RUNTIME_PYTHON - "$ROOT_DIR/local.runtime.json" <<'PY' 2>/dev/null || true
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle).get("ollamaModel", ""))
+PY
+)"
+    [[ -n "$MODEL" ]] && printf '      Selected local model: %s\n' "$MODEL"
+  fi
 else
   warn "local.runtime.json is missing; browser defaults will be used."
 fi
