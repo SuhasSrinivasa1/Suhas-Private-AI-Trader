@@ -1,5 +1,5 @@
-fastapi>=0.109.0,<1.0
-uvicorn[standard]>=0.27.0,<1.0
-pydantic>=2.5.3,<3.0
-python-dotenv>=1.0.0,<2.0
-growwapi>=1.5.0,<2.0
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+growwapi==1.5.0
