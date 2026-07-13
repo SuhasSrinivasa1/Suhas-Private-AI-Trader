@@ -26,9 +26,17 @@ printf '[verify] Secret leakage scan...\n'
 if command -v node >/dev/null 2>&1; then
   printf '[verify] JavaScript syntax...\n'
   node --check "$ROOT_DIR/app.js"
+  node --check "$ROOT_DIR/features.js"
 else
-  printf '[verify] Node not found; JavaScript syntax check skipped.\n'
+  printf '[verify] Node not found; JavaScript syntax checks skipped.\n'
 fi
+
+printf '[verify] Shell syntax...\n'
+while IFS= read -r -d '' script; do
+  bash -n "$script"
+done < <(find "$ROOT_DIR/scripts" -type f -name '*.sh' -print0)
+bash -n "$ROOT_DIR/run-mac.command"
+bash -n "$ROOT_DIR/setup_mac_local_ai.sh"
 
 if "$PYTHON_BIN" -c 'import pytest' >/dev/null 2>&1; then
   printf '[verify] Python tests...\n'
@@ -38,9 +46,12 @@ else
 fi
 
 if command -v shellcheck >/dev/null 2>&1; then
-  printf '[verify] Shell scripts...\n'
-  find "$ROOT_DIR/scripts" -type f -name '*.sh' -print0 | xargs -0 shellcheck
-  shellcheck "$ROOT_DIR/run-mac.command" 2>/dev/null || true
+  printf '[verify] Shell lint...\n'
+  while IFS= read -r -d '' script; do
+    shellcheck "$script"
+  done < <(find "$ROOT_DIR/scripts" -type f -name '*.sh' -print0)
+  shellcheck "$ROOT_DIR/run-mac.command"
+  shellcheck "$ROOT_DIR/setup_mac_local_ai.sh"
 else
   printf '[verify] shellcheck not found; shell lint skipped.\n'
 fi
