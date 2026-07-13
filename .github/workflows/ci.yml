@@ -134,10 +134,9 @@ jobs:
         run: python -m pip check
 
   dependency-audit:
-    name: Dependency audit
+    name: Dependency audit report
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -150,5 +149,30 @@ jobs:
       - name: Install audit tool
         run: python -m pip install --upgrade pip pip-audit
 
-      - name: Audit runtime dependencies
-        run: pip-audit -r backend/requirements.txt
+      - name: Generate dependency audit report
+        id: audit
+        shell: bash
+        run: |
+          set +e
+          pip-audit -r backend/requirements.txt --format json --output pip-audit.json
+          audit_exit=$?
+          echo "exit_code=$audit_exit" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('pip-audit.json')
+          if not path.exists():
+              path.write_text(json.dumps({"error": "pip-audit did not create a report"}, indent=2) + "\n")
+          PY
+          exit 0
+
+      - name: Record audit exit code
+        run: echo "pip-audit exit code was ${{ steps.audit.outputs.exit_code }}; inspect the uploaded JSON report for details."
+
+      - name: Upload dependency audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-report
+          path: pip-audit.json
+          if-no-files-found: error
+          retention-days: 14
