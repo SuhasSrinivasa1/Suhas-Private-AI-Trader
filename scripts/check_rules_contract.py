@@ -105,8 +105,8 @@ def main() -> None:
     require(env.get("GROWW_API_KEY", "") == "", "Groww API key must be blank in the example environment")
     require(env.get("GROWW_API_SECRET", "") == "", "Groww API secret must be blank in the example environment")
 
-    groww_requirement = re.search(r"(?m)^growwapi>=([0-9.]+),<2\.0$", requirements)
-    require(groww_requirement is not None, "runtime requirements must target the current growwapi 1.x SDK")
+    groww_requirement = re.search(r"(?m)^growwapi==([0-9.]+)$", requirements)
+    require(groww_requirement is not None, "runtime requirements must pin the current growwapi 1.x SDK")
     require(tuple(map(int, groww_requirement.group(1).split("."))) >= (1, 5, 0), "growwapi must be at least 1.5.0")
 
     print("rules contract passed")
