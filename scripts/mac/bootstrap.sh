@@ -118,6 +118,16 @@ cat > "$ROOT_DIR/local.runtime.json" <<EOF
 }
 EOF
 
+cat > "$ROOT_DIR/local.runtime.js" <<EOF
+window.PAI_RUNTIME = {
+  ollamaBaseUrl: "http://127.0.0.1:11434",
+  ollamaModel: "$MODEL",
+  backendBaseUrl: "http://127.0.0.1:8000",
+  frontendBaseUrl: "http://127.0.0.1:8080",
+  timezone: "Asia/Kolkata"
+};
+EOF
+
 chmod +x "$ROOT_DIR"/scripts/mac/*.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/run-mac.command 2>/dev/null || true
 
 info "Running the full local verification suite."
