@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Private AI Trader</title>
+  <meta name="description" content="Private local-first trading decision dashboard">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Private AI Trader<small>Local-first · Paper mode</small></div>
+    <nav class="nav">
+      <button class="active" data-section="dashboard">Dashboard</button>
+      <button data-section="evaluator">Trade Evaluator</button>
+      <button data-section="portfolio">Portfolio</button>
+      <button data-section="brokers">Broker Connections</button>
+      <button data-section="settings">Privacy & Settings</button>
+    </nav>
+    <div class="side-note">Do not enter passwords, OTPs, PINs, recovery codes, TOTP seeds, or withdrawal-enabled credentials.</div>
+  </aside>
+
+  <main>
+    <section id="dashboard" class="section active">
+      <div class="topbar"><div><h1>Trading Dashboard</h1><p>Private decision support. Live order execution is disabled.</p></div><div class="pills"><span>Paper mode</span><span>Local storage only</span><span>No broker connected</span></div></div>
+      <div class="grid">
+        <div class="card kpi"><label>Portfolio value</label><strong id="kpiPortfolio">₹0</strong></div>
+        <div class="card kpi"><label>Open positions</label><strong id="kpiPositions">0</strong></div>
+        <div class="card kpi"><label>Paper evaluations</label><strong id="kpiEvaluations">0</strong></div>
+        <div class="card kpi"><label>Live execution</label><strong class="off">OFF</strong></div>
+        <div class="card wide"><h3>Recent positions</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg price</th><th>Value</th></tr></thead><tbody id="dashboardPositions"></tbody></table></div></div>
+        <div class="card narrow"><h3>Safety status</h3><div class="safe"><b>Protected by design</b><br>Live execution is disabled. No broker secrets are stored in this prototype.</div><div class="warn"><b>Before broker integration</b><br>Secrets will live only in a backend secret store or local environment file.</div></div>
+      </div>
+    </section>
+
+    <section id="evaluator" class="section">
+      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Validate a proposed setup against your guardrails.</p></div></div>
+      <div class="grid two">
+        <div class="card">
+          <div class="form-grid">
+            <div><label>Symbol</label><input id="symbol" value="AAPL"></div>
+            <div><label>Market</label><select id="market"><option>NASDAQ</option><option>NYSE</option><option>NSE</option><option>BSE</option></select></div>
+            <div><label>Direction</label><select id="direction"><option value="long">Long</option><option value="short">Short</option></select></div>
+            <div><label>Current price</label><input id="currentPrice" type="number" step="0.01" value="101"></div>
+            <div><label>Reference price</label><input id="referencePrice" type="number" step="0.01" value="100"></div>
+            <div><label>Entry price</label><input id="entryPrice" type="number" step="0.01" value="101"></div>
+            <div><label>Stop loss</label><input id="stopLoss" type="number" step="0.01" value="99"></div>
+            <div><label>Target price</label><input id="targetPrice" type="number" step="0.01" value="105"></div>
+            <div><label>Quantity</label><input id="quantity" type="number" value="10"></div>
+            <div><label>Portfolio value</label><input id="portfolioValue" type="number" value="100000"></div>
+            <div><label>Quote age (seconds)</label><input id="quoteAge" type="number" value="30"></div>
+            <div><label>Confirmation sources</label><input id="sourceCount" type="number" value="2"></div>
+          </div>
+          <div class="checks">
+            <label><input id="newsChecked" type="checkbox" checked> News checked</label>
+            <label><input id="technicalChecked" type="checkbox" checked> Technical checked</label>
+            <label><input id="portfolioChecked" type="checkbox" checked> Portfolio checked</label>
+            <label><input id="liveRequested" type="checkbox"> Request live execution</label>
+          </div>
+          <div class="actions"><button onclick="evaluateTrade()">Evaluate trade</button><button class="secondary" onclick="loadValid()">Load valid sample</button><button class="secondary" onclick="loadRejected()">Load rejected sample</button></div>
+        </div>
+        <div class="card">
+          <div id="decisionBox" class="decision wait"><strong>READY</strong><span id="decisionText">Enter a setup and evaluate it.</span></div>
+          <div class="metrics"><div><label>Reward / Risk</label><strong id="rr">—</strong></div><div><label>Risk %</label><strong id="riskPct">—</strong></div><div><label>Chase %</label><strong id="chasePct">—</strong></div><div><label>Position risk</label><strong id="positionRisk">—</strong></div></div>
+          <h4>Reasons / checks</h4><ul id="reasons"><li>No evaluation yet.</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="portfolio" class="section">
+      <div class="topbar"><div><h1>Portfolio</h1><p>Store non-sensitive position data locally for testing portfolio-aware rules.</p></div></div>
+      <div class="grid two"><div class="card"><h3>Add position</h3><div class="form-grid"><div><label>Symbol</label><input id="pSymbol" placeholder="RELIANCE"></div><div><label>Market</label><select id="pMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div><div><label>Quantity</label><input id="pQty" type="number"></div><div><label>Average price</label><input id="pAvg" type="number" step="0.01"></div></div><div class="actions"><button onclick="addPosition()">Add position</button></div></div><div class="card"><h3>Saved positions</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg</th><th>Value</th><th></th></tr></thead><tbody id="portfolioRows"></tbody></table></div></div></div>
+    </section>
+
+    <section id="brokers" class="section">
+      <div class="topbar"><div><h1>Broker Connections</h1><p>Placeholders only. No credentials are stored in this frontend.</p></div></div>
+      <div class="card" id="brokerCards"></div>
+      <div id="brokerInfo" class="warn">Select a broker to review the safe connection approach.</div>
+    </section>
+
+    <section id="settings" class="section">
+      <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control the local prototype and review the security boundary.</p></div></div>
+      <div class="grid two"><div class="card"><h3>Trading guardrails</h3><div class="form-grid"><div><label>Max risk per trade (%)</label><input id="sRisk" type="number" step="0.1"></div><div><label>Minimum reward/risk</label><input id="sRR" type="number" step="0.1"></div><div><label>Max chase (%)</label><input id="sChase" type="number" step="0.1"></div><div><label>Max quote age (seconds)</label><input id="sQuoteAge" type="number"></div><div><label>Minimum confirmation sources</label><input id="sSources" type="number"></div></div><div class="actions"><button onclick="saveSettings()">Save locally</button></div></div><div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs or OAuth only.</li><li>Prefer paper/sandbox access first.</li><li>Use trading-only permissions and disable withdrawals wherever possible.</li><li>Store secrets in the backend, not this page or GitHub.</li></ul><div class="actions"><button class="danger" onclick="clearLocalData()">Clear all local data</button></div></div></div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
