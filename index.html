@@ -10,7 +10,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">Private AI Trader<small>Local-first · Live data ready</small></div>
+    <div class="brand">Private AI Trader<small>Local-first · Groww connected</small></div>
     <nav class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
       <button data-section="evaluator">Trade Evaluator</button>
@@ -23,21 +23,32 @@
 
   <main>
     <section id="dashboard" class="section active">
-      <div class="topbar"><div><h1>Trading Dashboard</h1><p>Continuous market and news updates with no manual refresh.</p></div><div class="pills"><span>Groww stream ready</span><span>Auto reconnect</span><span>Backend secrets only</span></div></div>
+      <div class="topbar"><div><h1>Trading Dashboard</h1><p>Automatic recommendations with controlled one-click Groww order submission.</p></div><div class="pills"><span>Auto recommendations</span><span>Fresh quote recheck</span><span>Backend-only secrets</span></div></div>
       <div class="grid">
         <div class="card kpi"><label>Portfolio value</label><strong id="kpiPortfolio">₹0</strong></div>
         <div class="card kpi"><label>Open positions</label><strong id="kpiPositions">0</strong></div>
         <div class="card kpi"><label>Evaluations</label><strong id="kpiEvaluations">0</strong></div>
-        <div class="card kpi"><label>Live execution</label><strong class="off">CONTROLLED</strong></div>
+        <div class="card kpi"><label>Live execution</label><strong id="liveExecutionStatus" class="off">OFF</strong></div>
+
+        <div class="card wide">
+          <h3>Automatic recommendations</h3>
+          <p class="muted">Each BUY is revalidated against a fresh Groww quote before the order is submitted.</p>
+          <div id="recommendationBoard"><div class="muted">Waiting for live recommendations.</div></div>
+        </div>
+        <div class="card narrow">
+          <h3>Realtime status</h3>
+          <div id="liveStatus" class="warn"><b>Connecting…</b><br>Waiting for backend stream.</div>
+          <div class="warn"><b>Order safeguard</b><br>BUY NOW requires a current BUY recommendation and an explicit confirmation click.</div>
+        </div>
+
         <div class="card wide"><h3>Live positions / holdings</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg price</th><th>Live value</th></tr></thead><tbody id="dashboardPositions"></tbody></table></div></div>
-        <div class="card narrow"><h3>Realtime status</h3><div id="liveStatus" class="warn"><b>Connecting…</b><br>Waiting for backend stream.</div><div class="warn"><b>Execution safeguard</b><br>Live order placement remains controlled by backend policy and local environment configuration.</div></div>
-        <div class="card wide"><h3>Automatic market news</h3><div id="liveNews"><div class="muted">Waiting for news updates.</div></div></div>
-        <div class="card narrow"><h3>Update model</h3><ul><li>Market ticks: event-driven from Groww streaming feed.</li><li>Browser: WebSocket push, no page refresh.</li><li>Portfolio: automatic periodic resync.</li><li>News: background RSS/Atom refresh.</li></ul></div>
+        <div class="card narrow"><h3>Execution model</h3><ul><li>Recommendation engine runs continuously.</li><li>BUY card expires after 15 seconds.</li><li>Backend fetches a fresh quote before submission.</li><li>Order is blocked if the market changes or price is chased.</li></ul></div>
+        <div class="card wide"><h3>Automatic market news</h3><div id="liveNews"><div class="muted">News integration is separate from Groww market execution.</div></div></div>
       </div>
     </section>
 
     <section id="evaluator" class="section">
-      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Validate a proposed setup against your guardrails.</p></div></div>
+      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Manually inspect a proposed setup against your guardrails.</p></div></div>
       <div class="grid two">
         <div class="card">
           <div class="form-grid">
