@@ -36,7 +36,7 @@ def main() -> None:
     env = parse_env(ENV_EXAMPLE)
     requirements = REQUIREMENTS.read_text(encoding="utf-8")
 
-    require(rules.get("schema_version") == "2.1.0", "rules schema must be Production 2.1")
+    require(rules.get("schema_version") == "2.2.0", "rules schema must be Production 2.2")
     require(rules["timezone"] == "Asia/Kolkata", "timezone must remain Asia/Kolkata")
 
     execution = rules["execution"]
@@ -53,8 +53,23 @@ def main() -> None:
     require(risk["max_chase_pct"] <= 1.5, "anti-chase cannot exceed 1.5% by default")
     require(risk["min_independent_confirmation_sources"] >= 2, "at least two confirmation sources are required")
 
-    required_checks = {"news", "technical_setup", "portfolio_exposure", "six_month_pattern"}
+    required_checks = {"news", "technical_setup", "portfolio_exposure", "six_month_pattern", "macd", "rsi", "mode_specific_timeframe"}
     require(required_checks.issubset(set(rules["mandatory_checks"])), "mandatory checks are incomplete")
+
+    modes = rules["trading_modes"]
+    require(modes["user_must_select_on_ui_entry"] is True, "the UI must ask the user to choose Intraday or Delivery")
+    require(set(modes["available"]) == {"intraday", "delivery"}, "exactly Intraday and Delivery modes are required")
+    require(modes["available"]["intraday"]["broker_product"] == "MIS", "Intraday mode must use Groww MIS")
+    require(modes["available"]["delivery"]["broker_product"] == "CNC", "Delivery mode must use Groww CNC")
+    require(modes["broker_product_must_match_selected_mode"] is True, "broker product must match the selected mode")
+
+    indicators = rules["technical_indicators"]
+    macd = indicators["macd"]
+    require(macd["enabled"] is True, "MACD must remain enabled")
+    require(macd["mandatory_for_buy_evaluation"] is True, "MACD must be checked before BUY evaluation")
+    require([macd["fast_period"], macd["slow_period"], macd["signal_period"]] == [12, 26, 9], "MACD must use the 12/26/9 baseline")
+    require(indicators["rsi"]["enabled"] is True, "RSI agent must remain enabled")
+    require(indicators["atr"]["enabled"] is True, "ATR agent must remain enabled")
 
     universe = rules["market_universe"]
     require(universe["scope"] == "all tradable NSE CASH equities", "scanner scope must cover all tradable NSE cash equities")
@@ -87,6 +102,10 @@ def main() -> None:
     require("risk_veto" in scanner["agents"], "risk veto agent is required")
     require("outcome_learning" in scanner["agents"], "outcome learning agent is required")
     require("exit_management" in scanner["agents"], "exit management agent is required")
+    required_specialists = {"macd", "rsi_momentum", "trend_ema", "volume_confirmation", "volatility_atr", "liquidity", "order_flow", "market_regime", "news", "six_month_pattern", "portfolio_exposure", "risk_veto"}
+    require(required_specialists.issubset(set(scanner["agents"])), "specialist agent set is incomplete")
+    require(int(scanner["specialist_agent_count"]) >= 12, "at least 12 specialist agents are required")
+    require(scanner["mode_specific_agent_weights"] is True, "agent weights must vary by trading mode")
 
     continuous = rules["continuous_intelligence"]
     require(continuous["enabled"] is True, "continuous intelligence must remain enabled")
@@ -163,6 +182,10 @@ def main() -> None:
 
     require(env.get("APP_ENV") == "production", "example environment must default to production")
     require(env.get("SCANNER_UNIVERSE_MODE") == "full_nse_equity", "production example must default to the full NSE equity universe")
+    require(env.get("DEFAULT_TRADING_MODE") == "intraday", "backend default mode must be intraday until the UI selection is made")
+    require(int(env.get("MACD_FAST_PERIOD", "0")) == 12, "MACD fast period must be 12")
+    require(int(env.get("MACD_SLOW_PERIOD", "0")) == 26, "MACD slow period must be 26")
+    require(int(env.get("MACD_SIGNAL_PERIOD", "0")) == 9, "MACD signal period must be 9")
     require(float(env.get("DEFAULT_PORTFOLIO_VALUE", "0")) == 20000.0, "default portfolio value must reflect the current ₹20,000 Groww balance")
     require(env.get("OLLAMA_EMBEDDING_MODEL") == "embeddinggemma", "default embedding model must remain local embeddinggemma")
     require(env.get("GROWW_CREDENTIAL_SOURCE") == "keychain", "production Groww credential source must be Keychain")

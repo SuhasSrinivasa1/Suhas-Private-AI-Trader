@@ -5,6 +5,8 @@ from math import sqrt
 from statistics import mean, pstdev
 from typing import Any
 
+from technical_indicators import analyze_indicator_bundle
+
 
 def _f(value: Any, default: float = 0.0) -> float:
     try:
@@ -151,6 +153,8 @@ def analyze_six_month_pattern(candles: list[Any]) -> dict[str, Any]:
     weekday_edges = {day: mean(values) if values else 0.0 for day, values in weekday_returns.items()}
     best_weekday = max(weekday_edges, key=weekday_edges.get)
 
+    technical_indicators = analyze_indicator_bundle(rows)
+
     trend_score = _clamp(50 + ret_20 * 1.4 + ret_60 * 0.55 + ret_120 * 0.22 + slope60 * 35, 0, 100)
     structure_score = 50.0
     structure_score += 15 if latest > sma20 else -15
@@ -203,6 +207,11 @@ def analyze_six_month_pattern(candles: list[Any]) -> dict[str, Any]:
         else "Price is not above both the 20-day and 50-day averages."
     )
     reasons.append(f"60-day positive-session rate is {win_rate_60:.0f}% with {annualized_volatility:.1f}% annualized volatility.")
+    if technical_indicators.get("macd", {}).get("available"):
+        macd = technical_indicators["macd"]
+        reasons.append(
+            f"Daily MACD is {macd.get('state', 'mixed')} with histogram {float(macd.get('histogram') or 0):.4f}."
+        )
 
     return {
         "available": True,
@@ -226,6 +235,9 @@ def analyze_six_month_pattern(candles: list[Any]) -> dict[str, Any]:
         "volume_ratio_20d_vs_60d": round(volume_ratio, 4),
         "best_weekday": best_weekday,
         "best_weekday_mean_return_pct": round(weekday_edges[best_weekday], 4),
+        "technical_indicators": technical_indicators,
+        "macd": technical_indicators.get("macd", {}),
+        "rsi": technical_indicators.get("rsi", {}),
         "risk_flags": risk_flags,
         "reasons": reasons,
     }
