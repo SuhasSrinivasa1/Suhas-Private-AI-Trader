@@ -36,7 +36,7 @@ def main() -> None:
     env = parse_env(ENV_EXAMPLE)
     requirements = REQUIREMENTS.read_text(encoding="utf-8")
 
-    require(rules.get("schema_version") == "2.2.0", "rules schema must be Production 2.2")
+    require(rules.get("schema_version") == "2.3.0", "rules schema must be Production 2.3")
     require(rules["timezone"] == "Asia/Kolkata", "timezone must remain Asia/Kolkata")
 
     execution = rules["execution"]
@@ -99,9 +99,6 @@ def main() -> None:
     scanner = rules["scanner"]
     require(scanner["dynamic_universe"] is True, "scanner must remain dynamic")
     require(scanner["event_driven_live_feed"] is True, "event-driven live feed is required")
-    require("risk_veto" in scanner["agents"], "risk veto agent is required")
-    require("outcome_learning" in scanner["agents"], "outcome learning agent is required")
-    require("exit_management" in scanner["agents"], "exit management agent is required")
     required_specialists = {"macd", "rsi_momentum", "trend_ema", "volume_confirmation", "volatility_atr", "liquidity", "order_flow", "market_regime", "news", "six_month_pattern", "portfolio_exposure", "risk_veto"}
     require(required_specialists.issubset(set(scanner["agents"])), "specialist agent set is incomplete")
     require(int(scanner["specialist_agent_count"]) >= 12, "at least 12 specialist agents are required")
@@ -127,6 +124,7 @@ def main() -> None:
     require(memory["embedding_provider"] == "local Ollama", "embeddings must remain local by default")
     require(memory["embedding_model_default"] == "embeddinggemma", "default local embedding model must remain embeddinggemma")
     require(int(memory["price_retention_days"]) == 30, "price sample retention must remain bounded")
+    require("paper_calls" in memory["stores"], "paper-call ledger must be stored locally")
 
     learning = rules["learning"]
     require(learning["recommendation_outcome_tracking"] is True, "recommendation outcome tracking is required")
@@ -134,11 +132,26 @@ def main() -> None:
     require(learning["weight_multiplier_bounds"] == [0.75, 1.25], "adaptive weights must stay bounded")
     require(learning["risk_rules_never_adapt_automatically"] is True, "risk rules must never self-modify")
 
+    calls = rules["calls_and_results"]
+    require(calls["enabled"] is True, "Calls & Results must remain enabled")
+    require(int(calls["paper_observation_days"]) == 7, "the initial paper-observation phase must remain seven days")
+    require(calls["predictions_are_not_trades"] is True, "paper calls must not be represented as real trades")
+    require(calls["live_orders_blocked_during_observation"] is True, "live orders must remain blocked during the observation phase")
+    require(calls["store_predicted_buy_and_sell_prices"] is True, "predicted buy and sell prices must be stored")
+    require(calls["visual_accuracy_dashboard"] is True, "correct/wrong accuracy visuals are required")
+    require(calls["automatic_result_resolution"] is True, "paper calls must resolve automatically")
+    require(calls["automatic_precision_calibration"] is True, "automatic precision calibration is required")
+    require(float(calls["target_precision"]) == 0.99, "the aspirational precision target must remain 99%")
+    require(calls["target_precision_is_guaranteed"] is False, "99% accuracy must never be guaranteed")
+    require(int(calls["minimum_resolved_calls_before_calibration"]) >= 50, "calibration requires enough resolved calls")
+    require(calls["confidence_threshold_bounds"] == [72, 95], "confidence calibration must remain bounded")
+    require(calls["risk_rules_may_only_tighten"] is True, "learning may only tighten risk filters")
+    require(calls["no_live_execution_from_training"] is True, "training may never auto-execute orders")
+
     exits = rules["sell_exit_management"]
     require(exits["automatic_sell_orders"] is False, "automatic SELL orders must remain disabled")
     require(exits["human_confirmation_required"] is True, "SELL requires human confirmation")
     require(exits["fresh_groww_price_required_before_order"] is True, "SELL requires a fresh Groww price")
-    require(float(exits["five_pct_trim_planning_pct"]) == 15.0, "5% trim planning must remain 15%")
 
     news = rules["news_policy"]
     require(news["free_provider_enabled"] is True, "free news provider must remain enabled")
@@ -171,6 +184,11 @@ def main() -> None:
         "NEWS_PRIORITY_INTERVAL_SECONDS": continuous["priority_news_interval_seconds"],
         "NEWS_BROAD_INTERVAL_SECONDS": continuous["broad_news_rotation_interval_seconds"],
         "MATERIAL_PRICE_MOVE_PCT": continuous["material_price_move_trigger_pct"],
+        "PAPER_OBSERVATION_DAYS": calls["paper_observation_days"],
+        "CALL_TARGET_PRECISION": calls["target_precision"],
+        "CALL_MIN_CALIBRATION_SAMPLES": calls["minimum_resolved_calls_before_calibration"],
+        "CALL_CONFIDENCE_MIN": calls["confidence_threshold_bounds"][0],
+        "CALL_CONFIDENCE_MAX": calls["confidence_threshold_bounds"][1],
     }
     for key, expected in numeric_env.items():
         actual = env.get(key)

@@ -1,166 +1,28 @@
 {
-  "schema_version": "2.2.0",
+  "schema_version": "2.3.0",
   "timezone": "Asia/Kolkata",
-  "markets": {
-    "supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"],
-    "automatic_live_scanner": ["NSE"],
-    "nse_entry_window": {"start": "09:15", "end": "15:20"}
-  },
-  "execution": {
-    "paper_mode_default": true,
-    "live_execution_default": false,
-    "human_confirmation_required": true,
-    "server_side_revalidation_required": true,
-    "live_time_check_required": true,
-    "fresh_live_quote_required": true,
-    "max_quote_age_seconds": 120,
-    "signal_valid_seconds": 20,
-    "never_auto_execute_from_llm": true,
-    "automatic_order_execution": false,
-    "sell_requires_human_confirmation": true,
-    "buy_requires_human_confirmation": true
-  },
-  "risk": {
-    "max_risk_per_trade_pct": 1.0,
-    "min_reward_risk_ratio": 2.0,
-    "max_chase_pct": 1.5,
-    "max_position_value_pct": 20.0,
-    "max_spread_pct": 0.35,
-    "max_intraday_range_pct": 7.0,
-    "min_buy_confidence": 72.0,
-    "min_watch_confidence": 58.0,
-    "min_independent_confirmation_sources": 2
-  },
+  "markets": {"supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"], "automatic_live_scanner": ["NSE"], "nse_entry_window": {"start": "09:15", "end": "15:20"}},
+  "execution": {"paper_mode_default": true, "live_execution_default": false, "human_confirmation_required": true, "server_side_revalidation_required": true, "live_time_check_required": true, "fresh_live_quote_required": true, "max_quote_age_seconds": 120, "signal_valid_seconds": 20, "never_auto_execute_from_llm": true, "automatic_order_execution": false, "sell_requires_human_confirmation": true, "buy_requires_human_confirmation": true},
+  "risk": {"max_risk_per_trade_pct": 1.0, "min_reward_risk_ratio": 2.0, "max_chase_pct": 1.5, "max_position_value_pct": 20.0, "max_spread_pct": 0.35, "max_intraday_range_pct": 7.0, "min_buy_confidence": 72.0, "min_watch_confidence": 58.0, "min_independent_confirmation_sources": 2},
   "mandatory_checks": ["news", "technical_setup", "portfolio_exposure", "six_month_pattern", "macd", "rsi", "mode_specific_timeframe"],
-  "scanner": {
-    "scan_interval_seconds": 15,
-    "deep_scan_candidates": 10,
-    "max_display_opportunities": 8,
-    "dynamic_universe": true,
-    "fixed_watchlist_only": false,
-    "agents": ["momentum", "technical_structure", "liquidity", "order_flow", "market_regime", "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto", "outcome_learning", "exit_management", "provider_health", "macd", "rsi_momentum", "trend_ema", "volume_confirmation", "volatility_atr", "news"],
-    "event_driven_live_feed": true,
-    "rest_scan_is_fallback_and_deep_revalidation": true,
-    "specialist_agent_count": 12,
-    "mode_specific_agent_weights": true
-  },
-  "daily_recommendations": {
-    "enabled": true,
-    "historical_window_days": 180,
-    "candle_interval": "day",
-    "premarket_watch_not_live_buy": true,
-    "free_news_risk_check": true,
-    "local_llm_advisory_brief": true,
-    "live_revalidation_required_for_buy": true,
-    "daily_generation_after_ist": "07:50"
-  },
-  "intraday_routine": {
-    "pre_market_call_sheet": "08:00",
-    "pre_open_recheck": "09:20",
-    "opening_revalidation": "09:25",
-    "opening_volatility_caution": true,
-    "post_11am_slowdown_advisory": "11:00",
-    "do_not_chase_missed_move": true
-  },
-  "profit_discipline": {
-    "one_pct_profit_is_acceptable": true,
-    "base_profit_booking_pct": 3.0,
-    "trim_quantity_pct_at_five_pct_profit": 15.0,
-    "trim_trigger_profit_pct": 5.0,
-    "automatic_exit_orders_enabled": false,
-    "note": "These are user preference defaults for planning and alerts. They are not automatic live sell instructions."
-  },
+  "scanner": {"scan_interval_seconds": 15, "deep_scan_candidates": 10, "max_display_opportunities": 8, "dynamic_universe": true, "fixed_watchlist_only": false, "agents": ["momentum", "technical_structure", "liquidity", "order_flow", "market_regime", "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto", "outcome_learning", "exit_management", "provider_health", "macd", "rsi_momentum", "trend_ema", "volume_confirmation", "volatility_atr", "news"], "event_driven_live_feed": true, "rest_scan_is_fallback_and_deep_revalidation": true, "specialist_agent_count": 12, "mode_specific_agent_weights": true},
+  "daily_recommendations": {"enabled": true, "historical_window_days": 180, "candle_interval": "day", "premarket_watch_not_live_buy": true, "free_news_risk_check": true, "local_llm_advisory_brief": true, "live_revalidation_required_for_buy": true, "daily_generation_after_ist": "07:50"},
+  "intraday_routine": {"pre_market_call_sheet": "08:00", "pre_open_recheck": "09:20", "opening_revalidation": "09:25", "opening_volatility_caution": true, "post_11am_slowdown_advisory": "11:00", "do_not_chase_missed_move": true},
+  "profit_discipline": {"one_pct_profit_is_acceptable": true, "base_profit_booking_pct": 3.0, "trim_quantity_pct_at_five_pct_profit": 15.0, "trim_trigger_profit_pct": 5.0, "automatic_exit_orders_enabled": false, "note": "These are user preference defaults for planning and alerts. They are not automatic live sell instructions."},
   "gtt": {"planner_enabled": true, "local_storage_only": true, "broker_submission_enabled": false, "fresh_validation_required_before_live_submission": true},
   "missed_trade_postmortem": {"enabled": true, "record_reason": true, "record_market_context": true, "record_rule_that_blocked_or_delayed_entry": true, "never_relax_anti_chase_rule_only_because_a_trade_was_missed": true},
   "news_policy": {"free_provider_enabled": true, "provider": "GDELT DOC 2.0 with best-effort Google News RSS failover", "fail_closed_for_new_buy_when_unavailable": true, "never_invent_headlines_or_sentiment": true, "minimum_independent_sources": 2},
-  "research_sources": {
-    "screeners": ["TradingView", "Economic Times", "Reuters", "Investing.com", "Moneycontrol", "Screener.in", "MarketsMojo", "Tickertape", "TipRanks", "ChartInk"],
-    "news": ["Yahoo Finance", "Economic Times", "Moneycontrol", "CNBC", "CNBC-TV18", "Reuters"],
-    "integration_rule": "Use official, licensed, or explicitly permitted APIs/feeds. Until connected, the application must not fabricate data from these providers."
-  },
-  "privacy": {
-    "frontend_must_not_store_secrets": true,
-    "forbidden_frontend_data": ["passwords", "OTPs", "PINs", "TOTP seeds", "recovery codes", "API secrets", "broker credentials", "bank credentials"],
-    "backend_env_only_for_secrets": false,
-    "macos_keychain_for_groww_secrets": true,
-    "local_llm_advisory_only": true,
-    "local_llm_must_not_receive_broker_secrets": true
-  },
-  "continuous_intelligence": {
-    "enabled": true,
-    "browser_refresh_required": false,
-    "groww_callback_feed": true,
-    "max_feed_subscriptions": 1000,
-    "priority_news_interval_seconds": 15,
-    "broad_news_rotation_interval_seconds": 60,
-    "material_price_move_trigger_pct": 0.12,
-    "automatic_local_llm_on_material_events": true,
-    "llm_not_called_on_every_tick": true,
-    "reason": "Use provider-supported push events and material-change triggers instead of wasteful millisecond polling."
-  },
-  "local_memory": {
-    "enabled": true,
-    "database": "SQLite WAL",
-    "macos_path": "~/Library/Application Support/SuhasPrivateAITrader/trader.db",
-    "stores": ["price_samples", "patterns", "news", "news_embeddings", "signals", "signal_outcomes", "llm_analyses", "provider_health", "exit_signals"],
-    "semantic_memory": true,
-    "embedding_provider": "local Ollama",
-    "embedding_model_default": "embeddinggemma",
-    "daily_backup_after_ist": "16:00",
-    "price_retention_days": 30,
-    "news_retention_days": 365,
-    "llm_analysis_retention_days": 180
-  },
+  "research_sources": {"screeners": ["TradingView", "Economic Times", "Reuters", "Investing.com", "Moneycontrol", "Screener.in", "MarketsMojo", "Tickertape", "TipRanks", "ChartInk"], "news": ["Yahoo Finance", "Economic Times", "Moneycontrol", "CNBC", "CNBC-TV18", "Reuters"], "integration_rule": "Use official, licensed, or explicitly permitted APIs/feeds. Until connected, the application must not fabricate data from these providers."},
+  "privacy": {"frontend_must_not_store_secrets": true, "forbidden_frontend_data": ["passwords", "OTPs", "PINs", "TOTP seeds", "recovery codes", "API secrets", "broker credentials", "bank credentials"], "backend_env_only_for_secrets": false, "macos_keychain_for_groww_secrets": true, "local_llm_advisory_only": true, "local_llm_must_not_receive_broker_secrets": true},
+  "continuous_intelligence": {"enabled": true, "browser_refresh_required": false, "groww_callback_feed": true, "max_feed_subscriptions": 1000, "priority_news_interval_seconds": 15, "broad_news_rotation_interval_seconds": 60, "material_price_move_trigger_pct": 0.12, "automatic_local_llm_on_material_events": true, "llm_not_called_on_every_tick": true, "reason": "Use provider-supported push events and material-change triggers instead of wasteful millisecond polling."},
+  "local_memory": {"enabled": true, "database": "SQLite WAL", "macos_path": "~/Library/Application Support/SuhasPrivateAITrader/trader.db", "stores": ["price_samples", "patterns", "news", "news_embeddings", "signals", "signal_outcomes", "llm_analyses", "provider_health", "exit_signals", "paper_calls"], "semantic_memory": true, "embedding_provider": "local Ollama", "embedding_model_default": "embeddinggemma", "daily_backup_after_ist": "16:00", "price_retention_days": 30, "news_retention_days": 365, "llm_analysis_retention_days": 180},
   "learning": {"recommendation_outcome_tracking": true, "horizons_minutes": [15, 30, 60], "adaptive_agent_weights": true, "minimum_resolved_outcomes_before_adaptation": 10, "weight_multiplier_bounds": [0.75, 1.25], "risk_rules_never_adapt_automatically": true},
   "sell_exit_management": {"enabled": true, "automatic_sell_orders": false, "human_confirmation_required": true, "fresh_groww_price_required_before_order": true, "available_quantity_check_required": true, "profit_review_levels_pct": [1.0, 3.0, 5.0], "five_pct_trim_planning_pct": 15.0},
   "provider_health": {"enabled": true, "providers": ["groww_feed", "groww_rest", "groww_history", "free_news", "ollama_embeddings", "ollama_chat"], "fail_closed_for_missing_buy_dependencies": true},
-  "market_universe": {
-    "source": "Groww official instrument master",
-    "scope": "all tradable NSE CASH equities",
-    "include_market_caps": ["penny", "micro", "small", "mid", "large", "mega"],
-    "include_penny_stocks_for_discovery": true,
-    "include_sme_equities_for_discovery": true,
-    "exclude_non_equity_cash_instruments": true,
-    "full_universe_rotation_enabled": true,
-    "broad_scan_batch_size": 250,
-    "rest_batch_size": 50,
-    "feed_priority_subscription_cap": 1000,
-    "prediction_recorded_for_every_scanned_symbol": true,
-    "coarse_prediction_is_not_actionable_buy": true,
-    "deep_revalidation_required_before_actionable_signal": true,
-    "penny_and_illiquid_stock_extra_vetoes": ["spread", "liquidity", "volume", "circuit_risk", "abnormal_intraday_range", "news_dependency", "manipulation_risk"]
-  },
-  "capital_objective": {
-    "current_starting_capital_inr": 20000,
-    "stretch_target_inr": 100000,
-    "target_horizon_calendar_days": 30,
-    "target_multiple": 5.0,
-    "target_is_guarantee": false,
-    "no_loss_guarantee": false,
-    "capital_preservation_has_priority_over_target": true,
-    "no_forced_trades_to_hit_target": true,
-    "no_revenge_trading": true,
-    "never_relax_risk_rules_to_hit_target": true,
-    "losses_are_possible": true,
-    "system_must_not_claim_guaranteed_profit_or_zero_loss": true
-  },
+  "market_universe": {"source": "Groww official instrument master", "scope": "all tradable NSE CASH equities", "include_market_caps": ["penny", "micro", "small", "mid", "large", "mega"], "include_penny_stocks_for_discovery": true, "include_sme_equities_for_discovery": true, "exclude_non_equity_cash_instruments": true, "full_universe_rotation_enabled": true, "broad_scan_batch_size": 250, "rest_batch_size": 50, "feed_priority_subscription_cap": 1000, "prediction_recorded_for_every_scanned_symbol": true, "coarse_prediction_is_not_actionable_buy": true, "deep_revalidation_required_before_actionable_signal": true, "penny_and_illiquid_stock_extra_vetoes": ["spread", "liquidity", "volume", "circuit_risk", "abnormal_intraday_range", "news_dependency", "manipulation_risk"]},
+  "capital_objective": {"current_starting_capital_inr": 20000, "stretch_target_inr": 100000, "target_horizon_calendar_days": 30, "target_multiple": 5.0, "target_is_guarantee": false, "no_loss_guarantee": false, "capital_preservation_has_priority_over_target": true, "no_forced_trades_to_hit_target": true, "no_revenge_trading": true, "never_relax_risk_rules_to_hit_target": true, "losses_are_possible": true, "system_must_not_claim_guaranteed_profit_or_zero_loss": true},
   "legal_information_policy": {"public_lawful_information_only": true, "reject_unpublished_price_sensitive_information": true, "no_insider_trading": true, "no_market_manipulation": true, "no_front_running": true, "no_misleading_or_fabricated_market_information": true},
-  "trading_modes": {
-    "user_must_select_on_ui_entry": true,
-    "default_backend_mode": "intraday",
-    "available": {
-      "intraday": {"broker_product": "MIS", "holding_period": "same trading day", "primary_timeframes": ["5minute", "15minute"], "macd_alignment_required": true, "same_day_exit_required": true},
-      "delivery": {"broker_product": "CNC", "holding_period": "multi-day delivery position", "primary_timeframes": ["1day", "1week context"], "daily_macd_required": true, "same_day_exit_required": false}
-    },
-    "mode_change_triggers_fresh_scan": true,
-    "mode_is_attached_to_every_recommendation": true,
-    "broker_product_must_match_selected_mode": true
-  },
-  "technical_indicators": {
-    "macd": {"enabled": true, "mandatory_for_buy_evaluation": true, "fast_period": 12, "slow_period": 26, "signal_period": 9, "checks": ["macd_line", "signal_line", "histogram", "histogram_direction", "bullish_crossover", "bearish_crossover", "zero_line"]},
-    "rsi": {"enabled": true, "period": 14},
-    "ema": {"enabled": true, "periods": [20, 50]},
-    "atr": {"enabled": true, "period": 14},
-    "volume_confirmation": {"enabled": true}
-  }
+  "trading_modes": {"user_must_select_on_ui_entry": true, "default_backend_mode": "intraday", "available": {"intraday": {"broker_product": "MIS", "holding_period": "same trading day", "primary_timeframes": ["5minute", "15minute"], "macd_alignment_required": true, "same_day_exit_required": true}, "delivery": {"broker_product": "CNC", "holding_period": "multi-day delivery position", "primary_timeframes": ["1day", "1week context"], "daily_macd_required": true, "same_day_exit_required": false}}, "mode_change_triggers_fresh_scan": true, "mode_is_attached_to_every_recommendation": true, "broker_product_must_match_selected_mode": true},
+  "technical_indicators": {"macd": {"enabled": true, "mandatory_for_buy_evaluation": true, "fast_period": 12, "slow_period": 26, "signal_period": 9, "checks": ["macd_line", "signal_line", "histogram", "histogram_direction", "bullish_crossover", "bearish_crossover", "zero_line"]}, "rsi": {"enabled": true, "period": 14}, "ema": {"enabled": true, "periods": [20, 50]}, "atr": {"enabled": true, "period": 14}, "volume_confirmation": {"enabled": true}},
+  "calls_and_results": {"enabled": true, "paper_observation_days": 7, "predictions_are_not_trades": true, "live_orders_blocked_during_observation": true, "store_predicted_buy_and_sell_prices": true, "correct_definition": "predicted sell target reached before stop loss and before the mode-specific evaluation deadline", "statuses": ["OPEN", "CORRECT", "WRONG"], "visual_accuracy_dashboard": true, "automatic_result_resolution": true, "automatic_precision_calibration": true, "target_precision": 0.99, "target_precision_is_guaranteed": false, "minimum_resolved_calls_before_calibration": 50, "confidence_threshold_bounds": [72, 95], "risk_rules_may_only_tighten": true, "no_live_execution_from_training": true, "note": "The system may become more selective based on resolved paper calls. No accuracy percentage, including 99%, is guaranteed."}
 }
