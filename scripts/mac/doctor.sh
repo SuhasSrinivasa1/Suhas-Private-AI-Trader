@@ -27,7 +27,6 @@ else
 fi
 
 if xcode-select -p >/dev/null 2>&1; then pass "Apple Command Line Tools are installed."; else fail "Apple Command Line Tools are missing."; fi
-
 for cmd in brew git gh jq node ollama curl; do
   if command -v "$cmd" >/dev/null 2>&1; then
     pass "$cmd is available: $(command -v "$cmd")"
@@ -54,10 +53,10 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   else
     pass "Live execution is disabled in backend/.env."
   fi
-  if grep -Eq '^GROWW_API_KEY=.+$' "$BACKEND_DIR/.env" && grep -Eq '^GROWW_API_SECRET=.+$' "$BACKEND_DIR/.env"; then
-    pass "Groww API credential fields are populated locally."
+  if security find-generic-password -s "SuhasPrivateAITrader" -a "groww-api-key" -w >/dev/null 2>&1 && security find-generic-password -s "SuhasPrivateAITrader" -a "groww-api-secret" -w >/dev/null 2>&1; then
+    pass "Groww API credentials are present in macOS Keychain."
   else
-    warn "Groww API credentials are not configured yet; live scanner data will remain unavailable."
+    warn "Groww API credentials are not in macOS Keychain yet; market feed and broker data will remain unavailable."
   fi
 else
   fail "backend/.env is missing."
@@ -84,18 +83,14 @@ if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
 else
   warn "Ollama local API is not reachable on 127.0.0.1:11434."
 fi
-
-if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
-  pass "FastAPI backend is reachable."
+if ollama list 2>/dev/null | grep -q '^embeddinggemma'; then
+  pass "Local semantic-memory model embeddinggemma is installed."
 else
-  warn "FastAPI backend is not currently running."
+  warn "embeddinggemma is not installed; semantic news memory will remain degraded."
 fi
-
-if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then
-  pass "Frontend is reachable."
-else
-  warn "Frontend is not currently running."
-fi
+if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then pass "FastAPI backend is reachable."; else warn "FastAPI backend is not currently running."; fi
+if curl -fsS http://127.0.0.1:8000/api/production/status >/dev/null 2>&1; then pass "Production 2.0 intelligence status endpoint is reachable."; else warn "Production 2.0 status endpoint is not currently reachable."; fi
+if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then pass "Frontend is reachable."; else warn "Frontend is not currently running."; fi
 
 if [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
   printf '\nRunning repository verification...\n'
