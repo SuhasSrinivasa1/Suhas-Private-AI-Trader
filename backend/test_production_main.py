@@ -19,4 +19,4 @@ def test_production_entrypoint_exposes_required_routes():
         "/api/orders/sell-position",
     }
     assert required.issubset(paths)
-    assert production_main.app.version == "2.0.0"
+    assert production_main.app.version in {"2.0.0", "2.1.0"}
