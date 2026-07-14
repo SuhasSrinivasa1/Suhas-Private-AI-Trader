@@ -28,6 +28,7 @@ if command -v node >/dev/null 2>&1; then
   node --check "$ROOT_DIR/app.js"
   node --check "$ROOT_DIR/features.js"
   node --check "$ROOT_DIR/production.js"
+  node --check "$ROOT_DIR/production23.js"
 else
   printf '[verify] Node not found; JavaScript syntax checks skipped.\n'
 fi

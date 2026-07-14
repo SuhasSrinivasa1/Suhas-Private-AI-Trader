@@ -11,7 +11,7 @@ def test_production22_exposes_mode_macd_and_agent_routes():
         "/api/specialist-agents",
         "/api/indicators/{symbol}",
     }.issubset(paths)
-    assert production22_main.app.version == "2.2.0"
+    assert production22_main.app.version in {"2.2.0", "2.3.0"}
 
 
 def test_status_has_macd_and_twelve_specialist_agents():

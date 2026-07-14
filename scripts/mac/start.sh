@@ -43,7 +43,7 @@ start_backend() {
   info "Starting production FastAPI backend on 127.0.0.1:8000."
   (
     cd "$BACKEND_DIR"
-    nohup .venv/bin/python -m uvicorn production22_main:app --host 127.0.0.1 --port 8000 \
+    nohup .venv/bin/python -m uvicorn production23_main:app --host 127.0.0.1 --port 8000 \
       > "$LOG_DIR/backend.log" 2>&1 &
     echo $! > "$pid_file"
   )
@@ -95,7 +95,8 @@ Private AI Trader production release is running locally.
 
 Frontend:          http://127.0.0.1:8080
 Backend health:    http://127.0.0.1:8000/health
-Production status: http://127.0.0.1:8000/api/production22/status
+Production status: http://127.0.0.1:8000/api/production23/status
+Calls & Results:  http://127.0.0.1:8000/api/calls-results
 Universe coverage: http://127.0.0.1:8000/api/universe/predictions
 Logs:              $LOG_DIR
 
