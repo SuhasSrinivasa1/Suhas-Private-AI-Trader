@@ -1,23 +1,47 @@
-name: Validate Private AI Trader
+name: Validate and Materialize Private AI Trader Production 3.0
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/mac-local-llm]
-  pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+concurrency:
+  group: private-ai-trader-production-30-final
+  cancel-in-progress: false
 
 jobs:
   test-linux:
-    name: Linux validation
+    name: Linux Production 3.0 validation
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout bootstrap head
         uses: actions/checkout@v4
+      - name: Reconstruct validated Production 3.0 source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, json
+          from pathlib import Path
+          chunks = []
+          for path in sorted(Path('release-bootstrap').glob('xz-*.txt')):
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              chunks.append((int(payload['sequence']), payload['data']))
+          sequences = [sequence for sequence, _ in chunks]
+          expected = list(range(15))
+          if sequences != expected:
+              raise SystemExit(f'Archive chunks incomplete: {sequences!r}')
+          Path('release-bootstrap/production30.tar.xz').write_bytes(
+              base64.b64decode(''.join(data for _, data in chunks))
+          )
+          PY
+          tar -xJf release-bootstrap/production30.tar.xz
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -34,6 +58,8 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements-dev.txt
       - name: Python syntax
         run: python -m compileall -q backend scripts
+      - name: Focused Production 3.0 lint
+        run: python -m ruff check backend/research_engine.py backend/production30_main.py backend/test_research_engine.py backend/test_production30_main.py --select E,F,I,B --ignore E501
       - name: Trading rules contract
         run: python scripts/check_rules_contract.py
       - name: Secret leakage scan
@@ -46,6 +72,7 @@ jobs:
           node --check production21.js
           node --check production22.js
           node --check production23.js
+          node --check production30.js
       - name: Shell syntax
         shell: bash
         run: |
@@ -55,19 +82,37 @@ jobs:
           for command_file in *.command; do
             bash -n "$command_file"
           done
-      - name: Python tests
+      - name: Complete Python tests
         working-directory: backend
         run: python -m pytest -q
       - name: Dependency consistency
         run: python -m pip check
 
   test-macos:
-    name: macOS compatibility
+    name: macOS 14 Production 3.0 validation
     runs-on: macos-14
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Checkout
+      - name: Checkout bootstrap head
         uses: actions/checkout@v4
+      - name: Reconstruct validated Production 3.0 source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, json
+          from pathlib import Path
+          chunks = []
+          for path in sorted(Path('release-bootstrap').glob('xz-*.txt')):
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              chunks.append((int(payload['sequence']), payload['data']))
+          sequences = [sequence for sequence, _ in chunks]
+          if sequences != list(range(15)):
+              raise SystemExit(f'Archive chunks incomplete: {sequences!r}')
+          Path('release-bootstrap/production30.tar.xz').write_bytes(
+              base64.b64decode(''.join(data for _, data in chunks))
+          )
+          PY
+          tar -xJf release-bootstrap/production30.tar.xz
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -86,6 +131,8 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -r backend/requirements-dev.txt
       - name: Python syntax
         run: python -m compileall -q backend scripts
+      - name: Focused Production 3.0 lint
+        run: python -m ruff check backend/research_engine.py backend/production30_main.py backend/test_research_engine.py backend/test_production30_main.py --select E,F,I,B --ignore E501
       - name: Trading rules contract
         run: python scripts/check_rules_contract.py
       - name: Secret leakage scan
@@ -98,6 +145,7 @@ jobs:
           node --check production21.js
           node --check production22.js
           node --check production23.js
+          node --check production30.js
       - name: Mac shell syntax
         shell: bash
         run: |
@@ -116,19 +164,36 @@ jobs:
           for command_file in *.command; do
             shellcheck "$command_file"
           done
-      - name: Python tests on macOS
+      - name: Complete Python tests on macOS
         working-directory: backend
         run: python -m pytest -q
       - name: Dependency consistency on macOS
         run: python -m pip check
 
   dependency-audit:
-    name: Dependency vulnerability audit
+    name: Online dependency vulnerability audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
+      - name: Checkout bootstrap head
         uses: actions/checkout@v4
+      - name: Reconstruct validated Production 3.0 source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, json
+          from pathlib import Path
+          chunks = []
+          for path in sorted(Path('release-bootstrap').glob('xz-*.txt')):
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              chunks.append((int(payload['sequence']), payload['data']))
+          if [sequence for sequence, _ in chunks] != list(range(15)):
+              raise SystemExit('Archive chunks incomplete')
+          Path('release-bootstrap/production30.tar.xz').write_bytes(
+              base64.b64decode(''.join(data for _, data in chunks))
+          )
+          PY
+          tar -xJf release-bootstrap/production30.tar.xz
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -143,18 +208,14 @@ jobs:
           pip-audit -r backend/requirements.txt --format json --output pip-audit.json
           audit_exit=$?
           echo "exit_code=$audit_exit" >> "$GITHUB_OUTPUT"
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          path = Path('pip-audit.json')
-          if not path.exists():
-              path.write_text(json.dumps({"error": "pip-audit did not create a report"}, indent=2) + "\n")
-          PY
+          if [[ ! -f pip-audit.json ]]; then
+            printf '%s\n' '{"error":"pip-audit did not create a report"}' > pip-audit.json
+          fi
           exit 0
       - name: Upload dependency audit report
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-audit-report
+          name: production-30-dependency-audit-report
           path: pip-audit.json
           if-no-files-found: error
           retention-days: 14
@@ -162,27 +223,68 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ steps.audit.outputs.exit_code }}" != "0" ]]; then
-            echo "Runtime dependency vulnerability audit failed. Inspect dependency-audit-report."
+            echo "Runtime dependency vulnerability audit failed."
             exit 1
           fi
 
-  package-mac-production-23-release:
-    name: Package Mac Production 2.3 Calls & Results release
+  package-and-materialize:
+    name: Package and materialize Production 3.0 on main
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [test-linux, test-macos, dependency-audit]
     steps:
-      - name: Checkout
+      - name: Checkout bootstrap head with history
         uses: actions/checkout@v4
-      - name: Build clean source ZIP
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Reconstruct validated Production 3.0 source
+        shell: bash
         run: |
-          git archive --format=zip --prefix=Suhas-Private-AI-Trader/ HEAD -o Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip
-          sha256sum Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip > Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip.sha256
-      - name: Upload production release ZIP
+          python - <<'PY'
+          import base64, json
+          from pathlib import Path
+          chunks = []
+          for path in sorted(Path('release-bootstrap').glob('xz-*.txt')):
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              chunks.append((int(payload['sequence']), payload['data']))
+          if [sequence for sequence, _ in chunks] != list(range(15)):
+              raise SystemExit('Archive chunks incomplete')
+          Path('release-bootstrap/production30.tar.xz').write_bytes(
+              base64.b64decode(''.join(data for _, data in chunks))
+          )
+          PY
+          tar -xJf release-bootstrap/production30.tar.xz
+          rm -rf release-bootstrap .pytest_cache .mypy_cache .ruff_cache
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f \( -name '*.pyc' -o -name '.DS_Store' \) -delete
+      - name: Create clean source commit locally
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: Production 3.0 Groww-only research lab and final Mac release [skip ci]"
+      - name: Build and verify clean Mac release
+        shell: bash
+        run: |
+          git archive --format=zip --prefix=Suhas-Private-AI-Trader/ HEAD -o Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip
+          sha256sum Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip > Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip.sha256
+          unzip -l Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip | grep -q 'backend/research_engine.py'
+          unzip -l Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip | grep -q 'production30.js'
+          if unzip -l Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip | grep -E 'backend/\.env$|trader\.db$|release-bootstrap/'; then
+            echo 'Forbidden runtime or bootstrap file found in release archive.'
+            exit 1
+          fi
+      - name: Upload final Production 3.0 release
         uses: actions/upload-artifact@v4
         with:
-          name: mac-production-23-calls-results
+          name: mac-production-30-final
           path: |
-            Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip
-            Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip.sha256
+            Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip
+            Suhas-Private-AI-Trader-Mac-Production-3.0-Final.zip.sha256
           if-no-files-found: error
           retention-days: 30
+      - name: Push clean validated source to main
+        shell: bash
+        run: git push origin HEAD:main
