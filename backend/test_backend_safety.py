@@ -6,9 +6,17 @@ from fastapi import HTTPException
 import main
 
 
-def test_unconfigured_broker_pauses_scanner_safely(monkeypatch):
+def _force_unconfigured_broker(monkeypatch):
+    """Keep unit tests independent of real macOS Keychain credentials."""
     monkeypatch.delenv("GROWW_API_KEY", raising=False)
     monkeypatch.delenv("GROWW_API_SECRET", raising=False)
+    monkeypatch.setattr(main, "_broker_configured", lambda: False)
+    monkeypatch.setattr(main, "_groww", None)
+    monkeypatch.setattr(main, "_groww_error", None)
+
+
+def test_unconfigured_broker_pauses_scanner_safely(monkeypatch):
+    _force_unconfigured_broker(monkeypatch)
 
     assert main._broker_configured() is False
     assert main._scanner_status() == "broker_not_configured"
@@ -20,8 +28,7 @@ def test_unconfigured_broker_pauses_scanner_safely(monkeypatch):
 
 
 def test_manual_live_scan_is_blocked_without_broker_credentials(monkeypatch):
-    monkeypatch.delenv("GROWW_API_KEY", raising=False)
-    monkeypatch.delenv("GROWW_API_SECRET", raising=False)
+    _force_unconfigured_broker(monkeypatch)
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(main.scan_now())
