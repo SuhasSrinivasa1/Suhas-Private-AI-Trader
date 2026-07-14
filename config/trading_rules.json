@@ -1,10 +1,20 @@
 {
-  "schema_version": "2.0.0",
+  "schema_version": "2.1.0",
   "timezone": "Asia/Kolkata",
   "markets": {
-    "supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"],
-    "automatic_live_scanner": ["NSE"],
-    "nse_entry_window": {"start": "09:15", "end": "15:20"}
+    "supported_manual_evaluation": [
+      "NSE",
+      "BSE",
+      "NASDAQ",
+      "NYSE"
+    ],
+    "automatic_live_scanner": [
+      "NSE"
+    ],
+    "nse_entry_window": {
+      "start": "09:15",
+      "end": "15:20"
+    }
   },
   "execution": {
     "paper_mode_default": true,
@@ -31,7 +41,12 @@
     "min_watch_confidence": 58.0,
     "min_independent_confirmation_sources": 2
   },
-  "mandatory_checks": ["news", "technical_setup", "portfolio_exposure", "six_month_pattern"],
+  "mandatory_checks": [
+    "news",
+    "technical_setup",
+    "portfolio_exposure",
+    "six_month_pattern"
+  ],
   "scanner": {
     "scan_interval_seconds": 15,
     "deep_scan_candidates": 10,
@@ -39,9 +54,18 @@
     "dynamic_universe": true,
     "fixed_watchlist_only": false,
     "agents": [
-      "momentum", "technical_structure", "liquidity", "order_flow", "market_regime",
-      "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto",
-      "outcome_learning", "exit_management", "provider_health"
+      "momentum",
+      "technical_structure",
+      "liquidity",
+      "order_flow",
+      "market_regime",
+      "news_context",
+      "six_month_pattern",
+      "portfolio_exposure",
+      "risk_veto",
+      "outcome_learning",
+      "exit_management",
+      "provider_health"
     ],
     "event_driven_live_feed": true,
     "rest_scan_is_fallback_and_deep_revalidation": true
@@ -93,13 +117,40 @@
     "minimum_independent_sources": 2
   },
   "research_sources": {
-    "screeners": ["TradingView", "Economic Times", "Reuters", "Investing.com", "Moneycontrol", "Screener.in", "MarketsMojo", "Tickertape", "TipRanks", "ChartInk"],
-    "news": ["Yahoo Finance", "Economic Times", "Moneycontrol", "CNBC", "CNBC-TV18", "Reuters"],
+    "screeners": [
+      "TradingView",
+      "Economic Times",
+      "Reuters",
+      "Investing.com",
+      "Moneycontrol",
+      "Screener.in",
+      "MarketsMojo",
+      "Tickertape",
+      "TipRanks",
+      "ChartInk"
+    ],
+    "news": [
+      "Yahoo Finance",
+      "Economic Times",
+      "Moneycontrol",
+      "CNBC",
+      "CNBC-TV18",
+      "Reuters"
+    ],
     "integration_rule": "Use official, licensed, or explicitly permitted APIs/feeds. Until connected, the application must not fabricate data from these providers."
   },
   "privacy": {
     "frontend_must_not_store_secrets": true,
-    "forbidden_frontend_data": ["passwords", "OTPs", "PINs", "TOTP seeds", "recovery codes", "API secrets", "broker credentials", "bank credentials"],
+    "forbidden_frontend_data": [
+      "passwords",
+      "OTPs",
+      "PINs",
+      "TOTP seeds",
+      "recovery codes",
+      "API secrets",
+      "broker credentials",
+      "bank credentials"
+    ],
     "backend_env_only_for_secrets": false,
     "macos_keychain_for_groww_secrets": true,
     "local_llm_advisory_only": true,
@@ -121,7 +172,17 @@
     "enabled": true,
     "database": "SQLite WAL",
     "macos_path": "~/Library/Application Support/SuhasPrivateAITrader/trader.db",
-    "stores": ["price_samples", "patterns", "news", "news_embeddings", "signals", "signal_outcomes", "llm_analyses", "provider_health", "exit_signals"],
+    "stores": [
+      "price_samples",
+      "patterns",
+      "news",
+      "news_embeddings",
+      "signals",
+      "signal_outcomes",
+      "llm_analyses",
+      "provider_health",
+      "exit_signals"
+    ],
     "semantic_memory": true,
     "embedding_provider": "local Ollama",
     "embedding_model_default": "embeddinggemma",
@@ -132,10 +193,17 @@
   },
   "learning": {
     "recommendation_outcome_tracking": true,
-    "horizons_minutes": [15, 30, 60],
+    "horizons_minutes": [
+      15,
+      30,
+      60
+    ],
     "adaptive_agent_weights": true,
     "minimum_resolved_outcomes_before_adaptation": 10,
-    "weight_multiplier_bounds": [0.75, 1.25],
+    "weight_multiplier_bounds": [
+      0.75,
+      1.25
+    ],
     "risk_rules_never_adapt_automatically": true
   },
   "sell_exit_management": {
@@ -144,12 +212,76 @@
     "human_confirmation_required": true,
     "fresh_groww_price_required_before_order": true,
     "available_quantity_check_required": true,
-    "profit_review_levels_pct": [1.0, 3.0, 5.0],
+    "profit_review_levels_pct": [
+      1.0,
+      3.0,
+      5.0
+    ],
     "five_pct_trim_planning_pct": 15.0
   },
   "provider_health": {
     "enabled": true,
-    "providers": ["groww_feed", "groww_rest", "groww_history", "free_news", "ollama_embeddings", "ollama_chat"],
+    "providers": [
+      "groww_feed",
+      "groww_rest",
+      "groww_history",
+      "free_news",
+      "ollama_embeddings",
+      "ollama_chat"
+    ],
     "fail_closed_for_missing_buy_dependencies": true
+  },
+  "market_universe": {
+    "source": "Groww official instrument master",
+    "scope": "all tradable NSE CASH equities",
+    "include_market_caps": [
+      "penny",
+      "micro",
+      "small",
+      "mid",
+      "large",
+      "mega"
+    ],
+    "include_penny_stocks_for_discovery": true,
+    "include_sme_equities_for_discovery": true,
+    "exclude_non_equity_cash_instruments": true,
+    "full_universe_rotation_enabled": true,
+    "broad_scan_batch_size": 250,
+    "rest_batch_size": 50,
+    "feed_priority_subscription_cap": 1000,
+    "prediction_recorded_for_every_scanned_symbol": true,
+    "coarse_prediction_is_not_actionable_buy": true,
+    "deep_revalidation_required_before_actionable_signal": true,
+    "penny_and_illiquid_stock_extra_vetoes": [
+      "spread",
+      "liquidity",
+      "volume",
+      "circuit_risk",
+      "abnormal_intraday_range",
+      "news_dependency",
+      "manipulation_risk"
+    ]
+  },
+  "capital_objective": {
+    "current_starting_capital_inr": 20000,
+    "stretch_target_inr": 100000,
+    "target_horizon_calendar_days": 30,
+    "target_multiple": 5.0,
+    "target_is_guarantee": false,
+    "no_loss_guarantee": false,
+    "capital_preservation_has_priority_over_target": true,
+    "no_forced_trades_to_hit_target": true,
+    "no_revenge_trading": true,
+    "never_relax_risk_rules_to_hit_target": true,
+    "losses_are_possible": true,
+    "system_must_not_claim_guaranteed_profit_or_zero_loss": true
+  },
+  "legal_information_policy": {
+    "public_lawful_information_only": true,
+    "reject_unpublished_price_sensitive_information": true,
+    "no_insider_trading": true,
+    "no_market_manipulation": true,
+    "no_front_running": true,
+    "no_misleading_or_fabricated_market_information": true
   }
 }
