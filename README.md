@@ -1,185 +1,131 @@
-# Suhas Private AI Trader
+# Suhas Private AI Trader — Production 2.0
 
-Private, Mac-first trading decision-support application for Indian and U.S. markets, with an automatic NSE intraday scanner, deterministic safety rules, local portfolio/GTT/journal tools, optional Groww connectivity, and a private local LLM reviewer.
+Private, Mac-first, always-on trading decision-support system for NSE trading. The application combines Groww market data, a rolling six-month pattern engine, continuous Internet news monitoring, local SQLite memory, local Ollama AI, deterministic risk rules, recommendation outcome tracking, bounded adaptive agent weights, and human-confirmed Groww BUY/SELL execution.
 
-## Safety status
+## Core architecture
 
-- Paper mode is the default.
-- Live Groww execution is disabled by default.
-- A human confirmation click is required before a live order request.
-- The backend re-runs the opportunity logic using a fresh quote before submitting an enabled live order.
-- Stale, changed, chased, vetoed, invalid, or out-of-session orders are blocked.
-- The local LLM is advisory only and cannot override BUY / SELL / WAIT logic, remove a risk veto, or place an order.
-- Passwords, OTPs, PINs, TOTP seeds, recovery codes, API secrets, broker credentials, and bank credentials are forbidden in the frontend and Git repository.
+Production 2.0 is event-driven:
 
-## Current features
+1. **Groww Feed** pushes live market events for the configured NSE universe.
+2. The backend updates in-memory prices and a sampled local price history.
+3. Material price changes trigger deterministic re-evaluation instead of wasteful millisecond REST polling.
+4. The continuous news engine checks priority symbols frequently and rotates through the broader universe.
+5. New headlines are deduplicated into local SQLite memory.
+6. Local Ollama embeddings create semantic news memory for similarity/RAG.
+7. Material news or signal-state changes automatically trigger a local LLM explanation.
+8. BUY/WAIT state remains deterministic; the LLM cannot override a veto or place an order.
+9. Recommendation outcomes are measured at configured horizons and can adjust agent weights only within bounded limits.
+10. Risk limits never self-modify.
 
-### Dashboard and automatic scanner
+The browser is a live dashboard. It is not responsible for refreshing market intelligence.
 
-- Dynamic liquid NSE universe instead of a fixed watchlist only.
-- Market-wide coarse scan followed by deep analysis of top candidates.
-- Ranked `BUY`, `WATCHING`, and `WAIT` opportunities.
-- Multi-agent scores for momentum, technical structure, liquidity, order flow, market regime, news context, and portfolio exposure.
-- Independent risk-veto layer.
-- Expiring BUY alerts.
-- Live holdings/positions when the Groww backend is configured.
-- Market/news panel that stays neutral when no approved news provider is connected.
-- Asia/Kolkata routine clock for the 08:00, 09:20, 09:25, post-11:00, and post-market workflow checkpoints.
+## Safety boundaries
 
-### Trade Evaluator
+- Paper/safe mode is the default.
+- `GROWW_LIVE_EXECUTION_ENABLED=false` by default.
+- BUY and SELL requests require an explicit human confirmation action.
+- The backend performs fresh broker-side revalidation before an enabled live order.
+- Stale, changed, chased, vetoed, invalid, over-quantity, or out-of-session orders are blocked.
+- The local LLM is advisory only.
+- No password, OTP, PIN, recovery code, TOTP seed, broker API secret, or bank credential is stored in the frontend or Git.
+- Groww API credentials are stored in macOS Keychain.
+- No profit is guaranteed.
 
-- Manual `BUY`, `SELL`, or `WAIT` evaluation.
-- NSE, BSE, NASDAQ, and NYSE input support.
-- Quote freshness check.
-- Minimum confirmation-source check.
-- Mandatory news, technical, and portfolio checks.
-- Reward/risk, capital-risk, and anti-chase checks.
-- Manual live-execution requests are blocked by default.
+## Production 2.0 features
 
-### GTT Planner
+### Always-on market intelligence
 
-- Local-only proposed entry, target, stop, quantity, and note storage.
-- Validates price structure, reward/risk, and portfolio risk before saving.
-- Does **not** submit a broker GTT order.
-- Every saved plan is marked for fresh validation before any future broker integration may use it.
+- Groww callback feed for live equity LTP events.
+- Periodic REST scanner remains as broad discovery/fallback and deep revalidation.
+- Dynamic liquid NSE universe.
+- Event-triggered rescans on material price movement.
+- Automatic WebSocket push to the browser; no manual browser refresh required.
+- Provider-health monitoring and automatic Groww feed restart attempts.
 
-### Portfolio
+### Continuous Internet news intelligence
 
-- Local browser portfolio for testing.
-- Groww holdings and positions take priority when the backend is configured.
-- No broker secrets are stored in browser storage.
+- GDELT DOC 2.0 as the primary free news discovery source.
+- Best-effort Google News RSS failover when the primary source is unavailable.
+- Priority-symbol monitoring and broad-universe rotation.
+- URL-level local deduplication.
+- News sentiment/risk scoring.
+- New material news can automatically rescore the affected stock.
+- Missing required news dependencies fail closed for a fresh BUY.
 
-### Trade Journal and missed-trade review
+### Local Mac memory
 
-- Records entered, closed, skipped, missed, and rule-blocked opportunities.
-- Captures market context, the rule/reason involved, and the lesson.
-- Implements the “do not repeat the Trent mistake” process: study a missed move without weakening the anti-chase rule.
-
-### Private local AI
-
-- Runs through Ollama on the Mac.
-- The bootstrap selects a model based on available memory, with an environment override when required.
-- Receives only the selected machine-generated trade snapshot.
-- Explains decision context, evidence, risks, missing data, and invalidation conditions.
-- Cannot execute or approve a trade.
-
-## Brand-new MacBook Pro setup
-
-Start with:
+Default macOS database:
 
 ```text
-NEW_MAC_FIRST_RUN.md
+~/Library/Application Support/SuhasPrivateAITrader/trader.db
 ```
 
-After the repository is cloned, the full one-command bootstrap is:
+Stored locally: sampled market prices, six-month patterns, news, local news embeddings, signals, 15/30/60-minute outcomes, local LLM analyses, provider health, agent performance and exit signals.
+
+SQLite runs in WAL mode. Price samples are retained for 30 days by default, news for 365 days, and LLM analyses for 180 days. A local database backup is created daily after 16:00 IST.
+
+### Six-month pattern agent
+
+Uses rolling 180-day Groww daily candles and scores multi-horizon returns, moving-average structure, trend slopes, realized volatility, drawdown, positive-session consistency, recent-range position, volume behavior and recurring weekday edge. Historical results are cached locally.
+
+### Local AI and semantic memory
+
+- Ollama runs locally on the Mac.
+- Chat model is selected based on available memory.
+- `embeddinggemma` is installed for local semantic news memory.
+- Automatic LLM triggers occur only on material events, not every price tick.
+- Similar historical news can be retrieved from the local database and supplied to the local LLM.
+- The LLM never receives Groww secrets and cannot execute orders.
+
+### Outcome learning
+
+Every stored signal can be evaluated at 15, 30 and 60 minutes. Agent accuracy is tracked. After sufficient outcomes, agent weight multipliers can move only within `0.75x` to `1.25x`. Risk rules, market-time rules, human confirmation and execution safeguards never adapt automatically.
+
+### SELL / exit intelligence
+
+The exit agent evaluates current Groww holdings/positions using current P&L, six-month pattern deterioration, current news risk and the 1%, 3% and 5% profit-discipline preferences.
+
+Possible states:
+
+- `HOLD`
+- `BOOK_PARTIAL_REVIEW`
+- `TRIM_15`
+- `REVIEW_SELL`
+
+No SELL occurs automatically. An enabled live SELL requires a human click, available-quantity validation, a fresh Groww quote and fresh pattern/news revalidation.
+
+## Mac installation
+
+Read `PRODUCTION_MAC_SETUP.md`. From the extracted release folder:
 
 ```bash
-bash scripts/mac/bootstrap.sh
+bash INSTALL_MAC.command
+bash CONFIGURE_GROWW.command
+bash START_TRADER.command
 ```
 
-It installs the reproducible Homebrew toolset, creates the Python environment, installs dependencies, configures Ollama for local-only use, selects and downloads a local model, creates safe local configuration files, and runs the verification suite.
+Open `http://127.0.0.1:8080`.
 
-Start the app:
+Diagnostics:
 
 ```bash
-make start
+bash scripts/mac/doctor.sh
 ```
 
-Stop the app:
+Full validation:
 
 ```bash
-make stop
+bash scripts/verify.sh
 ```
 
-Run the Mac health check:
+## Rule contract
 
-```bash
-make doctor
-```
+- Human-readable rules: `TRADING_RULES.md`
+- Machine-readable contract: `config/trading_rules.json`
+- CI enforcement: `scripts/check_rules_contract.py`
 
-Run all repository validation:
+The Production 2.0 contract enforces the always-on feed architecture, no browser-refresh dependency, local memory, local semantic embeddings, bounded outcome learning, continuous news, human-confirmed BUY/SELL and non-adaptive risk rules.
 
-```bash
-make verify
-```
+## Source and release integrity
 
-The frontend opens at:
-
-```text
-http://127.0.0.1:8080
-```
-
-Backend health is available at:
-
-```text
-http://127.0.0.1:8000/health
-```
-
-## Repository rule contract
-
-The complete workflow and safety rules are stored in two forms:
-
-- `TRADING_RULES.md` — human-readable rules and feature contract.
-- `config/trading_rules.json` — machine-readable contract validated by the test/verification pipeline.
-
-The contract covers live-price freshness, market-time discipline, anti-chase behavior, mandatory checks, scanner settings, risk limits, paper/live boundaries, GTT planning, profit-discipline preferences, the intraday routine, missed-trade postmortems, source registries, and privacy restrictions.
-
-## Default guardrails
-
-- Maximum risk per trade: 1% of portfolio value.
-- Minimum reward/risk: 2.0.
-- Maximum chase distance: 1.5%.
-- Maximum quote age: 120 seconds.
-- Minimum independent confirmation sources: 2.
-- Maximum position value: 20% of portfolio value.
-- BUY confidence threshold: 72.
-- WATCHING threshold: 58.
-- Mandatory checks: news, technical setup, portfolio exposure.
-- Live execution: disabled by default.
-
-## Research-source registry
-
-The rule contract records the user-specified research set, including TradingView, Economic Times, Reuters, Investing.com, Moneycontrol, Screener.in, MarketsMojo, Tickertape, TipRanks, ChartInk, Yahoo Finance, CNBC, and CNBC-TV18.
-
-A provider name in the registry does **not** imply that the application is currently connected to that provider. Only official, licensed, or explicitly permitted APIs/feeds should be integrated. Until a provider is connected, the application must not invent its data or sentiment.
-
-## Groww configuration
-
-The Mac bootstrap creates:
-
-```text
-backend/.env
-```
-
-from the safe example file. Add official Groww API values only to the local `.env` file when ready:
-
-```text
-GROWW_API_KEY=
-GROWW_API_SECRET=
-```
-
-Keep this disabled during paper validation:
-
-```text
-GROWW_LIVE_EXECUTION_ENABLED=false
-```
-
-`backend/.env` is ignored by Git and must never be committed.
-
-## Development and CI
-
-GitHub Actions validates the project on Linux and a GitHub-hosted macOS runner. Local verification checks:
-
-- Python syntax.
-- Canonical trading-rules contract.
-- Secret-leakage patterns.
-- JavaScript syntax for `app.js` and `features.js`.
-- Bash syntax.
-- Python tests.
-- Shell lint when shellcheck is available.
-
-The dependency audit is informational and does not automatically enable or change trading behavior.
-
-## Important boundary
-
-This project is decision-support software, not a guarantee of profit. The deterministic rules, data sources, broker integration, and physical Mac installation must be validated before any live-execution setting is considered.
+GitHub is the source of truth. Release ZIPs are generated only after Linux, macOS, test, secret-scan, rule-contract, JavaScript, shell, dependency-consistency and dependency-vulnerability gates pass.
