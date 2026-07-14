@@ -1,13 +1,10 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "timezone": "Asia/Kolkata",
   "markets": {
     "supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"],
     "automatic_live_scanner": ["NSE"],
-    "nse_entry_window": {
-      "start": "09:15",
-      "end": "15:20"
-    }
+    "nse_entry_window": {"start": "09:15", "end": "15:20"}
   },
   "execution": {
     "paper_mode_default": true,
@@ -31,27 +28,24 @@
     "min_watch_confidence": 58.0,
     "min_independent_confirmation_sources": 2
   },
-  "mandatory_checks": [
-    "news",
-    "technical_setup",
-    "portfolio_exposure"
-  ],
+  "mandatory_checks": ["news", "technical_setup", "portfolio_exposure", "six_month_pattern"],
   "scanner": {
     "scan_interval_seconds": 15,
     "deep_scan_candidates": 10,
     "max_display_opportunities": 8,
     "dynamic_universe": true,
     "fixed_watchlist_only": false,
-    "agents": [
-      "momentum",
-      "technical_structure",
-      "liquidity",
-      "order_flow",
-      "market_regime",
-      "news_context",
-      "portfolio_exposure",
-      "risk_veto"
-    ]
+    "agents": ["momentum", "technical_structure", "liquidity", "order_flow", "market_regime", "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto"]
+  },
+  "daily_recommendations": {
+    "enabled": true,
+    "historical_window_days": 180,
+    "candle_interval": "day",
+    "premarket_watch_not_live_buy": true,
+    "free_news_risk_check": true,
+    "local_llm_advisory_brief": true,
+    "live_revalidation_required_for_buy": true,
+    "daily_generation_after_ist": "07:50"
   },
   "intraday_routine": {
     "pre_market_call_sheet": "08:00",
@@ -83,46 +77,22 @@
     "never_relax_anti_chase_rule_only_because_a_trade_was_missed": true
   },
   "news_policy": {
-    "neutral_when_provider_not_connected": true,
+    "free_provider_enabled": true,
+    "provider": "GDELT DOC 2.0",
+    "fail_closed_for_new_buy_when_unavailable": true,
     "never_invent_headlines_or_sentiment": true,
     "minimum_independent_sources": 2
   },
   "research_sources": {
-    "screeners": [
-      "TradingView",
-      "Economic Times",
-      "Reuters",
-      "Investing.com",
-      "Moneycontrol",
-      "Screener.in",
-      "MarketsMojo",
-      "Tickertape",
-      "TipRanks",
-      "ChartInk"
-    ],
-    "news": [
-      "Yahoo Finance",
-      "Economic Times",
-      "Moneycontrol",
-      "CNBC",
-      "CNBC-TV18",
-      "Reuters"
-    ],
+    "screeners": ["TradingView", "Economic Times", "Reuters", "Investing.com", "Moneycontrol", "Screener.in", "MarketsMojo", "Tickertape", "TipRanks", "ChartInk"],
+    "news": ["Yahoo Finance", "Economic Times", "Moneycontrol", "CNBC", "CNBC-TV18", "Reuters"],
     "integration_rule": "Use official, licensed, or explicitly permitted APIs/feeds. Until connected, the application must not fabricate data from these providers."
   },
   "privacy": {
     "frontend_must_not_store_secrets": true,
-    "forbidden_frontend_data": [
-      "passwords",
-      "OTPs",
-      "PINs",
-      "TOTP seeds",
-      "recovery codes",
-      "API secrets",
-      "broker credentials",
-      "bank credentials"
-    ],
-    "backend_env_only_for_secrets": true,
+    "forbidden_frontend_data": ["passwords", "OTPs", "PINs", "TOTP seeds", "recovery codes", "API secrets", "broker credentials", "bank credentials"],
+    "backend_env_only_for_secrets": false,
+    "macos_keychain_for_groww_secrets": true,
     "local_llm_advisory_only": true,
     "local_llm_must_not_receive_broker_secrets": true
   }
