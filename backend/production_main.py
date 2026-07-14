@@ -79,7 +79,7 @@ def production_status() -> dict[str, Any]:
         "free_news_risk_check": True,
         "local_llm": "ollama",
         "daily_status": runtime.daily_snapshot.get("status", "not_generated"),
-        "rules_contract_version": "1.0.0",
+        "rules_contract_version": "1.1.0",
     }
 
 
