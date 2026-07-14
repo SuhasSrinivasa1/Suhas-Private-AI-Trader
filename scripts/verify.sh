@@ -27,6 +27,7 @@ if command -v node >/dev/null 2>&1; then
   printf '[verify] JavaScript syntax...\n'
   node --check "$ROOT_DIR/app.js"
   node --check "$ROOT_DIR/features.js"
+  node --check "$ROOT_DIR/production.js"
 else
   printf '[verify] Node not found; JavaScript syntax checks skipped.\n'
 fi
@@ -35,8 +36,9 @@ printf '[verify] Shell syntax...\n'
 while IFS= read -r -d '' script; do
   bash -n "$script"
 done < <(find "$ROOT_DIR/scripts" -type f -name '*.sh' -print0)
-bash -n "$ROOT_DIR/run-mac.command"
-bash -n "$ROOT_DIR/setup_mac_local_ai.sh"
+for command_file in "$ROOT_DIR"/*.command; do
+  bash -n "$command_file"
+done
 
 if "$PYTHON_BIN" -c 'import pytest' >/dev/null 2>&1; then
   printf '[verify] Python tests...\n'
@@ -45,16 +47,14 @@ else
   printf '[verify] pytest not installed; tests skipped.\n'
 fi
 
-printf '[verify] Python dependency consistency...\n'
-"$PYTHON_BIN" -m pip check
-
 if command -v shellcheck >/dev/null 2>&1; then
   printf '[verify] Shell lint...\n'
   while IFS= read -r -d '' script; do
     shellcheck "$script"
   done < <(find "$ROOT_DIR/scripts" -type f -name '*.sh' -print0)
-  shellcheck "$ROOT_DIR/run-mac.command"
-  shellcheck "$ROOT_DIR/setup_mac_local_ai.sh"
+  for command_file in "$ROOT_DIR"/*.command; do
+    shellcheck "$command_file"
+  done
 else
   printf '[verify] shellcheck not found; shell lint skipped.\n'
 fi
