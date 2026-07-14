@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from nse_universe import cached_exchange_token_map
+
 
 @dataclass(frozen=True)
 class FeedEvent:
@@ -34,19 +36,22 @@ class GrowwFeedEngine:
 
     def _resolve_instruments(self) -> list[dict[str, str]]:
         instruments: list[dict[str, str]] = []
+        local_tokens = cached_exchange_token_map()
         for symbol in self.symbols[:1000]:
-            try:
-                item = self.groww.get_instrument_by_exchange_and_trading_symbol(
-                    exchange=self.groww.EXCHANGE_NSE,
-                    trading_symbol=symbol,
-                )
-                token = str(item.get("exchange_token") or "").strip() if isinstance(item, dict) else ""
-                if not token:
-                    continue
-                self._token_to_symbol[token] = symbol
-                instruments.append({"exchange": "NSE", "segment": "CASH", "exchange_token": token})
-            except Exception:
+            token = str(local_tokens.get(symbol) or "").strip()
+            if not token:
+                try:
+                    item = self.groww.get_instrument_by_exchange_and_trading_symbol(
+                        exchange=self.groww.EXCHANGE_NSE,
+                        trading_symbol=symbol,
+                    )
+                    token = str(item.get("exchange_token") or "").strip() if isinstance(item, dict) else ""
+                except Exception:
+                    token = ""
+            if not token:
                 continue
+            self._token_to_symbol[token] = symbol
+            instruments.append({"exchange": "NSE", "segment": "CASH", "exchange_token": token})
         return instruments
 
     def start(self) -> bool:
