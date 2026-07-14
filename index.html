@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Private AI Intraday Trader</title>
-  <meta name="description" content="Private Mac-first agentic intraday opportunity scanner with local AI review and controlled Groww execution dashboard">
+  <title>Private AI Trader — Mac Production</title>
+  <meta name="description" content="Private Mac-first production trading decision-support system with Groww market data, six-month pattern analysis, AI agents, local Ollama review, and controlled execution guardrails">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="mac.css">
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">Private AI Trader<small>Mac-first · Agentic scanner · Local AI · Groww</small></div>
+    <div class="brand">Private AI Trader<small>Mac production · 180-day pattern agent · Local AI · Groww</small></div>
     <nav class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
       <button data-section="evaluator">Trade Evaluator</button>
@@ -22,14 +22,14 @@
       <button data-section="brokers">Broker Connections</button>
       <button data-section="settings">Privacy & Settings</button>
     </nav>
-    <div class="side-note">Intraday first. Local AI is advisory and cannot override risk vetoes or place orders. Never enter broker passwords, OTPs, PINs, recovery codes, TOTP seeds, or API secrets into this page.</div>
+    <div class="side-note">Local-only decision support. The local AI is advisory and cannot override risk vetoes or place orders. Never enter broker passwords, OTPs, PINs, recovery codes, TOTP seeds, or API secrets into this page.</div>
   </aside>
 
   <main>
     <section id="dashboard" class="section active">
       <div class="topbar">
-        <div><h1>Intraday Opportunity Command Center</h1><p>The scanner ranks current opportunities continuously. A local Mac LLM can explain a signal, but deterministic guardrails remain authoritative.</p></div>
-        <div class="pills"><span>Agentic ranking</span><span>Local AI review</span><span>Fresh quote recheck</span><span>Risk veto</span><span>Human click to execute</span></div>
+        <div><h1>Intraday Opportunity Command Center</h1><p>The production scanner combines live Groww market data, six-month historical patterns, free news-risk checks, portfolio exposure, and deterministic risk controls. Local AI explains decisions but cannot override them.</p></div>
+        <div class="pills"><span>180-day pattern</span><span>Agentic ranking</span><span>Free news-risk check</span><span>Local AI review</span><span>Fresh quote recheck</span><span>Risk veto</span></div>
       </div>
 
       <div class="grid">
@@ -39,8 +39,8 @@
         <div class="card kpi"><label>Live execution</label><strong id="liveExecutionStatus" class="off">OFF</strong></div>
 
         <div class="card wide">
-          <div class="section-head"><div><h3>Ranked intraday opportunities</h3><p class="muted">Momentum, technical structure, liquidity, order flow, market regime, news context, portfolio exposure, and risk veto are combined before ranking. Use AI REVIEW for a private local explanation.</p></div><button id="scanNowButton" class="secondary" onclick="scanNow()">SCAN NOW</button></div>
-          <div id="recommendationBoard"><div class="muted">Waiting for the first market scan.</div></div>
+          <div class="section-head"><div><h3>Ranked intraday opportunities</h3><p class="muted">Momentum, technical structure, liquidity, order flow, market regime, six-month pattern, free news risk, portfolio exposure, and independent risk veto are combined before ranking.</p></div><button id="scanNowButton" class="secondary" onclick="scanNow()">SCAN NOW</button></div>
+          <div id="recommendationBoard"><div class="muted">Waiting for live production data.</div></div>
         </div>
 
         <div class="card narrow">
@@ -51,45 +51,45 @@
             <div><small>Universe size</small><b id="scannerUniverse">0</b></div>
             <div><small>Local AI</small><b id="localAiStatus" class="off">CHECKING…</b></div>
           </div>
-          <div class="warn"><b>Execution safeguard</b><br>The browser sends only the opportunity ID for execution. The backend re-runs the agents and blocks stale, changed, chased, or out-of-session trades. Local AI cannot bypass this.</div>
+          <div class="warn"><b>Execution safeguard</b><br>The browser sends only the opportunity ID. The backend re-runs live agents and blocks stale, changed, chased, out-of-session, news-risk, or six-month-pattern failures. Local AI cannot bypass this.</div>
         </div>
 
         <div class="card wide"><h3>Live positions / holdings</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg price</th><th>Live value</th></tr></thead><tbody id="dashboardPositions"></tbody></table></div></div>
         <div class="card narrow"><h3>IST trading routine</h3><div id="routineClock" class="decision wait"><strong>--:--:--</strong><span>Loading Asia/Kolkata time…</span></div><div id="routineStatus" class="warn"><b>Routine loading…</b></div></div>
 
-        <div class="card wide"><h3>Market news agent</h3><div id="liveNews"><div class="muted">News agent is neutral until a configured provider is connected.</div></div></div>
-        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Market-wide coarse scan</li><li>Top candidates deep-scanned</li><li>Multi-agent ensemble ranks them</li><li>Risk agent can veto any BUY</li><li>Optional local AI explains the snapshot</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
+        <div class="card wide"><h3>Market news-risk agent</h3><div id="liveNews"><div class="muted">The production extension performs free GDELT news-risk checks for ranked candidates. No paid news API is required.</div></div></div>
+        <div class="card narrow"><h3>Signal lifecycle</h3><ol><li>Liquid NSE universe coarse scan</li><li>Top candidates deep-scanned</li><li>180-day pattern agent scores structure</li><li>Free news-risk check runs</li><li>Multi-agent ensemble ranks candidates</li><li>Risk agent can veto any BUY</li><li>Optional local AI explains the snapshot</li><li>BUY alert expires automatically</li><li>You choose BUY or SKIP</li></ol></div>
       </div>
     </section>
 
     <section id="evaluator" class="section">
-      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Manually inspect a proposed BUY or SELL setup against your local guardrails.</p></div></div>
+      <div class="topbar"><div><h1>Trade Evaluator</h1><p>Enter real current values and inspect a proposed BUY or SELL setup against your local guardrails. No sample trade data is preloaded.</p></div></div>
       <div class="grid two">
         <div class="card">
           <div class="form-grid">
-            <div><label>Symbol</label><input id="symbol" value="RELIANCE"></div>
+            <div><label>Symbol</label><input id="symbol" autocomplete="off"></div>
             <div><label>Market</label><select id="market"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div>
             <div><label>Direction</label><select id="direction"><option value="long">Long</option><option value="short">Short</option></select></div>
-            <div><label>Current price</label><input id="currentPrice" type="number" step="0.01" value="101"></div>
-            <div><label>Reference price</label><input id="referencePrice" type="number" step="0.01" value="100"></div>
-            <div><label>Entry price</label><input id="entryPrice" type="number" step="0.01" value="101"></div>
-            <div><label>Stop loss</label><input id="stopLoss" type="number" step="0.01" value="99"></div>
-            <div><label>Target price</label><input id="targetPrice" type="number" step="0.01" value="105"></div>
-            <div><label>Quantity</label><input id="quantity" type="number" value="10"></div>
-            <div><label>Portfolio value</label><input id="portfolioValue" type="number" value="100000"></div>
-            <div><label>Quote age (seconds)</label><input id="quoteAge" type="number" value="0"></div>
-            <div><label>Confirmation sources</label><input id="sourceCount" type="number" value="2"></div>
+            <div><label>Current price</label><input id="currentPrice" type="number" step="0.01"></div>
+            <div><label>Reference price</label><input id="referencePrice" type="number" step="0.01"></div>
+            <div><label>Entry price</label><input id="entryPrice" type="number" step="0.01"></div>
+            <div><label>Stop loss</label><input id="stopLoss" type="number" step="0.01"></div>
+            <div><label>Target price</label><input id="targetPrice" type="number" step="0.01"></div>
+            <div><label>Quantity</label><input id="quantity" type="number"></div>
+            <div><label>Portfolio value</label><input id="portfolioValue" type="number"></div>
+            <div><label>Quote age (seconds)</label><input id="quoteAge" type="number"></div>
+            <div><label>Confirmation sources</label><input id="sourceCount" type="number"></div>
           </div>
           <div class="checks">
-            <label><input id="newsChecked" type="checkbox" checked> News checked</label>
-            <label><input id="technicalChecked" type="checkbox" checked> Technical checked</label>
-            <label><input id="portfolioChecked" type="checkbox" checked> Portfolio checked</label>
+            <label><input id="newsChecked" type="checkbox"> News checked</label>
+            <label><input id="technicalChecked" type="checkbox"> Technical checked</label>
+            <label><input id="portfolioChecked" type="checkbox"> Portfolio checked</label>
             <label><input id="liveRequested" type="checkbox"> Request live execution</label>
           </div>
-          <div class="actions"><button onclick="evaluateTrade()">Evaluate trade</button><button class="secondary" onclick="loadValid()">Load valid sample</button><button class="secondary" onclick="loadRejected()">Load rejected sample</button></div>
+          <div class="actions"><button onclick="evaluateTrade()">Evaluate trade</button></div>
         </div>
         <div class="card">
-          <div id="decisionBox" class="decision wait"><strong>READY</strong><span id="decisionText">Enter a setup and evaluate it.</span></div>
+          <div id="decisionBox" class="decision wait"><strong>READY</strong><span id="decisionText">Enter real current values and evaluate the setup.</span></div>
           <div class="metrics"><div><label>Reward / Risk</label><strong id="rr">—</strong></div><div><label>Risk %</label><strong id="riskPct">—</strong></div><div><label>Chase %</label><strong id="chasePct">—</strong></div><div><label>Position risk</label><strong id="positionRisk">—</strong></div></div>
           <h4>Reasons / checks</h4><ul id="reasons"><li>No evaluation yet.</li></ul>
         </div>
@@ -97,20 +97,20 @@
     </section>
 
     <section id="gtt" class="section">
-      <div class="topbar"><div><h1>GTT Planner</h1><p>Plan an entry, target, and stop locally. This page never submits a broker GTT order and every saved plan requires fresh validation before future execution.</p></div></div>
+      <div class="topbar"><div><h1>GTT Planner</h1><p>Plan an entry, target, and stop locally. Saved plans require fresh live validation before any future broker action.</p></div></div>
       <div class="grid two">
         <div class="card">
           <h3>Create local GTT plan</h3>
           <div class="form-grid">
-            <div><label>Symbol</label><input id="gttSymbol" placeholder="RELIANCE"></div>
+            <div><label>Symbol</label><input id="gttSymbol" autocomplete="off"></div>
             <div><label>Market</label><select id="gttMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div>
             <div><label>Direction</label><select id="gttDirection"><option value="long">Long / Buy</option><option value="short">Short / Sell</option></select></div>
             <div><label>Entry price</label><input id="gttEntry" type="number" step="0.01"></div>
             <div><label>Stop loss</label><input id="gttStop" type="number" step="0.01"></div>
             <div><label>Target price</label><input id="gttTarget" type="number" step="0.01"></div>
             <div><label>Quantity</label><input id="gttQty" type="number"></div>
-            <div><label>Portfolio value</label><input id="gttCapital" type="number" value="500000"></div>
-            <div class="full-field"><label>Plan note</label><input id="gttNote" placeholder="Why this level? Support, breakout, event, or invalidation note"></div>
+            <div><label>Portfolio value</label><input id="gttCapital" type="number"></div>
+            <div class="full-field"><label>Plan note</label><input id="gttNote" placeholder="Support, breakout, event, or invalidation rationale"></div>
           </div>
           <div class="actions"><button onclick="saveGttPlan()">Validate & save locally</button><button class="secondary" onclick="clearGttForm()">Clear</button></div>
           <div id="gttValidation" class="warn"><b>No GTT plan evaluated yet.</b></div>
@@ -118,30 +118,30 @@
         <div class="card">
           <h3>Saved local GTT plans</h3>
           <div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Direction</th><th>Entry</th><th>Target</th><th>Stop</th><th>R:R</th><th>Risk</th><th></th></tr></thead><tbody id="gttRows"></tbody></table></div>
-          <div class="warn"><b>Broker boundary</b><br>Saved plans stay in this browser. No broker GTT submission is enabled.</div>
+          <div class="warn"><b>Broker boundary</b><br>Saved plans remain local. They are planning records, not automatic live broker orders.</div>
         </div>
       </div>
     </section>
 
     <section id="portfolio" class="section">
-      <div class="topbar"><div><h1>Portfolio</h1><p>Groww holdings take priority when the backend is connected; local entries remain available for testing.</p></div></div>
-      <div class="grid two"><div class="card"><h3>Add local position</h3><div class="form-grid"><div><label>Symbol</label><input id="pSymbol" placeholder="RELIANCE"></div><div><label>Market</label><select id="pMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div><div><label>Quantity</label><input id="pQty" type="number"></div><div><label>Average price</label><input id="pAvg" type="number" step="0.01"></div></div><div class="actions"><button onclick="addPosition()">Add position</button></div></div><div class="card"><h3>Saved local positions</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg</th><th>Value</th><th></th></tr></thead><tbody id="portfolioRows"></tbody></table></div></div></div>
+      <div class="topbar"><div><h1>Portfolio</h1><p>Connected Groww holdings take priority. Manual local entries are available only for assets not represented by the connected broker feed.</p></div></div>
+      <div class="grid two"><div class="card"><h3>Add local position</h3><div class="form-grid"><div><label>Symbol</label><input id="pSymbol" autocomplete="off"></div><div><label>Market</label><select id="pMarket"><option>NSE</option><option>BSE</option><option>NASDAQ</option><option>NYSE</option></select></div><div><label>Quantity</label><input id="pQty" type="number"></div><div><label>Average price</label><input id="pAvg" type="number" step="0.01"></div></div><div class="actions"><button onclick="addPosition()">Add position</button></div></div><div class="card"><h3>Saved local positions</h3><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Market</th><th>Qty</th><th>Avg</th><th>Value</th><th></th></tr></thead><tbody id="portfolioRows"></tbody></table></div></div></div>
     </section>
 
     <section id="journal" class="section">
-      <div class="topbar"><div><h1>Trade Journal & Missed-Trade Review</h1><p>Capture the reason behind entries, skips, missed moves, and exits. Regret must become a process improvement—not a chase trade.</p></div></div>
+      <div class="topbar"><div><h1>Trade Journal & Missed-Trade Review</h1><p>Capture entries, skips, missed moves, and exits. Regret must become a process improvement—not a chase trade.</p></div></div>
       <div class="grid two">
         <div class="card">
           <h3>Add journal entry</h3>
           <div class="form-grid">
-            <div><label>Symbol</label><input id="journalSymbol" placeholder="TRENT"></div>
+            <div><label>Symbol</label><input id="journalSymbol" autocomplete="off"></div>
             <div><label>Outcome</label><select id="journalOutcome"><option>Missed</option><option>Skipped</option><option>Entered</option><option>Closed</option><option>Rule blocked</option></select></div>
             <div><label>Rule / reason</label><input id="journalRule" placeholder="Anti-chase, stale quote, waited for revalidation…"></div>
             <div><label>Market context</label><input id="journalContext" placeholder="Gap-up, weak index, news event, opening volatility…"></div>
             <div class="full-field"><label>Lesson / note</label><input id="journalNote" placeholder="What should change next time without weakening risk controls?"></div>
           </div>
           <div class="actions"><button onclick="saveJournalEntry()">Save locally</button></div>
-          <div class="warn"><b>Trent rule</b><br>A missed move must be reviewed, but it must never be used as justification to chase beyond the configured limit.</div>
+          <div class="warn"><b>Missed-trade rule</b><br>A missed move must be reviewed, but it must never justify chasing beyond the configured limit.</div>
         </div>
         <div class="card">
           <h3>Recent journal entries</h3>
@@ -151,18 +151,18 @@
     </section>
 
     <section id="brokers" class="section">
-      <div class="topbar"><div><h1>Broker Connections</h1><p>Groww integration runs in the backend. No broker credentials are stored in this frontend.</p></div></div>
+      <div class="topbar"><div><h1>Broker Connections</h1><p>Groww integration runs only in the backend. Production credentials are stored in macOS Keychain and never in frontend JavaScript.</p></div></div>
       <div class="card" id="brokerCards"></div>
-      <div id="brokerInfo" class="warn">Select a broker to review the connection approach.</div>
+      <div id="brokerInfo" class="warn">Checking Groww production connection.</div>
     </section>
 
     <section id="settings" class="section">
       <div class="topbar"><div><h1>Privacy & Settings</h1><p>Control local evaluator guardrails, the local Mac AI reviewer, and review the canonical rule contract.</p></div></div>
       <div class="grid two">
         <div class="card"><h3>Trading guardrails</h3><div class="form-grid"><div><label>Max risk per trade (%)</label><input id="sRisk" type="number" step="0.1"></div><div><label>Minimum reward/risk</label><input id="sRR" type="number" step="0.1"></div><div><label>Max chase (%)</label><input id="sChase" type="number" step="0.1"></div><div><label>Max quote age (seconds)</label><input id="sQuoteAge" type="number"></div><div><label>Minimum confirmation sources</label><input id="sSources" type="number"></div></div><div class="actions"><button onclick="saveSettings()">Save locally</button></div></div>
-        <div class="card"><h3>Local AI reviewer (Ollama)</h3><p class="muted">The Mac bootstrap selects a model based on available memory. The review runs locally and cannot change scanner decisions or execute trades.</p><div class="form-grid"><div><label>Model</label><input id="aiModel" value="gpt-oss:20b"></div><div><label>Ollama URL</label><input id="aiBaseUrl" value="http://127.0.0.1:11434"></div></div><div class="actions"><button onclick="saveLocalAiSettings()">Save & test</button><button class="secondary" onclick="checkLocalAi(true)">Test connection</button></div><div id="localAiSettingsStatus" class="warn"><b>Checking local AI…</b></div></div>
+        <div class="card"><h3>Local AI reviewer (Ollama)</h3><p class="muted">The Mac bootstrap selects a free local model based on available memory. The review runs on this Mac and cannot change scanner decisions or execute trades.</p><div class="form-grid"><div><label>Model</label><input id="aiModel" value="qwen3:8b"></div><div><label>Ollama URL</label><input id="aiBaseUrl" value="http://127.0.0.1:11434"></div></div><div class="actions"><button onclick="saveLocalAiSettings()">Save & test</button><button class="secondary" onclick="checkLocalAi(true)">Test connection</button></div><div id="localAiSettingsStatus" class="warn"><b>Checking local AI…</b></div></div>
         <div class="card"><h3>Canonical rules contract</h3><div id="rulesContractStatus" class="warn"><b>Loading config/trading_rules.json…</b></div><div id="researchSourceSummary" class="muted"></div></div>
-        <div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins.</li><li>Use official broker APIs only.</li><li>Store credentials in backend/.env, never in browser JavaScript or GitHub.</li><li>Local AI receives only the selected trade snapshot—not broker credentials.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearAllPrivateLocalData()">Clear all local data</button></div></div>
+        <div class="card"><h3>Security rules</h3><ul><li>Never store passwords, OTPs, PINs, TOTP seeds, recovery codes, or bank logins in the site or repository.</li><li>Use official broker APIs only.</li><li>Store Groww API credentials in macOS Keychain.</li><li>Local AI receives only trade-analysis snapshots—not broker credentials.</li><li>Keep order placement behind backend guardrails and human confirmation.</li><li>Rotate any credential exposed outside its intended secret store.</li></ul><div class="actions"><button class="danger" onclick="clearAllPrivateLocalData()">Clear all browser-local data</button></div></div>
       </div>
     </section>
   </main>
@@ -187,5 +187,6 @@
 <script src="local.runtime.js" onerror="window.PAI_RUNTIME=window.PAI_RUNTIME||{}"></script>
 <script src="app.js"></script>
 <script src="features.js"></script>
+<script src="production.js"></script>
 </body>
 </html>
