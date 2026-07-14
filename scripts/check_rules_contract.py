@@ -36,7 +36,7 @@ def main() -> None:
     env = parse_env(ENV_EXAMPLE)
     requirements = REQUIREMENTS.read_text(encoding="utf-8")
 
-    require(rules.get("schema_version") == "2.0.0", "rules schema must be Production 2.0")
+    require(rules.get("schema_version") == "2.1.0", "rules schema must be Production 2.1")
     require(rules["timezone"] == "Asia/Kolkata", "timezone must remain Asia/Kolkata")
 
     execution = rules["execution"]
@@ -55,6 +55,31 @@ def main() -> None:
 
     required_checks = {"news", "technical_setup", "portfolio_exposure", "six_month_pattern"}
     require(required_checks.issubset(set(rules["mandatory_checks"])), "mandatory checks are incomplete")
+
+    universe = rules["market_universe"]
+    require(universe["scope"] == "all tradable NSE CASH equities", "scanner scope must cover all tradable NSE cash equities")
+    require(universe["include_penny_stocks_for_discovery"] is True, "penny stocks must remain included for discovery")
+    require(universe["include_sme_equities_for_discovery"] is True, "SME equities must remain included for discovery")
+    require(universe["full_universe_rotation_enabled"] is True, "full NSE universe rotation must remain enabled")
+    require(int(universe["rest_batch_size"]) <= 50, "REST batches must respect Groww's 50-instrument call size")
+    require(int(universe["feed_priority_subscription_cap"]) <= 1000, "feed priority cap must respect Groww's 1000-subscription limit")
+    require(universe["coarse_prediction_is_not_actionable_buy"] is True, "coarse full-universe predictions must not become blind BUY instructions")
+    require(universe["deep_revalidation_required_before_actionable_signal"] is True, "deep revalidation is required before actionable signals")
+
+    objective = rules["capital_objective"]
+    require(int(objective["current_starting_capital_inr"]) == 20000, "current starting capital objective must be ₹20,000")
+    require(int(objective["stretch_target_inr"]) == 100000, "stretch target must be ₹1,00,000")
+    require(int(objective["target_horizon_calendar_days"]) == 30, "stretch target horizon must remain 30 calendar days")
+    require(objective["target_is_guarantee"] is False, "the stretch target must never be represented as guaranteed")
+    require(objective["no_loss_guarantee"] is False, "the system must not promise zero losses")
+    require(objective["capital_preservation_has_priority_over_target"] is True, "capital preservation must outrank the stretch target")
+    require(objective["never_relax_risk_rules_to_hit_target"] is True, "risk rules must never be weakened to chase the target")
+
+    legal = rules["legal_information_policy"]
+    require(legal["public_lawful_information_only"] is True, "only lawful public information may be used")
+    require(legal["reject_unpublished_price_sensitive_information"] is True, "UPSI must be rejected")
+    require(legal["no_insider_trading"] is True, "insider trading must be prohibited")
+    require(legal["no_market_manipulation"] is True, "market manipulation must be prohibited")
 
     scanner = rules["scanner"]
     require(scanner["dynamic_universe"] is True, "scanner must remain dynamic")
@@ -120,6 +145,10 @@ def main() -> None:
         "DEEP_SCAN_CANDIDATES": scanner["deep_scan_candidates"],
         "MAX_DISPLAY_OPPORTUNITIES": scanner["max_display_opportunities"],
         "SIGNAL_VALID_SECONDS": execution["signal_valid_seconds"],
+        "BROAD_SCAN_BATCH_SIZE": universe["broad_scan_batch_size"],
+        "STARTING_CAPITAL_INR": objective["current_starting_capital_inr"],
+        "STRETCH_TARGET_INR": objective["stretch_target_inr"],
+        "TARGET_HORIZON_DAYS": objective["target_horizon_calendar_days"],
         "NEWS_PRIORITY_INTERVAL_SECONDS": continuous["priority_news_interval_seconds"],
         "NEWS_BROAD_INTERVAL_SECONDS": continuous["broad_news_rotation_interval_seconds"],
         "MATERIAL_PRICE_MOVE_PCT": continuous["material_price_move_trigger_pct"],
@@ -133,6 +162,8 @@ def main() -> None:
         require(env_bool(env, key), f"{key} must remain enabled in the production example")
 
     require(env.get("APP_ENV") == "production", "example environment must default to production")
+    require(env.get("SCANNER_UNIVERSE_MODE") == "full_nse_equity", "production example must default to the full NSE equity universe")
+    require(float(env.get("DEFAULT_PORTFOLIO_VALUE", "0")) == 20000.0, "default portfolio value must reflect the current ₹20,000 Groww balance")
     require(env.get("OLLAMA_EMBEDDING_MODEL") == "embeddinggemma", "default embedding model must remain local embeddinggemma")
     require(env.get("GROWW_CREDENTIAL_SOURCE") == "keychain", "production Groww credential source must be Keychain")
     require(env_bool(env, "TRADING_PROFILE_ENABLED"), "trading profile should be enabled")
