@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -67,7 +67,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -128,7 +128,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -172,7 +172,7 @@ jobs:
     needs: [test-linux, test-macos, dependency-audit]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Build clean source ZIP
         run: |
           git archive --format=zip --prefix=Suhas-Private-AI-Trader/ HEAD -o Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip
