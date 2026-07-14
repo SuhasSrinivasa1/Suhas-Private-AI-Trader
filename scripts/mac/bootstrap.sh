@@ -9,10 +9,8 @@ warn() { printf '\n\033[1;33m[mac-setup]\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31m[mac-setup]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == "Darwin" ]] || fail "This bootstrap is for macOS only."
-
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 (( MACOS_MAJOR >= 14 )) || fail "macOS 14 Sonoma or newer is required. Current version: $(sw_vers -productVersion)"
-
 info "Detected $(sw_vers -productName) $(sw_vers -productVersion) on $(uname -m)."
 
 if ! xcode-select -p >/dev/null 2>&1; then
@@ -30,13 +28,11 @@ if ! command -v brew >/dev/null 2>&1; then
   info "Installing Homebrew from the official installer."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
-
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 elif [[ -x /usr/local/bin/brew ]]; then
   eval "$(/usr/local/bin/brew shellenv)"
 fi
-
 command -v brew >/dev/null 2>&1 || fail "Homebrew is installed but is not available in PATH."
 
 BREW_PREFIX="$(brew --prefix)"
@@ -48,7 +44,6 @@ fi
 
 info "Installing reproducible Mac dependencies from Brewfile."
 brew bundle --file="$ROOT_DIR/Brewfile"
-
 PYTHON_BIN="$(brew --prefix python@3.12)/bin/python3.12"
 [[ -x "$PYTHON_BIN" ]] || fail "Homebrew Python 3.12 was not found."
 
@@ -70,7 +65,6 @@ mkdir -p "$HOME/.ollama"
 import json
 import pathlib
 import sys
-
 path = pathlib.Path(sys.argv[1])
 try:
     data = json.loads(path.read_text()) if path.exists() else {}
@@ -103,6 +97,8 @@ fi
 
 info "Detected approximately ${MEM_GB} GB unified/system memory. Selected local model: ${MODEL}"
 ollama pull "$MODEL"
+info "Installing the local semantic-memory embedding model: embeddinggemma"
+ollama pull embeddinggemma
 
 cat > "$ROOT_DIR/local.runtime.json" <<EOF
 {
@@ -111,10 +107,9 @@ cat > "$ROOT_DIR/local.runtime.json" <<EOF
   "backendBaseUrl": "http://127.0.0.1:8000",
   "frontendBaseUrl": "http://127.0.0.1:8080",
   "timezone": "Asia/Kolkata",
-  "release": "1.0.0"
+  "release": "2.0.0"
 }
 EOF
-
 cat > "$ROOT_DIR/local.runtime.js" <<EOF
 window.PAI_RUNTIME = {
   ollamaBaseUrl: "http://127.0.0.1:11434",
@@ -122,14 +117,13 @@ window.PAI_RUNTIME = {
   backendBaseUrl: "http://127.0.0.1:8000",
   frontendBaseUrl: "http://127.0.0.1:8080",
   timezone: "Asia/Kolkata",
-  release: "1.0.0"
+  release: "2.0.0"
 };
 EOF
 
 "$BACKEND_DIR/.venv/bin/python" - "$BACKEND_DIR/.env" "$MODEL" <<'PY'
 from pathlib import Path
 import sys
-
 path = Path(sys.argv[1])
 model = sys.argv[2]
 updates = {
@@ -137,6 +131,10 @@ updates = {
     "GROWW_CREDENTIAL_SOURCE": "keychain",
     "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
     "OLLAMA_MODEL": model,
+    "OLLAMA_EMBEDDING_MODEL": "embeddinggemma",
+    "ENABLE_GROWW_FEED": "true",
+    "ENABLE_AUTO_LLM": "true",
+    "ENABLE_SEMANTIC_MEMORY": "true",
     "FREE_NEWS_ENABLED": "true",
     "NEWS_REQUIRED_FOR_BUY": "true",
 }
@@ -158,7 +156,6 @@ path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
 
 chmod +x "$ROOT_DIR"/*.command "$ROOT_DIR"/scripts/mac/*.sh "$ROOT_DIR"/scripts/*.sh 2>/dev/null || true
-
 info "Running the full local verification suite."
 bash "$ROOT_DIR/scripts/verify.sh"
 
@@ -171,7 +168,7 @@ cat <<EOF
 
 Mac production setup completed successfully.
 
-Release:              1.0.0
+Release:              2.0.0
 Selected local model: $MODEL
 Repository folder:    $ROOT_DIR
 Groww secrets:        macOS Keychain only
