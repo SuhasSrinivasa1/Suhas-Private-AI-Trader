@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "2.0.0",
   "timezone": "Asia/Kolkata",
   "markets": {
     "supported_manual_evaluation": ["NSE", "BSE", "NASDAQ", "NYSE"],
@@ -15,7 +15,10 @@
     "fresh_live_quote_required": true,
     "max_quote_age_seconds": 120,
     "signal_valid_seconds": 20,
-    "never_auto_execute_from_llm": true
+    "never_auto_execute_from_llm": true,
+    "automatic_order_execution": false,
+    "sell_requires_human_confirmation": true,
+    "buy_requires_human_confirmation": true
   },
   "risk": {
     "max_risk_per_trade_pct": 1.0,
@@ -35,7 +38,13 @@
     "max_display_opportunities": 8,
     "dynamic_universe": true,
     "fixed_watchlist_only": false,
-    "agents": ["momentum", "technical_structure", "liquidity", "order_flow", "market_regime", "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto"]
+    "agents": [
+      "momentum", "technical_structure", "liquidity", "order_flow", "market_regime",
+      "news_context", "six_month_pattern", "portfolio_exposure", "risk_veto",
+      "outcome_learning", "exit_management", "provider_health"
+    ],
+    "event_driven_live_feed": true,
+    "rest_scan_is_fallback_and_deep_revalidation": true
   },
   "daily_recommendations": {
     "enabled": true,
@@ -78,7 +87,7 @@
   },
   "news_policy": {
     "free_provider_enabled": true,
-    "provider": "GDELT DOC 2.0",
+    "provider": "GDELT DOC 2.0 with best-effort Google News RSS failover",
     "fail_closed_for_new_buy_when_unavailable": true,
     "never_invent_headlines_or_sentiment": true,
     "minimum_independent_sources": 2
@@ -95,5 +104,52 @@
     "macos_keychain_for_groww_secrets": true,
     "local_llm_advisory_only": true,
     "local_llm_must_not_receive_broker_secrets": true
+  },
+  "continuous_intelligence": {
+    "enabled": true,
+    "browser_refresh_required": false,
+    "groww_callback_feed": true,
+    "max_feed_subscriptions": 1000,
+    "priority_news_interval_seconds": 15,
+    "broad_news_rotation_interval_seconds": 60,
+    "material_price_move_trigger_pct": 0.12,
+    "automatic_local_llm_on_material_events": true,
+    "llm_not_called_on_every_tick": true,
+    "reason": "Use provider-supported push events and material-change triggers instead of wasteful millisecond polling."
+  },
+  "local_memory": {
+    "enabled": true,
+    "database": "SQLite WAL",
+    "macos_path": "~/Library/Application Support/SuhasPrivateAITrader/trader.db",
+    "stores": ["price_samples", "patterns", "news", "news_embeddings", "signals", "signal_outcomes", "llm_analyses", "provider_health", "exit_signals"],
+    "semantic_memory": true,
+    "embedding_provider": "local Ollama",
+    "embedding_model_default": "embeddinggemma",
+    "daily_backup_after_ist": "16:00",
+    "price_retention_days": 30,
+    "news_retention_days": 365,
+    "llm_analysis_retention_days": 180
+  },
+  "learning": {
+    "recommendation_outcome_tracking": true,
+    "horizons_minutes": [15, 30, 60],
+    "adaptive_agent_weights": true,
+    "minimum_resolved_outcomes_before_adaptation": 10,
+    "weight_multiplier_bounds": [0.75, 1.25],
+    "risk_rules_never_adapt_automatically": true
+  },
+  "sell_exit_management": {
+    "enabled": true,
+    "automatic_sell_orders": false,
+    "human_confirmation_required": true,
+    "fresh_groww_price_required_before_order": true,
+    "available_quantity_check_required": true,
+    "profit_review_levels_pct": [1.0, 3.0, 5.0],
+    "five_pct_trim_planning_pct": 15.0
+  },
+  "provider_health": {
+    "enabled": true,
+    "providers": ["groww_feed", "groww_rest", "groww_history", "free_news", "ollama_embeddings", "ollama_chat"],
+    "fail_closed_for_missing_buy_dependencies": true
   }
 }
