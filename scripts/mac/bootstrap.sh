@@ -21,7 +21,7 @@ if ! xcode-select -p >/dev/null 2>&1; then
   cat <<'EOF'
 Finish the Apple Command Line Tools installation, then run this command again:
 
-  bash scripts/mac/bootstrap.sh
+  bash INSTALL_MAC.command
 EOF
   exit 2
 fi
@@ -52,16 +52,16 @@ brew bundle --file="$ROOT_DIR/Brewfile"
 PYTHON_BIN="$(brew --prefix python@3.12)/bin/python3.12"
 [[ -x "$PYTHON_BIN" ]] || fail "Homebrew Python 3.12 was not found."
 
-info "Creating the isolated Python environment."
+info "Creating the isolated Python production environment."
 "$PYTHON_BIN" -m venv "$BACKEND_DIR/.venv"
 "$BACKEND_DIR/.venv/bin/python" -m pip install --upgrade pip wheel
 "$BACKEND_DIR/.venv/bin/python" -m pip install -r "$BACKEND_DIR/requirements-dev.txt"
 
 if [[ ! -f "$BACKEND_DIR/.env" ]]; then
-  info "Creating backend/.env from the safe template."
+  info "Creating backend/.env from the safe production template."
   cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
 else
-  warn "backend/.env already exists; it was not overwritten."
+  warn "backend/.env already exists; it was preserved."
 fi
 
 info "Configuring Ollama for local-only operation."
@@ -82,11 +82,8 @@ PY
 
 info "Starting the local Ollama service."
 brew services start ollama >/dev/null
-
-for _ in {1..30}; do
-  if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    break
-  fi
+for _ in {1..40}; do
+  if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then break; fi
   sleep 1
 done
 curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || fail "Ollama did not become ready on 127.0.0.1:11434."
@@ -94,7 +91,6 @@ curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || fail "Ollama did no
 MEM_BYTES="$(sysctl -n hw.memsize)"
 MEM_GB=$(( MEM_BYTES / 1024 / 1024 / 1024 ))
 ARCH="$(uname -m)"
-
 if [[ -n "${AI_MODEL:-}" ]]; then
   MODEL="$AI_MODEL"
 elif [[ "$ARCH" == "arm64" && "$MEM_GB" -ge 24 ]]; then
@@ -114,7 +110,8 @@ cat > "$ROOT_DIR/local.runtime.json" <<EOF
   "ollamaModel": "$MODEL",
   "backendBaseUrl": "http://127.0.0.1:8000",
   "frontendBaseUrl": "http://127.0.0.1:8080",
-  "timezone": "Asia/Kolkata"
+  "timezone": "Asia/Kolkata",
+  "release": "1.0.0"
 }
 EOF
 
@@ -124,28 +121,69 @@ window.PAI_RUNTIME = {
   ollamaModel: "$MODEL",
   backendBaseUrl: "http://127.0.0.1:8000",
   frontendBaseUrl: "http://127.0.0.1:8080",
-  timezone: "Asia/Kolkata"
+  timezone: "Asia/Kolkata",
+  release: "1.0.0"
 };
 EOF
 
-chmod +x "$ROOT_DIR"/scripts/mac/*.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/run-mac.command 2>/dev/null || true
+"$BACKEND_DIR/.venv/bin/python" - "$BACKEND_DIR/.env" "$MODEL" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+model = sys.argv[2]
+updates = {
+    "APP_ENV": "production",
+    "GROWW_CREDENTIAL_SOURCE": "keychain",
+    "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+    "OLLAMA_MODEL": model,
+    "FREE_NEWS_ENABLED": "true",
+    "NEWS_REQUIRED_FOR_BUY": "true",
+}
+lines = path.read_text(encoding="utf-8").splitlines()
+seen = set()
+out = []
+for line in lines:
+    if "=" in line and not line.lstrip().startswith("#"):
+        key = line.split("=", 1)[0].strip()
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
+            continue
+    out.append(line)
+for key, value in updates.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+PY
+
+chmod +x "$ROOT_DIR"/*.command "$ROOT_DIR"/scripts/mac/*.sh "$ROOT_DIR"/scripts/*.sh 2>/dev/null || true
 
 info "Running the full local verification suite."
 bash "$ROOT_DIR/scripts/verify.sh"
 
+if [[ "${INSTALL_DAILY_SCHEDULER:-true}" == "true" ]]; then
+  info "Installing the daily 07:45 local scheduler and login start hook."
+  bash "$ROOT_DIR/scripts/mac/install_daily_scheduler.sh"
+fi
+
 cat <<EOF
 
-Mac setup completed successfully.
+Mac production setup completed successfully.
 
+Release:              1.0.0
 Selected local model: $MODEL
-Repository:           $ROOT_DIR
-Secrets file:         $BACKEND_DIR/.env  (local only; never committed)
+Repository folder:    $ROOT_DIR
+Groww secrets:        macOS Keychain only
+Live execution:       OFF by default
 
-Next:
-  1. Add broker API credentials only to backend/.env when you are ready.
-  2. Keep live execution disabled until paper-mode validation is complete.
-  3. Start the app with:
+Next mandatory step:
+  bash CONFIGURE_GROWW.command
 
-       bash scripts/mac/start.sh
+After Groww read-only verification succeeds:
+  bash START_TRADER.command
+
+Open:
+  http://127.0.0.1:8080
 
 EOF
