@@ -89,7 +89,7 @@ else
   warn "embeddinggemma is not installed; semantic news memory will remain degraded."
 fi
 if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then pass "FastAPI backend is reachable."; else warn "FastAPI backend is not currently running."; fi
-if curl -fsS http://127.0.0.1:8000/api/production/status >/dev/null 2>&1; then pass "Production 2.0 intelligence status endpoint is reachable."; else warn "Production 2.0 status endpoint is not currently reachable."; fi
+if curl -fsS http://127.0.0.1:8000/api/production24/status >/dev/null 2>&1; then pass "Production 2.4 status endpoint is reachable."; else warn "Production 2.4 status endpoint is not currently reachable."; fi
 if curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1; then pass "Frontend is reachable."; else warn "Frontend is not currently running."; fi
 
 if [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
