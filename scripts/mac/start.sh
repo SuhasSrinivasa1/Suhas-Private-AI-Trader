@@ -21,10 +21,11 @@ wait_for_url http://127.0.0.1:8000/health Backend || { tail -n 120 "$LOG_DIR/bac
 wait_for_url http://127.0.0.1:8080 Frontend || { tail -n 80 "$LOG_DIR/frontend.log" || true; fail "Frontend failed to start."; }
 $OPEN_BROWSER && open http://127.0.0.1:8080
 cat <<EOF
-Private AI Trader Production 2.4 is running.
+Private AI Trader Production 2.4.1 is running.
 Frontend: http://127.0.0.1:8080
 Backend: http://127.0.0.1:8000/health
 Research: http://127.0.0.1:8000/api/production24/status
+Duty: http://127.0.0.1:8000/api/duty/status
 Calls: http://127.0.0.1:8000/api/calls-results
 Logs: $LOG_DIR
 EOF
