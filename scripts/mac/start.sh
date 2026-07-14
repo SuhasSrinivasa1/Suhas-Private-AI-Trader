@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
 LOG_DIR="$RUNTIME_DIR/logs"
+OPEN_BROWSER=true
+[[ "${1:-}" == "--no-open" ]] && OPEN_BROWSER=false
 mkdir -p "$LOG_DIR"
 
 info() { printf '\033[1;34m[mac-start]\033[0m %s\n' "$*"; }
@@ -21,7 +23,7 @@ fi
 wait_for_url() {
   local url="$1"
   local name="$2"
-  for _ in {1..40}; do
+  for _ in {1..50}; do
     if curl -fsS "$url" >/dev/null 2>&1; then
       info "$name is ready."
       return 0
@@ -37,10 +39,11 @@ start_backend() {
     info "Backend already running with PID $(cat "$pid_file")."
     return
   fi
-  info "Starting FastAPI backend on 127.0.0.1:8000."
+  rm -f "$pid_file"
+  info "Starting production FastAPI backend on 127.0.0.1:8000."
   (
     cd "$BACKEND_DIR"
-    nohup .venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 \
+    nohup .venv/bin/python -m uvicorn production_main:app --host 127.0.0.1 --port 8000 \
       > "$LOG_DIR/backend.log" 2>&1 &
     echo $! > "$pid_file"
   )
@@ -52,6 +55,7 @@ start_frontend() {
     info "Frontend already running with PID $(cat "$pid_file")."
     return
   fi
+  rm -f "$pid_file"
   info "Starting local frontend on 127.0.0.1:8080."
   (
     cd "$ROOT_DIR"
@@ -65,7 +69,7 @@ start_backend
 start_frontend
 
 if ! wait_for_url "http://127.0.0.1:8000/health" "Backend"; then
-  tail -n 80 "$LOG_DIR/backend.log" || true
+  tail -n 120 "$LOG_DIR/backend.log" || true
   fail "Backend failed to start."
 fi
 
@@ -77,19 +81,22 @@ fi
 if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   info "Local Ollama API is ready."
 else
-  info "Ollama is not ready; the trading app will still run without AI REVIEW."
+  info "Ollama is not ready; deterministic trading features will still run, but local AI review will be unavailable."
 fi
 
-info "Opening Private AI Trader in the default browser."
-open "http://127.0.0.1:8080"
+if $OPEN_BROWSER; then
+  info "Opening Private AI Trader in the default browser."
+  open "http://127.0.0.1:8080"
+fi
 
 cat <<EOF
 
-Private AI Trader is running locally.
+Private AI Trader production release is running locally.
 
-Frontend: http://127.0.0.1:8080
-Backend:  http://127.0.0.1:8000/health
-Logs:     $LOG_DIR
+Frontend:          http://127.0.0.1:8080
+Backend health:    http://127.0.0.1:8000/health
+Production status: http://127.0.0.1:8000/api/production/status
+Logs:              $LOG_DIR
 
 Stop the app with:
   bash scripts/mac/stop.sh
