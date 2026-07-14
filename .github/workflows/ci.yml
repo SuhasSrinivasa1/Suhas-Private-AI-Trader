@@ -152,7 +152,7 @@ jobs:
           PY
           exit 0
       - name: Upload dependency audit report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dependency-audit-report
           path: pip-audit.json
@@ -178,7 +178,7 @@ jobs:
           git archive --format=zip --prefix=Suhas-Private-AI-Trader/ HEAD -o Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip
           sha256sum Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip > Suhas-Private-AI-Trader-Mac-Production-2.3-Calls-Results.zip.sha256
       - name: Upload production release ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mac-production-23-calls-results
           path: |
