@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -16,6 +17,37 @@ overlay = base.overlay
 
 calls = CallResultsEngine(core, runtime, overlay)
 _original_mode_scan = overlay.enriched_deep_scan
+OFF_HOURS_CANDIDATE_VALID_SECONDS = max(
+    900, int(os.getenv("OFF_HOURS_CANDIDATE_VALID_SECONDS", "21600"))
+)
+
+
+def _apply_session_gate(result: dict[str, Any]) -> dict[str, Any]:
+    """Prevent closed-market research from becoming a scored or executable BUY."""
+    if core._market_open_now():
+        result["session_context"] = "live_market"
+        result["execution_eligible"] = bool(core.GROWW_LIVE_EXECUTION_ENABLED)
+        return result
+
+    original_state = str(result.get("state") or result.get("action") or "WAIT")
+    result["session_context"] = "off_hours_research"
+    result["market_open"] = False
+    result["execution_eligible"] = False
+    result["paper_call_logged"] = False
+    result["requires_live_revalidation"] = True
+    result["model_state_before_session_gate"] = original_state
+    result["valid_for_seconds"] = OFF_HOURS_CANDIDATE_VALID_SECONDS
+    if original_state == "BUY":
+        result["state"] = "WATCHING"
+        result["action"] = "WATCH"
+        reasons = list(result.get("reasons") or [])
+        reasons.append(
+            "NSE is closed. This is an off-hours candidate, not an actionable or scored BUY call."
+        )
+        result["reasons"] = list(dict.fromkeys(reasons))
+        result["recommendation_id"] = core._signal_identity(result)
+        core.recommendation_cache[result["recommendation_id"]] = result
+    return result
 
 
 async def tracked_mode_scan(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -43,9 +75,12 @@ async def tracked_mode_scan(candidate: dict[str, Any]) -> dict[str, Any]:
         result.setdefault("risk_vetoes", []).append("call_precision_calibration_threshold")
         result["recommendation_id"] = core._signal_identity(result)
         core.recommendation_cache[result["recommendation_id"]] = result
-    if result.get("state") == "BUY":
+
+    result = _apply_session_gate(result)
+    if result.get("state") == "BUY" and core._market_open_now():
         item = calls.record_prediction(result)
         if item:
+            result["paper_call_logged"] = True
             await core.broadcast({
                 "type": "paper_call_created",
                 "item": item,
@@ -118,6 +153,7 @@ def production23_status() -> dict[str, Any]:
         "target_precision_pct": calls.learning_profile()["target_precision_pct"],
         "target_precision_is_guaranteed": False,
         "live_orders_blocked_during_observation": calls.observation_status()["live_orders_blocked"],
+        "off_hours_predictions_are_not_scored_calls": True,
         "rules_contract_version": "2.3.0",
     }
 
