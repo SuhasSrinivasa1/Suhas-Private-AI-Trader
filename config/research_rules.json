@@ -1,0 +1,24 @@
+{
+  "schema_version": "2.4.0",
+  "data_provider": "Groww Trading API",
+  "mock_market_data_allowed": false,
+  "historical_window_years": {"default": 5, "maximum": 10},
+  "transaction_costs_required": true,
+  "walk_forward_required": true,
+  "monte_carlo_required": true,
+  "lookahead_bias_forbidden": true,
+  "survivorship_bias_warning_required": true,
+  "metrics": ["CAGR", "Sharpe", "Sortino", "max_drawdown", "win_rate", "profit_factor", "average_trade", "largest_loss"],
+  "strategy_approval": {
+    "minimum_trades": 30,
+    "minimum_walk_forward_windows": 3,
+    "paper_observation_required": true,
+    "live_influence_default": false,
+    "automatic_execution": false
+  },
+  "calls_and_results": {
+    "real_groww_prices_only": true,
+    "mock_calls_forbidden": true,
+    "unresolved_calls_are_not_wins": true
+  }
+}
