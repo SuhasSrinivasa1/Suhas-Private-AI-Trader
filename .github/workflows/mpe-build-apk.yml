@@ -1,0 +1,91 @@
+name: Build Multyfi Profit Engine APK
+
+on:
+  push:
+    branches:
+      - mpe-apk-build-20260806
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Unpack application source
+        run: |
+          rm -rf mpe-build
+          mkdir mpe-build
+          cat build-assets/mpe-ci-source.b64.* | base64 -d > build-assets/mpe-ci-source.zip
+          unzip -q build-assets/mpe-ci-source.zip -d mpe-build
+          chmod +x mpe-build/Multyfi_Profit_Engine_1_0_0/gradlew
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Unit tests and unsigned release build
+        working-directory: mpe-build/Multyfi_Profit_Engine_1_0_0
+        run: |
+          gradle --no-daemon clean test lintRelease assembleRelease --stacktrace
+
+      - name: Generate private signing key and sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signed-output
+          PASS="$(openssl rand -hex 24)"
+          KEYSTORE="signed-output/multyfi-profit-engine-release.jks"
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias multyfi_profit_engine \
+            -keyalg RSA \
+            -keysize 4096 \
+            -validity 10000 \
+            -dname "CN=Multyfi Profit Engine, OU=Private Android, O=Suhas Srinivasa, L=Bengaluru, ST=Karnataka, C=IN"
+
+          UNSIGNED="mpe-build/Multyfi_Profit_Engine_1_0_0/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED="signed-output/app-release-aligned.apk"
+          FINAL="signed-output/Multyfi_Profit_Engine_1_0_0.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias multyfi_profit_engine \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --out "$FINAL" \
+            "$ALIGNED"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee signed-output/APK_SIGNATURE.txt
+          sha256sum "$FINAL" | tee signed-output/Multyfi_Profit_Engine_1_0_0.apk.sha256
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=multyfi_profit_engine\n' "$PASS" "$PASS" > signed-output/PRIVATE_UPDATE_KEY.txt
+          rm -f "$ALIGNED"
+
+      - name: Upload signed APK and update key
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Profit-Engine-1.0.0-signed
+          path: signed-output/
+          if-no-files-found: error
+          retention-days: 7
