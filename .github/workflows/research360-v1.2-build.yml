@@ -75,6 +75,7 @@ jobs:
           test -n "$APK"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner.txt
+          cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk
           mkdir -p research360-build/apk-parts
           rm -f research360-build/apk-parts/part*
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk#' > research360-build/APK-SHA256-v1.2.0.txt
@@ -85,6 +86,14 @@ jobs:
           printf 'APK_SIZE_BYTES=%s\n' "$(stat -c%s "$APK")" > research360-build/BUILD-INFO-v1.2.0.txt
           printf 'APK_PART_COUNT=%s\n' "$(find research360-build/apk-parts -type f -name 'part*' | wc -l)" >> research360-build/BUILD-INFO-v1.2.0.txt
           printf 'APK_B64_LINES=%s\n' "$(wc -l < research360-build/Research360-v1.2.0-FINAL.apk.b64)" >> research360-build/BUILD-INFO-v1.2.0.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL
+          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Commit build output
         shell: bash
