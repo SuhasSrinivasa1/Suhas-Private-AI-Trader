@@ -1,0 +1,42 @@
+name: Research360 v1.3 Source Export
+
+on:
+  push:
+    branches:
+      - research360-build-v1.3.0
+    paths:
+      - '.github/workflows/research360-v1.3-source.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360
+          mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/r360-src.b64
+          base64 -d /tmp/r360-src.b64 > /tmp/r360-src.tar.gz
+          tar -xzf /tmp/r360-src.tar.gz -C /tmp/r360
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java')
+          s = p.read_text()
+          old = 'private TextView r360Confidence,ownConfidence,status,stats,logs,gate,connection,ipStatus,r360Top,ownTop;'
+          new = 'private TextView r360Confidence,ownConfidence,status,stats,logs,gate,connection,ipStatus,apiStatus,r360Top,ownTop;'
+          if old in s:
+              p.write_text(s.replace(old,new,1))
+          PY
+          rm -f /tmp/r360/signing/research360-release.p12
+          rm -f /tmp/r360/signing/research360-release.p12.b64
+          tar -czf /tmp/Research360-v1.2-source-no-signing.tgz -C /tmp/r360 .
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-v1.2-source-no-signing
+          path: /tmp/Research360-v1.2-source-no-signing.tgz
+          retention-days: 3
