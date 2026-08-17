@@ -1,0 +1,29 @@
+name: Export Research360 G7 Source
+
+on:
+  push:
+    branches: [research360-g7-v1]
+    paths:
+      - '.github/workflows/export-r360-g7-source.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat research360-android/archive/part* > /tmp/r360.b64
+          base64 -d /tmp/r360.b64 > /tmp/r360.tar.gz
+          mkdir -p /tmp/r360src
+          tar -xzf /tmp/r360.tar.gz -C /tmp/r360src
+          tar -czf /tmp/r360-source.tar.gz -C /tmp/r360src .
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: r360-g7-source
+          path: /tmp/r360-source.tar.gz
+          retention-days: 1
