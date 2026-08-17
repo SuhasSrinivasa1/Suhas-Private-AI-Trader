@@ -43,6 +43,23 @@ jobs:
           test -f /tmp/r360/app/build.gradle
           test -f /tmp/r360/signing/research360-release.p12
 
+      - name: Apply v1.2 compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java')
+          s = p.read_text()
+          old = 'private TextView r360Confidence,ownConfidence,status,stats,logs,gate,connection,ipStatus,r360Top,ownTop;'
+          new = 'private TextView r360Confidence,ownConfidence,status,stats,logs,gate,connection,ipStatus,apiStatus,r360Top,ownTop;'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'apiStatus' not in s.split('private Switch',1)[0]:
+              raise SystemExit('Unable to apply apiStatus declaration fix')
+          p.write_text(s)
+          PY
+
       - name: Build signed release APK
         shell: bash
         run: |
