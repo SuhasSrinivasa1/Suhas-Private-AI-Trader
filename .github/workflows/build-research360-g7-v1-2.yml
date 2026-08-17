@@ -1,0 +1,153 @@
+name: Build Research360 Intelligence G7 v1.2.0
+
+on:
+  push:
+    branches: [research360-g7-v1-2-prod3]
+    paths:
+      - '.github/workflows/build-research360-g7-v1-2.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct validated v1.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat research360-android/archive-v1.1/part* > /tmp/r360.b64
+          base64 -d /tmp/r360.b64 > /tmp/r360.tar.gz
+          rm -rf research360-android/buildsrc
+          mkdir -p research360-android/buildsrc
+          tar -xzf /tmp/r360.tar.gz -C research360-android/buildsrc
+          test -f research360-android/buildsrc/app/src/main/AndroidManifest.xml
+
+      - name: Apply v1.2 unattended Groww authentication patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('research360-android/buildsrc')
+
+          p=root/'app/build.gradle'
+          s=p.read_text().replace("versionCode 110","versionCode 120").replace("versionName '1.1.0'","versionName '1.2.0'").replace('Research360-Intelligence-LG-G7-ThinQ-v1.1.0-${variant.name}.apk','Research360-Intelligence-LG-G7-ThinQ-v1.2.0-${variant.name}.apk')
+          p.write_text(s)
+
+          p=root/'app/src/main/java/com/suhas/research360engine/AppState.java'
+          s=p.read_text()
+          s=s.replace('    private static final String K_LAST_ACTIVATION = "last_activation";\n','    private static final String K_LAST_ACTIVATION = "last_activation";\n    private static final String K_API_HEALTH_AT = "api_health_at";\n    private static final String K_API_HEALTH_OK = "api_health_ok";\n    private static final String K_API_HEALTH_MSG = "api_health_msg";\n')
+          s=s.replace('    public static void setLastActivation(Context c,String d){ p(c).edit().putString(K_LAST_ACTIVATION,d==null?"":d).apply(); }\n\n    private static int clamp','    public static void setLastActivation(Context c,String d){ p(c).edit().putString(K_LAST_ACTIVATION,d==null?"":d).apply(); }\n    public static long apiHealthAt(Context c){ return p(c).getLong(K_API_HEALTH_AT,0); }\n    public static boolean apiHealthOk(Context c){ return p(c).getBoolean(K_API_HEALTH_OK,false); }\n    public static String apiHealthMessage(Context c){ return p(c).getString(K_API_HEALTH_MSG,"Not validated yet"); }\n    public static boolean apiHealthyFresh(Context c,long age){ return apiHealthOk(c)&&System.currentTimeMillis()-apiHealthAt(c)<=age; }\n    public static void setApiHealth(Context c,boolean ok,String msg){ p(c).edit().putLong(K_API_HEALTH_AT,System.currentTimeMillis()).putBoolean(K_API_HEALTH_OK,ok).putString(K_API_HEALTH_MSG,msg==null?"":msg).apply(); }\n\n    private static int clamp')
+          p.write_text(s)
+
+          p=root/'app/src/main/java/com/suhas/research360engine/GrowwClient.java'
+          s=p.read_text().replace('System.currentTimeMillis()-tokenIssuedAt<5L*60L*60L*1000L','System.currentTimeMillis()-tokenIssuedAt<4L*60L*60L*1000L')
+          target='    public boolean testConnection()throws Exception{JSONObject r=authed("GET",ROOT+"/positions/user?segment=CASH",null,true);return "SUCCESS".equalsIgnoreCase(r.optString("status","SUCCESS"));}\n'
+          add=target+'    public String validateFull()throws Exception{ensureToken();JSONObject u=authed("GET",ROOT+"/user/detail",null,true),p=u.optJSONObject("payload");if(p==null)p=u;if(!p.optBoolean("nse_enabled",false))throw new IllegalStateException("Groww NSE access is not enabled");JSONArray a=p.optJSONArray("active_segments");boolean cash=false;if(a!=null)for(int i=0;i<a.length();i++)if("CASH".equalsIgnoreCase(a.optString(i)))cash=true;if(!cash)throw new IllegalStateException("Groww CASH segment is not enabled");authed("GET",ROOT+"/positions/user?segment=CASH",null,true);JSONObject q=authed("GET",ROOT+"/live-data/quote?exchange=NSE&segment=CASH&trading_symbol=RELIANCE",null,true);if(q.optJSONObject("payload")==null)throw new IllegalStateException("Groww paid live-data validation failed");String ucc=p.optString("ucc","");if(ucc.length()>4)ucc="••••"+ucc.substring(ucc.length()-4);return "Authenticated • NSE CASH • paid live data OK"+(ucc.isEmpty()?"":" • UCC "+ucc);}\n'
+          if target not in s: raise SystemExit('Groww testConnection target not found')
+          p.write_text(s.replace(target,add))
+
+          p=root/'app/src/main/java/com/suhas/research360engine/EngineService.java'
+          s=p.read_text().replace('private long lastCredentialLog=0,lastErrorLog=0,lastPositionCheck=0;','private long lastCredentialLog=0,lastErrorLog=0,lastPositionCheck=0,lastApiHealth=0;')
+          marker='        if(stats.liveNetToday<=-AppState.dailyLossLimit(this)&&AppState.liveOrders(this)){AppState.setLiveOrders(this,false);db.log("RISK","Daily loss limit reached — new live orders disabled automatically");}\n'
+          health='        if(System.currentTimeMillis()-lastApiHealth>15L*60L*1000L){lastApiHealth=System.currentTimeMillis();try{String m=groww.validateFull();AppState.setApiHealth(this,true,m);db.log("API-HEALTH",m+" • automatic TOTP authentication active");}catch(Exception first){try{groww.clearToken();String m=groww.validateFull();AppState.setApiHealth(this,true,m);db.log("API-HEALTH","Groww session self-healed automatically • "+m);}catch(Exception second){AppState.setApiHealth(this,false,shortMsg(second));db.log("API-HEALTH","Automatic Groww re-authentication failed: "+shortMsg(second));if(AppState.liveOrders(this)){AppState.setLiveOrders(this,false);db.log("RISK","LIVE entries disabled until Groww authentication recovers");}}}}\n'
+          if marker not in s: raise SystemExit('Engine health insertion target not found')
+          s=s.replace(marker,marker+health)
+          live='boolean live=AppState.liveOrders(this)&&sourceGate&&s.entry>0&&marketOpenForEntry(product)&&db.openLiveTrade()==null;'
+          live2=live+'if(live&&!AppState.apiHealthyFresh(this,20L*60L*1000L)){try{String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception e){try{groww.clearToken();String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception ee){AppState.setApiHealth(this,false,shortMsg(ee));AppState.setLiveOrders(this,false);db.log("API-GUARD","BUY blocked for "+s.symbol+": Groww authentication unavailable");live=false;}}}'
+          if live not in s: raise SystemExit('Engine live gate target not found')
+          s=s.replace(live,live2).replace('Research360 Intelligence v1.1 engine started','Research360 Intelligence v1.2 engine started • unattended Groww authentication enabled')
+          p.write_text(s)
+
+          p=root/'app/src/main/java/com/suhas/research360engine/MainActivity.java'
+          s=p.read_text().replace('private TextView r360Confidence,ownConfidence,status,connection,gate,ipStatus,r360Top,ownTop,stats,logs;','private TextView r360Confidence,ownConfidence,status,connection,gate,ipStatus,apiStatus,r360Top,ownTop,stats,logs;')
+          s=s.replace('Save the dedicated Groww API Key + TOTP secret created for this Research360 app. Credentials are encrypted with Android Keystore and are separate from Multyfi.','One-time setup: save the dedicated Groww TOTP token + TOTP secret. They stay encrypted in Android Keystore. The app generates the rotating TOTP code, refreshes authentication and validates Groww automatically — no daily credential entry.')
+          old='Button test=button("TEST GROWW READ-ONLY CONNECTION");grow.addView(test);test.setOnClickListener(v->{test.setEnabled(false);new Thread(()->{String msg;try{msg=new GrowwClient(this).testConnection()?"Groww API connected":"Groww API returned an unexpected response";}catch(Exception e){msg="Groww test failed: "+shortMsg(e);}String m=msg;runOnUiThread(()->{test.setEnabled(true);Toast.makeText(this,m,Toast.LENGTH_LONG).show();refresh();});}).start();});space(root,10);'
+          new='apiStatus=text("Groww API validation pending",11,MUTED,false);grow.addView(apiStatus);Button test=button("REFRESH + AUTHENTICATE + VALIDATE GROWW");grow.addView(test);test.setOnClickListener(v->{test.setEnabled(false);new Thread(()->{String msg;GrowwClient g=new GrowwClient(this);try{g.clearToken();msg=g.validateFull();AppState.setApiHealth(this,true,msg);}catch(Exception e){msg="Groww validation failed: "+shortMsg(e);AppState.setApiHealth(this,false,msg);}String m=msg;runOnUiThread(()->{test.setEnabled(true);Toast.makeText(this,m,Toast.LENGTH_LONG).show();refresh();});}).start();});space(root,10);'
+          if old not in s: raise SystemExit('MainActivity Groww button target not found')
+          s=s.replace(old,new)
+          oldc='connection.setText("Notification: "+(notificationAccess()?"ON":"OFF")+" • Groww: "+(new GrowwClient(this).hasCredentials()?"CONNECTED/CREDENTIALS SAVED":"MISSING")+" • Static IP: "+(ipOk?"VERIFIED":"NOT VERIFIED")+" • Surfshark VPN: "+(g.vpnActive()?"ACTIVE":"NOT DETECTED"));'
+          newc='connection.setText("Notification: "+(notificationAccess()?"ON":"OFF")+" • Groww: "+(AppState.apiHealthyFresh(this,20L*60L*1000L)?"AUTH VALID":(new GrowwClient(this).hasCredentials()?"AUTO-AUTH CHECKING":"MISSING"))+" • Static IP: "+(ipOk?"VERIFIED":"NOT VERIFIED")+" • Surfshark VPN: "+(g.vpnActive()?"ACTIVE":"NOT DETECTED"));if(apiStatus!=null){apiStatus.setText("API health: "+(AppState.apiHealthOk(this)?"VALID":"CHECKING / NOT VALID")+"\n"+AppState.apiHealthMessage(this)+"\nAuto-auth refresh: ON • 401 recovery: ON");apiStatus.setTextColor(AppState.apiHealthOk(this)?GREEN:MUTED);}'
+          if oldc not in s: raise SystemExit('MainActivity connection target not found')
+          p.write_text(s.replace(oldc,newc))
+          PY
+          grep -q "versionName '1.2.0'" research360-android/buildsrc/app/build.gradle
+          grep -q 'validateFull' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/GrowwClient.java
+          grep -q 'apiHealthyFresh' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/EngineService.java
+          grep -q 'REFRESH + AUTHENTICATE + VALIDATE GROWW' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MainActivity.java
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: yes | sdkmanager --licenses >/dev/null || true; sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Decode private release signing key
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d signing/research360-release.p12.b64 > signing/research360-release.p12
+          chmod 600 signing/research360-release.p12 signing/signing.properties
+
+      - name: Parser smoke test
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360parser && mkdir -p /tmp/r360parser
+          javac -d /tmp/r360parser app/src/main/java/com/suhas/research360engine/R360Parser.java
+          echo 'Parser compile passed'
+
+      - name: Build signed release APK
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Run Android lint
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon lintRelease
+
+      - name: Verify package signature and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC='research360-android/buildsrc/app/build/outputs/apk/release/Research360-Intelligence-LG-G7-ThinQ-v1.2.0-release.apk'
+          OUT='research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk'
+          test -s "$SRC"
+          cp "$SRC" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee research360-android/buildsrc/G7-v1.2.0-BADGING.txt
+          grep -q "package: name='com.suhas.research360engine'" research360-android/buildsrc/G7-v1.2.0-BADGING.txt
+          grep -q "versionName='1.2.0'" research360-android/buildsrc/G7-v1.2.0-BADGING.txt
+          grep -q "sdkVersion:'26'" research360-android/buildsrc/G7-v1.2.0-BADGING.txt
+          sha256sum "$OUT" | tee research360-android/buildsrc/G7-v1.2.0-SHA256.txt
+
+      - name: Upload direct-install G7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk
+            research360-android/buildsrc/G7-v1.2.0-SHA256.txt
+            research360-android/buildsrc/G7-v1.2.0-BADGING.txt
+            research360-android/buildsrc/app/build/reports/lint-results-release.html
