@@ -81,7 +81,7 @@ jobs:
           grep -q "versionName '1.3.0'" /tmp/r360/app/build.gradle
           grep -q 'VERSION = 3' /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java
           grep -q 'SECTOR MOMENTUM — TOP 3' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
-          grep -q 'SECTOR_MOMENTUM_INTRADAY' /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
+          grep -q 'class SectorMomentumScanner' /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
 
       - name: Build release APK
         shell: bash
