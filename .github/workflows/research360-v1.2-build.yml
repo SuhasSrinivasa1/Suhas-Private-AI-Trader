@@ -66,7 +66,8 @@ jobs:
           base64 -d research360-build/v1.3/apply_v13.py.gz.b64 | gzip -dc > /tmp/apply_v13.py
           python3 /tmp/apply_v13.py
           mkdir -p /tmp/r360/app/src/main/java/com/suhas/research360engine
-          base64 -d research360-build/v1.3/sector_class.gz.b64 | gzip -dc > /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
+          cat research360-build/v1.3/sector_chunk0 research360-build/v1.3/sector_chunk1 research360-build/v1.3/sector_chunk2 > /tmp/sector.b64
+          base64 -d /tmp/sector.b64 | gzip -dc > /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
           python3 - <<'PY'
           from pathlib import Path
           p=Path('/tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java')
