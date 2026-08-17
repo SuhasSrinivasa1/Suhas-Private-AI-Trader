@@ -1,0 +1,122 @@
+name: Build Research360 Intelligence G7 v1.1.0
+
+on:
+  push:
+    branches: [research360-g7-v1-1]
+    paths:
+      - 'research360-android/r360-v1.1.0-source.b64'
+      - '.github/workflows/build-research360-g7-v1-1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct v1.1.0 Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf research360-android/buildsrc
+          mkdir -p research360-android/buildsrc
+          base64 -d research360-android/r360-v1.1.0-source.b64 > /tmp/r360-v1.1.0.tar.gz
+          tar -xzf /tmp/r360-v1.1.0.tar.gz -C research360-android/buildsrc
+          test -f research360-android/buildsrc/app/src/main/AndroidManifest.xml
+          test -f research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/IpGuard.java
+          test -f research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MarketScanner.java
+          grep -q "versionName '1.1.0'" research360-android/buildsrc/app/build.gradle
+          grep -Eq 'minSdk[ =]+26' research360-android/buildsrc/app/build.gradle
+          grep -q 'com.surfshark.vpnclient.android' research360-android/buildsrc/app/src/main/AndroidManifest.xml
+          grep -q 'OWN_MODEL_INTRADAY' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/Db.java
+          grep -q 'todayR360Top5' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/Db.java
+          grep -q 'cachedVerified' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/EngineService.java
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: yes | sdkmanager --licenses >/dev/null || true; sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Decode private release signing key
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d signing/research360-release.p12.b64 > signing/research360-release.p12
+          chmod 600 signing/research360-release.p12 signing/signing.properties
+
+      - name: Research360 parser smoke tests
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360parser && mkdir -p /tmp/r360parser
+          javac -d /tmp/r360parser app/src/main/java/com/suhas/research360engine/R360Parser.java
+          cat >/tmp/TestParser.java <<'JAVA'
+          import com.suhas.research360engine.R360Parser;
+          public class TestParser {
+            public static void main(String[] args){
+              var a=R360Parser.parse("MOST Intraday Cash","Buy MAPMYINDIA at Rs.995.00 with a Target of Rs.1015.00 | Stop Loss: Rs.985.00","");
+              if(!"BUY".equals(a.action) || !"MAPMYINDIA".equals(a.symbol) || Math.abs(a.entry-995.0)>0.01) throw new RuntimeException("BUY parse failed");
+              var b=R360Parser.parse("MOST Intraday Cash-loss","Our Buy Call of SOLARINDS on 17 Aug 2026 at Rs.20056.00 has now reached Rs.19934.00. Considering market conditions, it's advisable to exit the position. Call closed.","");
+              if(!"CLOSE".equals(b.action) || !"SOLARINDS".equals(b.symbol)) throw new RuntimeException("CLOSE parse failed");
+              var c=R360Parser.parse("Quant Intraday","Buy BALUFORGE at Rs.516.50 with a Target of Rs.528.70 Stop-Loss: Rs.510.40","");
+              if(!"QUANT_INTRADAY".equals(c.category) || !"BALUFORGE".equals(c.symbol)) throw new RuntimeException("Category parse failed");
+              System.out.println("Parser smoke tests passed");
+            }
+          }
+          JAVA
+          javac -cp /tmp/r360parser -d /tmp/r360parser /tmp/TestParser.java
+          java -cp /tmp/r360parser TestParser
+
+      - name: Build signed release APK
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Run Android lint
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon lintRelease
+
+      - name: Verify package, API level, signature and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC='research360-android/buildsrc/app/build/outputs/apk/release/Research360-Intelligence-LG-G7-ThinQ-v1.1.0-release.apk'
+          OUT='research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.1.0-FINAL.apk'
+          test -s "$SRC"
+          cp "$SRC" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee research360-android/buildsrc/G7-v1.1.0-BADGING.txt
+          grep -q "package: name='com.suhas.research360engine'" research360-android/buildsrc/G7-v1.1.0-BADGING.txt
+          grep -q "versionName='1.1.0'" research360-android/buildsrc/G7-v1.1.0-BADGING.txt
+          grep -q "sdkVersion:'26'" research360-android/buildsrc/G7-v1.1.0-BADGING.txt
+          sha256sum "$OUT" | tee research360-android/buildsrc/G7-v1.1.0-SHA256.txt
+
+      - name: Upload direct-install G7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.1.0-FINAL
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.1.0-FINAL.apk
+            research360-android/buildsrc/G7-v1.1.0-SHA256.txt
+            research360-android/buildsrc/G7-v1.1.0-BADGING.txt
+            research360-android/buildsrc/app/build/reports/lint-results-release.html
