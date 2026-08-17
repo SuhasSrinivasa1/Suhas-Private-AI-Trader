@@ -79,10 +79,12 @@ jobs:
           rm -f research360-build/apk-parts/part*
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.2.0-FINAL.apk#' > research360-build/APK-SHA256-v1.2.0.txt
           cp /tmp/apksigner.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.2.0.txt
+          base64 -w 100 "$APK" > research360-build/Research360-v1.2.0-FINAL.apk.b64
           base64 -w 0 "$APK" > /tmp/research360-v1.2.0.apk.b64
           split -b 8000 -d -a 2 /tmp/research360-v1.2.0.apk.b64 research360-build/apk-parts/part
           printf 'APK_SIZE_BYTES=%s\n' "$(stat -c%s "$APK")" > research360-build/BUILD-INFO-v1.2.0.txt
           printf 'APK_PART_COUNT=%s\n' "$(find research360-build/apk-parts -type f -name 'part*' | wc -l)" >> research360-build/BUILD-INFO-v1.2.0.txt
+          printf 'APK_B64_LINES=%s\n' "$(wc -l < research360-build/Research360-v1.2.0-FINAL.apk.b64)" >> research360-build/BUILD-INFO-v1.2.0.txt
 
       - name: Commit build output
         shell: bash
@@ -90,6 +92,6 @@ jobs:
           set -euo pipefail
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/apk-parts research360-build/APK-SHA256-v1.2.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.2.0.txt research360-build/BUILD-INFO-v1.2.0.txt
+          git add research360-build/apk-parts research360-build/Research360-v1.2.0-FINAL.apk.b64 research360-build/APK-SHA256-v1.2.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.2.0.txt research360-build/BUILD-INFO-v1.2.0.txt
           git commit -m 'Build Research360 v1.2.0 APK [skip ci]' || exit 0
           git push origin HEAD:research360-build-v1.2.0
