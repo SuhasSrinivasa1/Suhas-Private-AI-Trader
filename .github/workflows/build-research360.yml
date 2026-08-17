@@ -28,11 +28,12 @@ jobs:
           cp -a /tmp/r360src/. research360-android/buildsrc/
           test -f research360-android/buildsrc/app/src/main/AndroidManifest.xml
 
-      - name: Apply final execution-safety patch
+      - name: Apply final release safety patches
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p=Path('research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/EngineService.java')
           s=p.read_text()
           s=s.replace('GrowwClient.OrderResult r=groww.placeMarket(s.symbol,qty,product,"BUY");\n            double fill=awaitFillPrice(r.orderId,q.ltp);',
@@ -46,8 +47,17 @@ jobs:
           s=s.replace('if("REJECTED".equalsIgnoreCase(d.status)||"CANCELLED".equalsIgnoreCase(d.status))throw new IllegalStateException("Order "+d.status);',
                       'if("REJECTED".equalsIgnoreCase(d.status)||"CANCELLED".equalsIgnoreCase(d.status)||"FAILED".equalsIgnoreCase(d.status))return Double.NaN;')
           p.write_text(s)
+
+          m=Path('research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MainActivity.java')
+          t=m.read_text()
+          old='if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);'
+          new='registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);'
+          if old not in t:
+              raise SystemExit('Expected MainActivity receiver registration was not found')
+          m.write_text(t.replace(old,new))
           PY
           grep -q 'ensureAccepted' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/EngineService.java
+          grep -q 'registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED)' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MainActivity.java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
