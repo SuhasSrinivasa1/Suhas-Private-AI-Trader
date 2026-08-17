@@ -1,0 +1,170 @@
+name: Build Research360 LG G7 ThinQ APK
+
+on:
+  push:
+    branches: [research360-g7-v1]
+    paths:
+      - 'research360-android/**'
+      - '.github/workflows/build-research360-g7.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat research360-android/archive/part* > /tmp/r360.b64
+          base64 -d /tmp/r360.b64 > /tmp/r360.tar.gz
+          rm -rf research360-android/buildsrc /tmp/r360src
+          mkdir -p research360-android/buildsrc /tmp/r360src
+          tar -xzf /tmp/r360.tar.gz -C /tmp/r360src
+          cp -a /tmp/r360src/. research360-android/buildsrc/
+          test -f research360-android/buildsrc/app/src/main/AndroidManifest.xml
+
+      - name: Apply G7 compatibility and execution-safety patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('research360-android/buildsrc')
+
+          # Keep the same Research360 app identity and trading logic, but support
+          # Android 8+ so the LG G7 ThinQ can install the signed APK directly.
+          gradle=root/'app/build.gradle'
+          s=gradle.read_text()
+          s2=re.sub(r'\bminSdkVersion\s*(?:=\s*)?\d+', 'minSdkVersion 26', s)
+          s2=re.sub(r'\bminSdk\s*=\s*\d+', 'minSdk = 26', s2)
+          s2=re.sub(r'\bminSdk\s+\d+', 'minSdk 26', s2)
+          if s2==s and not re.search(r'\bminSdk(?:Version)?\b', s):
+              raise SystemExit('Unable to locate minSdk in app/build.gradle')
+          gradle.write_text(s2)
+
+          # Groww order-state hardening from the validated S24 release.
+          p=root/'app/src/main/java/com/suhas/research360engine/EngineService.java'
+          s=p.read_text()
+          s=s.replace('GrowwClient.OrderResult r=groww.placeMarket(s.symbol,qty,product,"BUY");\n            double fill=awaitFillPrice(r.orderId,q.ltp);',
+                      'GrowwClient.OrderResult r=groww.placeMarket(s.symbol,qty,product,"BUY");\n            ensureAccepted(r);\n            double fill=awaitFillPrice(r.orderId,q.ltp);\n            if(Double.isNaN(fill)) throw new IllegalStateException("Groww BUY was rejected/cancelled before fill");')
+          s=s.replace('GrowwClient.OrderResult r=groww.placeMarket(t.symbol,t.qty,strategy.product(s),"SELL");\n            double fill=awaitFillPrice(r.orderId,q.ltp); close(t,s,fill,d.reason);',
+                      'GrowwClient.OrderResult r=groww.placeMarket(t.symbol,t.qty,strategy.product(s),"SELL");\n            ensureAccepted(r);\n            double fill=awaitFillPrice(r.orderId,q.ltp);\n            if(Double.isNaN(fill)) throw new IllegalStateException("Groww SELL was rejected/cancelled before fill");\n            close(t,s,fill,d.reason);')
+          s=s.replace('GrowwClient.OrderResult r=groww.placeMarket(t.symbol,t.qty,strategy.product(s),"SELL");double fill=awaitFillPrice(r.orderId,q.ltp);close(t,s,fill,"DISARMED_SAFETY_"+d.reason);',
+                      'GrowwClient.OrderResult r=groww.placeMarket(t.symbol,t.qty,strategy.product(s),"SELL");ensureAccepted(r);double fill=awaitFillPrice(r.orderId,q.ltp);if(Double.isNaN(fill)) throw new IllegalStateException("Groww protective SELL was rejected/cancelled before fill");close(t,s,fill,"DISARMED_SAFETY_"+d.reason);')
+          s=s.replace('    private double awaitFillPrice(String orderId,double fallback){',
+                      '    private void ensureAccepted(GrowwClient.OrderResult r){\n        if(r==null||r.orderId==null||r.orderId.isEmpty())throw new IllegalStateException("Groww order was not accepted");\n        String st=r.status==null?"":r.status.toUpperCase(Locale.ROOT);\n        if(st.contains("REJECT")||st.contains("CANCEL")||st.contains("FAIL"))throw new IllegalStateException("Groww order "+st);\n    }\n\n    private double awaitFillPrice(String orderId,double fallback){')
+          s=s.replace('if("REJECTED".equalsIgnoreCase(d.status)||"CANCELLED".equalsIgnoreCase(d.status))throw new IllegalStateException("Order "+d.status);',
+                      'if("REJECTED".equalsIgnoreCase(d.status)||"CANCELLED".equalsIgnoreCase(d.status)||"FAILED".equalsIgnoreCase(d.status))return Double.NaN;')
+          p.write_text(s)
+
+          # On Android 8-12 we must use the legacy 2-argument registerReceiver;
+          # on Android 13+ use RECEIVER_NOT_EXPORTED. Preserve the runtime guard
+          # and suppress only the lint false-positive for the guarded legacy call.
+          m=root/'app/src/main/java/com/suhas/research360engine/MainActivity.java'
+          t=m.read_text()
+          if 'import android.annotation.SuppressLint;' not in t:
+              t=t.replace('package com.suhas.research360engine;\n', 'package com.suhas.research360engine;\n\nimport android.annotation.SuppressLint;\n', 1)
+          marker='@Override protected void onCreate(Bundle b)'
+          if marker in t and '@SuppressLint("UnspecifiedRegisterReceiverFlag")' not in t:
+              t=t.replace(marker, '@SuppressLint("UnspecifiedRegisterReceiverFlag")\n    '+marker, 1)
+          expected='if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);'
+          if expected not in t:
+              raise SystemExit('Expected version-guarded registerReceiver code was not found')
+          m.write_text(t)
+          PY
+          grep -E 'minSdk(Version)?[ =]+26' research360-android/buildsrc/app/build.gradle
+          grep -q 'ensureAccepted' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/EngineService.java
+          grep -q 'SuppressLint("UnspecifiedRegisterReceiverFlag")' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MainActivity.java
+          grep -q 'if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);' research360-android/buildsrc/app/src/main/java/com/suhas/research360engine/MainActivity.java
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: yes | sdkmanager --licenses >/dev/null || true; sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Decode private release signing key
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d signing/research360-release.p12.b64 > signing/research360-release.p12
+          chmod 600 signing/research360-release.p12 signing/signing.properties
+
+      - name: Parser smoke test
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360parser && mkdir -p /tmp/r360parser
+          javac -d /tmp/r360parser app/src/main/java/com/suhas/research360engine/R360Parser.java
+          cat >/tmp/TestParser.java <<'JAVA'
+          import com.suhas.research360engine.R360Parser;
+          public class TestParser {
+            public static void main(String[] args){
+              var a=R360Parser.parse("MOST Intraday Cash","Buy MAPMYINDIA at Rs.995.00 with a Target of Rs.1015.00 | Stop Loss: Rs.985.00","");
+              if(!"BUY".equals(a.action) || !"MAPMYINDIA".equals(a.symbol) || Math.abs(a.entry-995.0)>0.01) throw new RuntimeException("BUY parse failed");
+              var b=R360Parser.parse("MOST Intraday Cash-loss","Our Buy Call of SOLARINDS on 17 Aug 2026 at Rs.20056.00 has now reached Rs.19934.00. Considering market conditions, it's advisable to exit the position. Call closed.","");
+              if(!"CLOSE".equals(b.action) || !"SOLARINDS".equals(b.symbol) || Math.abs(b.reached-19934.0)>0.01) throw new RuntimeException("CLOSE parse failed");
+              var c=R360Parser.parse("Quant Intraday","Buy BALUFORGE at Rs.516.50 with a Target of Rs.528.70 Stop-Loss: Rs.510.40","");
+              if(!"QUANT_INTRADAY".equals(c.category) || !"BALUFORGE".equals(c.symbol)) throw new RuntimeException("Category parse failed");
+              System.out.println("Parser smoke tests passed");
+            }
+          }
+          JAVA
+          javac -cp /tmp/r360parser -d /tmp/r360parser /tmp/TestParser.java
+          java -cp /tmp/r360parser TestParser
+
+      - name: Build signed G7 release APK
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Run Android lint
+        working-directory: research360-android/buildsrc
+        shell: bash
+        run: gradle --no-daemon lintRelease
+
+      - name: Verify, rename and checksum APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC='research360-android/buildsrc/app/build/outputs/apk/release/Research360-Intelligence-S24-v1.0.0-release.apk'
+          OUT='research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.0.0-DIRECT.apk'
+          test -s "$SRC"
+          cp "$SRC" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee research360-android/buildsrc/G7-APK-BADGING.txt
+          grep -q "sdkVersion:'26'" research360-android/buildsrc/G7-APK-BADGING.txt
+          sha256sum "$OUT" | tee research360-android/buildsrc/G7-APK-SHA256.txt
+
+      - name: Upload direct-install G7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.0.0-DIRECT
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            research360-android/buildsrc/Research360-Intelligence-LG-G7-ThinQ-v1.0.0-DIRECT.apk
+            research360-android/buildsrc/G7-APK-SHA256.txt
+            research360-android/buildsrc/G7-APK-BADGING.txt
+            research360-android/buildsrc/app/build/reports/lint-results-release.html
