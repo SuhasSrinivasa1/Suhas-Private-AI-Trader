@@ -58,7 +58,7 @@ jobs:
           if marker not in s: raise SystemExit('Engine health insertion target not found')
           s=s.replace(marker,marker+health)
           live='boolean live=AppState.liveOrders(this)&&sourceGate&&s.entry>0&&marketOpenForEntry(product)&&db.openLiveTrade()==null;'
-          live2=live+'if(live&&!AppState.apiHealthyFresh(this,20L*60L*1000L)){try{String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception e){try{groww.resetAccessToken();String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception ee){AppState.setApiHealth(this,false,shortMsg(ee));AppState.setLiveOrders(this,false);db.log("API-GUARD","BUY blocked for "+s.symbol+": Groww authentication unavailable");live=false;}}}'
+          live2='boolean apiEntryOk=true;boolean wantsLive=AppState.liveOrders(this)&&sourceGate&&s.entry>0&&marketOpenForEntry(product)&&db.openLiveTrade()==null;if(wantsLive&&!AppState.apiHealthyFresh(this,20L*60L*1000L)){try{String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception e){try{groww.resetAccessToken();String m=groww.validateFull();AppState.setApiHealth(this,true,m);}catch(Exception ee){AppState.setApiHealth(this,false,shortMsg(ee));AppState.setLiveOrders(this,false);db.log("API-GUARD","BUY blocked for "+s.symbol+": Groww authentication unavailable");apiEntryOk=false;}}}final boolean live=wantsLive&&apiEntryOk;'
           if live not in s: raise SystemExit('Engine live gate target not found')
           s=s.replace(live,live2).replace('Research360 Intelligence v1.1 engine started','Research360 Intelligence v1.2 engine started • unattended Groww authentication enabled')
           p.write_text(s)
