@@ -80,17 +80,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/r360parser
+          rm -rf /tmp/r360parser && mkdir -p /tmp/r360parser
           javac -d /tmp/r360parser app/src/main/java/com/suhas/research360engine/R360Parser.java
           cat >/tmp/TestParser.java <<'JAVA'
           import com.suhas.research360engine.R360Parser;
           public class TestParser {
             public static void main(String[] args){
-              var a=R360Parser.parse("MOST Intraday Cash","Buy MAPMYINDIA at Rs.995.00 with a Target of Rs.1015.00 | Stop Loss: Rs.985.00",0);
-              if(a.action!=R360Parser.Action.BUY || !"MAPMYINDIA".equals(a.symbol) || Math.abs(a.entry-995.0)>0.01) throw new RuntimeException("BUY parse failed");
-              var b=R360Parser.parse("MOST Intraday Cash-loss","Our Buy Call of SOLARINDS on 17 Aug 2026 at Rs.20056.00 has now reached Rs.19934.00. Considering market conditions, it's advisable to exit the position. Call closed.",0);
-              if(b.action!=R360Parser.Action.CLOSE || !"SOLARINDS".equals(b.symbol)) throw new RuntimeException("CLOSE parse failed");
-              System.out.println("Parser smoke test passed");
+              var a=R360Parser.parse("MOST Intraday Cash","Buy MAPMYINDIA at Rs.995.00 with a Target of Rs.1015.00 | Stop Loss: Rs.985.00","");
+              if(!"BUY".equals(a.action) || !"MAPMYINDIA".equals(a.symbol) || Math.abs(a.entry-995.0)>0.01) throw new RuntimeException("BUY parse failed");
+              var b=R360Parser.parse("MOST Intraday Cash-loss","Our Buy Call of SOLARINDS on 17 Aug 2026 at Rs.20056.00 has now reached Rs.19934.00. Considering market conditions, it's advisable to exit the position. Call closed.","");
+              if(!"CLOSE".equals(b.action) || !"SOLARINDS".equals(b.symbol) || Math.abs(b.reached-19934.0)>0.01) throw new RuntimeException("CLOSE parse failed");
+              var c=R360Parser.parse("Quant Intraday","Buy BALUFORGE at Rs.516.50 with a Target of Rs.528.70 Stop-Loss: Rs.510.40","");
+              if(!"QUANT_INTRADAY".equals(c.category) || !"BALUFORGE".equals(c.symbol)) throw new RuntimeException("Category parse failed");
+              System.out.println("Parser smoke tests passed");
             }
           }
           JAVA
