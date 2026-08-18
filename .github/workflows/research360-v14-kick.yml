@@ -1,9 +1,10 @@
-name: Research360 v1.4 Build Kick
+name: Research360 v1.6 Persistent Learning Build
 
 on:
   push:
     branches: [main]
     paths: ['.github/workflows/research360-v14-kick.yml']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,10 +13,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout v1.4 build branch
+      - name: Checkout v1.6 build branch
         uses: actions/checkout@v4
         with:
-          ref: research360-build-v1.4.0
+          ref: research360-build-v1.6.0
           fetch-depth: 1
 
       - name: Java 17
@@ -29,61 +30,74 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore v1.4 source
+      - name: Restore and patch with diagnostics
+        id: prep
         shell: bash
         run: |
-          set -euo pipefail
-          rm -rf /tmp/r360
-          mkdir -p /tmp/r360
-          cat research360-build/source/part* > /tmp/base.b64
-          base64 -d /tmp/base.b64 > /tmp/base.tgz
-          tar -xzf /tmp/base.tgz -C /tmp/r360
-          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
-          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
-          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
-          tar -xzf /tmp/v14.tgz -C /tmp/r360
-          grep -q "versionName '1.4.0'" /tmp/r360/app/build.gradle
-          grep -q 'VERSION = 4' /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java
+          set -u
+          set +e
+          {
+            rm -rf /tmp/r360
+            mkdir -p /tmp/r360
+            cat research360-build/source/part* > /tmp/base.b64
+            base64 -d /tmp/base.b64 > /tmp/base.tgz
+            tar -xzf /tmp/base.tgz -C /tmp/r360
+            base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+            cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+            base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+            tar -xzf /tmp/v14.tgz -C /tmp/r360
+            python3 research360-build/v1.5/apply_v15.py
+            python3 research360-build/v1.6/apply_v16.py
+            grep -q "versionName '1.6.0'" /tmp/r360/app/build.gradle
+            grep -q 'PERSISTENT LEARNING BACKUP' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
+            grep -q 'LearningBackup.maybeBackup' /tmp/r360/app/src/main/java/com/suhas/research360engine/EngineService.java
+          } 2>&1 | tee /tmp/v16-prep.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          tail -n 600 /tmp/v16-prep.log > research360-build/PREP-LOG-v1.6.0.txt
+          printf 'PREP_EXIT_CODE=%s\n' "$rc" > research360-build/PREP-STATUS-v1.6.0.txt
+          if [ "$rc" = "0" ]; then echo 'prep_ok=true' >> "$GITHUB_OUTPUT"; else echo 'prep_ok=false' >> "$GITHUB_OUTPUT"; fi
 
       - name: Compile and capture diagnostics
         id: compile
+        if: steps.prep.outputs.prep_ok == 'true'
         shell: bash
         run: |
           set -u
           cd /tmp/r360
           set +e
-          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v14-build.log
+          gradle assembleRelease lintRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v16-build.log
           rc=${PIPESTATUS[0]}
           set -e
-          echo "$rc" > /tmp/v14-build-exit
+          echo "$rc" > /tmp/v16-build-exit
           if [ "$rc" = "0" ]; then echo 'build_ok=true' >> "$GITHUB_OUTPUT"; else echo 'build_ok=false' >> "$GITHUB_OUTPUT"; fi
-          tail -n 500 /tmp/v14-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.4.0.txt"
-          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.4.0.txt"
+          tail -n 1200 /tmp/v16-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.6.0.txt"
+          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.6.0.txt"
 
-      - name: Verify and serialize APK
+      - name: Verify APK
+        id: verify
         if: steps.compile.outputs.build_ok == 'true'
         shell: bash
         run: |
           set -euo pipefail
           APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt
-          "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.4.0.txt
-          sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL.apk#' > research360-build/APK-SHA256-v1.4.0.txt
-          cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL.apk
-          rm -rf research360-build/v1.4-apk-parts
-          mkdir -p research360-build/v1.4-apk-parts
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt
+          "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.6.0.txt
+          sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk#' > research360-build/APK-SHA256-v1.6.0.txt
+          cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
+          rm -rf research360-build/v1.6-apk-parts && mkdir -p research360-build/v1.6-apk-parts
           base64 -w 0 "$APK" > /tmp/apk.b64
-          split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.4-apk-parts/part
-          printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\nOVERLAY_SHA256=4b558e585752b7bec8bb264f08b9f455d68778303383f4454ab76bf4339e07ff\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.4-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.4.0.txt
+          split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.6-apk-parts/part
+          printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.6-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.6.0.txt
 
       - name: Upload direct APK artifact
         id: upload
         if: steps.compile.outputs.build_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL
-          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL.apk
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL
+          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -91,21 +105,26 @@ jobs:
         if: steps.compile.outputs.build_ok == 'true'
         shell: bash
         run: |
-          printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > research360-build/ARTIFACT-ID-v1.4.0.txt
+          printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > research360-build/ARTIFACT-ID-v1.6.0.txt
 
-      - name: Commit result to v1.4 branch
+      - name: Commit result to v1.6 branch
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/BUILD-LOG-v1.4.0.txt research360-build/BUILD-STATUS-v1.4.0.txt
-          git add research360-build/ARTIFACT-ID-v1.4.0.txt research360-build/v1.4-apk-parts research360-build/APK-SHA256-v1.4.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt research360-build/APK-BADGING-v1.4.0.txt research360-build/BUILD-INFO-v1.4.0.txt 2>/dev/null || true
-          git commit -m 'Research360 v1.4 build artifact [skip ci]' || true
-          git push origin HEAD:research360-build-v1.4.0
+          git add research360-build/PREP-LOG-v1.6.0.txt research360-build/PREP-STATUS-v1.6.0.txt
+          git add research360-build/BUILD-LOG-v1.6.0.txt research360-build/BUILD-STATUS-v1.6.0.txt 2>/dev/null || true
+          git add research360-build/ARTIFACT-ID-v1.6.0.txt research360-build/v1.6-apk-parts research360-build/APK-SHA256-v1.6.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt research360-build/APK-BADGING-v1.6.0.txt research360-build/BUILD-INFO-v1.6.0.txt 2>/dev/null || true
+          git commit -m 'Research360 v1.6 persistent-learning build result [skip ci]' || true
+          git push origin HEAD:research360-build-v1.6.0
 
-      - name: Enforce compile success
+      - name: Enforce success
         if: always()
         shell: bash
-        run: exit "$(cat /tmp/v14-build-exit)"
+        run: |
+          prep="$(cut -d= -f2 research360-build/PREP-STATUS-v1.6.0.txt 2>/dev/null || echo 1)"
+          if [ "$prep" != "0" ]; then exit "$prep"; fi
+          build="$(cut -d= -f2 research360-build/BUILD-STATUS-v1.6.0.txt 2>/dev/null || echo 1)"
+          exit "$build"
