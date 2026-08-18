@@ -1,0 +1,78 @@
+name: Research360 v1.6 Branch Build
+
+on:
+  push:
+    branches: [research360-build-v1.6.0]
+    paths:
+      - 'research360-build/v1.6/TRIGGER'
+      - 'research360-build/v1.6/**'
+      - '.github/workflows/research360-v16-branch-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: research360-build-v1.6.0
+          fetch-depth: 1
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Restore and patch source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360 && mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/base.b64
+          base64 -d /tmp/base.b64 > /tmp/base.tgz
+          tar -xzf /tmp/base.tgz -C /tmp/r360
+          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+          tar -xzf /tmp/v14.tgz -C /tmp/r360
+          python3 research360-build/v1.5/apply_v15.py
+          python3 research360-build/v1.6/apply_v16.py
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/r360
+          gradle assembleRelease lintRelease --no-daemon --stacktrace
+      - name: Verify and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt
+          "$BT/aapt" dump badging "$APK" | head -n 8 | tee research360-build/APK-BADGING-v1.6.0.txt
+          cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
+          sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk#' > research360-build/APK-SHA256-v1.6.0.txt
+          printf 'BUILD_EXIT_CODE=0\n' > research360-build/BUILD-STATUS-v1.6.0.txt
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL
+          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
+          retention-days: 30
+      - name: Commit verification
+        shell: bash
+        run: |
+          git config user.name 'Research360 Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/APK-SHA256-v1.6.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt research360-build/APK-BADGING-v1.6.0.txt research360-build/BUILD-STATUS-v1.6.0.txt
+          git commit -m 'Build Research360 v1.6.0 verified APK [skip ci]' || true
+          git push origin HEAD:research360-build-v1.6.0
