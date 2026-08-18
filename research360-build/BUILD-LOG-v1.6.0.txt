@@ -2,8 +2,8 @@ To honour the JVM settings for this build a single-use Daemon process will be fo
 Daemon will be stopped at the end of the build 
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:checkReleaseAarMetadata
 > Task :app:javaPreCompileRelease
+> Task :app:checkReleaseAarMetadata
 > Task :app:generateReleaseResValues
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources
@@ -31,8 +31,9 @@ Daemon will be stopped at the end of the build
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets
 > Task :app:compressReleaseAssets
-> Task :app:processReleaseResources
 > Task :app:extractReleaseVersionControlInfo
+> Task :app:processReleaseJavaRes NO-SOURCE
+> Task :app:processReleaseResources
 
 > Task :app:compileReleaseJavaWithJavac
 Note: Some input files use or override a deprecated API.
@@ -43,7 +44,6 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:mergeDexRelease
 > Task :app:mergeReleaseGlobalSynthetics
 > Task :app:compileReleaseArtProfile
-> Task :app:processReleaseJavaRes NO-SOURCE
 > Task :app:mergeReleaseJavaResource
 > Task :app:optimizeReleaseResources
 > Task :app:collectReleaseDependencies
@@ -101,7 +101,7 @@ Lint found 1 errors, 38 warnings. First failure:
 
 The full lint text report is located at:
   /tmp/r360/app/build/intermediates/lint_intermediate_text_report/release/lintReportRelease/lint-results-release.txt
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1787061260121.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1787061409207.json
 
 FAILURE: Build failed with an exception.
 
@@ -243,7 +243,7 @@ The full lint text report is located at:
 	at com.android.build.gradle.internal.tasks.NonIncrementalTask$taskAction$$inlined$recordTaskAction$1.invoke(BaseTask.kt:79)
 	at com.android.build.gradle.internal.tasks.Blocks.recordSpan(Blocks.java:51)
 	at com.android.build.gradle.internal.tasks.NonIncrementalTask.taskAction(NonIncrementalTask.kt:78)
-	at jdk.internal.reflect.GeneratedMethodAccessor43.invoke(Unknown Source)
+	at jdk.internal.reflect.GeneratedMethodAccessor37.invoke(Unknown Source)
 	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
 	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
 	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.doExecute(StandardTaskAction.java:58)
@@ -364,5 +364,5 @@ The full lint text report is located at:
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
 
 
-BUILD FAILED in 1m 34s
+BUILD FAILED in 45s
 48 actionable tasks: 48 executed

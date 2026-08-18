@@ -1,0 +1,2 @@
+v1.5 patch applied
+v1.6 persistent backup patch applied
