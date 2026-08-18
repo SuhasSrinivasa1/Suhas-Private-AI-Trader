@@ -51,17 +51,31 @@ jobs:
           grep -q 'class RecommendationNotifier' /tmp/r360/app/src/main/java/com/suhas/research360engine/RecommendationNotifier.java
           grep -q 'GROWW TRENDING SECTOR' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
 
-      - name: Build signed release APK
+      - name: Build signed release APK with diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           cd /tmp/r360
-          gradle assembleRelease --no-daemon --stacktrace
+          set +e
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v14-build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "$rc" > /tmp/v14-build-exit
+          mkdir -p "$GITHUB_WORKSPACE/research360-build"
+          tail -n 400 /tmp/v14-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.4.0.txt"
+          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.4.0.txt"
+          exit 0
 
       - name: Verify APK and prepare retrievable output
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
+          rc="$(cat /tmp/v14-build-exit 2>/dev/null || echo 99)"
+          if [ "$rc" != "0" ]; then
+            echo "Build failed; diagnostics will be committed."
+            exit 0
+          fi
           APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
@@ -79,19 +93,29 @@ jobs:
           printf 'OVERLAY_SHA256=4b558e585752b7bec8bb264f08b9f455d68778303383f4454ab76bf4339e07ff\n' >> research360-build/BUILD-INFO-v1.4.0.txt
 
       - name: Upload APK artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL
           path: /tmp/r360/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
 
-      - name: Commit verified APK payload
+      - name: Commit build output or diagnostics
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/v1.4-apk-parts research360-build/APK-SHA256-v1.4.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt research360-build/APK-BADGING-v1.4.0.txt research360-build/BUILD-INFO-v1.4.0.txt
-          git commit -m 'Build Research360 v1.4.0 verified APK [skip ci]' || exit 0
+          git add research360-build/BUILD-LOG-v1.4.0.txt research360-build/BUILD-STATUS-v1.4.0.txt || true
+          git add research360-build/v1.4-apk-parts research360-build/APK-SHA256-v1.4.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt research360-build/APK-BADGING-v1.4.0.txt research360-build/BUILD-INFO-v1.4.0.txt 2>/dev/null || true
+          git commit -m 'Research360 v1.4.0 build output [skip ci]' || exit 0
           git push origin HEAD:research360-build-v1.4.0
+
+      - name: Fail workflow if compilation failed
+        if: always()
+        shell: bash
+        run: |
+          rc="$(cat /tmp/v14-build-exit 2>/dev/null || echo 99)"
+          exit "$rc"
