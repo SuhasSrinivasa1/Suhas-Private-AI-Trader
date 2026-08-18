@@ -1,4 +1,4 @@
-name: Research360 v1.5 Diagnostic Build
+name: Research360 v1.6 Diagnostic Build
 
 on:
   push:
@@ -14,10 +14,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout v1.5 branch
+      - name: Checkout v1.6 branch
         uses: actions/checkout@v4
         with:
-          ref: research360-build-v1.5.0
+          ref: research360-build-v1.6.0
           fetch-depth: 1
 
       - name: Java 17
@@ -45,6 +45,7 @@ jobs:
           base64 -d /tmp/v14.b64 > /tmp/v14.tgz
           tar -xzf /tmp/v14.tgz -C /tmp/r360
           python3 research360-build/v1.5/apply_v15.py
+          python3 research360-build/v1.6/apply_v16.py
 
       - name: Compile with diagnostics
         shell: bash
@@ -52,37 +53,37 @@ jobs:
           set -u
           cd /tmp/r360
           set +e
-          gradle assembleRelease lintRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v15-build.log
+          gradle assembleRelease lintRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v16-build.log
           rc=${PIPESTATUS[0]}
           set -e
-          echo "$rc" > /tmp/v15-build-exit
-          tail -n 900 /tmp/v15-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.5.0.txt"
-          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.5.0.txt"
+          echo "$rc" > /tmp/v16-build-exit
+          tail -n 1200 /tmp/v16-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.6.0.txt"
+          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.6.0.txt"
 
       - name: Verify output if build succeeded
         shell: bash
         run: |
           set -euo pipefail
-          rc="$(cat /tmp/v15-build-exit)"
+          rc="$(cat /tmp/v16-build-exit)"
           if [ "$rc" = "0" ]; then
             APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
             BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-            "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.5.0.txt
-            "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.5.0.txt
-            sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk#' > research360-build/APK-SHA256-v1.5.0.txt
-            rm -rf research360-build/v1.5-apk-parts && mkdir -p research360-build/v1.5-apk-parts
+            "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt
+            "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.6.0.txt
+            sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk#' > research360-build/APK-SHA256-v1.6.0.txt
+            rm -rf research360-build/v1.6-apk-parts && mkdir -p research360-build/v1.6-apk-parts
             base64 -w 0 "$APK" > /tmp/apk.b64
-            split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.5-apk-parts/part
-            printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.5-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.5.0.txt
-            cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk
+            split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.6-apk-parts/part
+            printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.6-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.6.0.txt
+            cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
           fi
 
       - name: Upload APK if present
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL
-          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL
+          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
           if-no-files-found: ignore
           retention-days: 30
 
@@ -100,8 +101,8 @@ jobs:
             url=f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/artifacts"
             req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
             data=json.load(urllib.request.urlopen(req))
-            arts=[a for a in data.get('artifacts',[]) if a.get('name')=='Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL']
-            if arts: open('research360-build/ARTIFACT-ID-v1.5.0.txt','w').write(str(arts[0]['id'])+'\n')
+            arts=[a for a in data.get('artifacts',[]) if a.get('name')=='Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL']
+            if arts: open('research360-build/ARTIFACT-ID-v1.6.0.txt','w').write(str(arts[0]['id'])+'\n')
           except Exception as e:
             print(e)
           PY
@@ -113,12 +114,12 @@ jobs:
           set -euo pipefail
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/BUILD-LOG-v1.5.0.txt research360-build/BUILD-STATUS-v1.5.0.txt
-          git add research360-build/v1.5-apk-parts research360-build/APK-SHA256-v1.5.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.5.0.txt research360-build/APK-BADGING-v1.5.0.txt research360-build/BUILD-INFO-v1.5.0.txt research360-build/ARTIFACT-ID-v1.5.0.txt 2>/dev/null || true
-          git commit -m 'Research360 v1.5 diagnostic build result [skip ci]' || true
-          git push origin HEAD:research360-build-v1.5.0
+          git add research360-build/BUILD-LOG-v1.6.0.txt research360-build/BUILD-STATUS-v1.6.0.txt
+          git add research360-build/v1.6-apk-parts research360-build/APK-SHA256-v1.6.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt research360-build/APK-BADGING-v1.6.0.txt research360-build/BUILD-INFO-v1.6.0.txt research360-build/ARTIFACT-ID-v1.6.0.txt 2>/dev/null || true
+          git commit -m 'Research360 v1.6 diagnostic build result [skip ci]' || true
+          git push origin HEAD:research360-build-v1.6.0
 
       - name: Enforce compile success
         if: always()
         shell: bash
-        run: exit "$(cat /tmp/v15-build-exit)"
+        run: exit "$(cat /tmp/v16-build-exit)"
