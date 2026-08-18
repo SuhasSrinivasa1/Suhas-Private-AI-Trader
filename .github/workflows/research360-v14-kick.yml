@@ -1,0 +1,92 @@
+name: Research360 v1.4 Build Kick
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/research360-v14-kick.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v1.4 build branch
+        uses: actions/checkout@v4
+        with:
+          ref: research360-build-v1.4.0
+          fetch-depth: 1
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore v1.4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360
+          mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/base.b64
+          base64 -d /tmp/base.b64 > /tmp/base.tgz
+          tar -xzf /tmp/base.tgz -C /tmp/r360
+          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+          tar -xzf /tmp/v14.tgz -C /tmp/r360
+          grep -q "versionName '1.4.0'" /tmp/r360/app/build.gradle
+          grep -q 'VERSION = 4' /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java
+
+      - name: Compile and capture diagnostics
+        shell: bash
+        run: |
+          set -u
+          cd /tmp/r360
+          set +e
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee /tmp/v14-build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "$rc" > /tmp/v14-build-exit
+          tail -n 500 /tmp/v14-build.log > "$GITHUB_WORKSPACE/research360-build/BUILD-LOG-v1.4.0.txt"
+          printf 'BUILD_EXIT_CODE=%s\n' "$rc" > "$GITHUB_WORKSPACE/research360-build/BUILD-STATUS-v1.4.0.txt"
+
+      - name: Verify and serialize APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          rc="$(cat /tmp/v14-build-exit)"
+          if [ "$rc" = "0" ]; then
+            APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
+            BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+            "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt
+            "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.4.0.txt
+            sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL.apk#' > research360-build/APK-SHA256-v1.4.0.txt
+            rm -rf research360-build/v1.4-apk-parts
+            mkdir -p research360-build/v1.4-apk-parts
+            base64 -w 0 "$APK" > /tmp/apk.b64
+            split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.4-apk-parts/part
+            printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\nOVERLAY_SHA256=4b558e585752b7bec8bb264f08b9f455d68778303383f4454ab76bf4339e07ff\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.4-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.4.0.txt
+          fi
+
+      - name: Commit result to v1.4 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Research360 Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/BUILD-LOG-v1.4.0.txt research360-build/BUILD-STATUS-v1.4.0.txt
+          git add research360-build/v1.4-apk-parts research360-build/APK-SHA256-v1.4.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt research360-build/APK-BADGING-v1.4.0.txt research360-build/BUILD-INFO-v1.4.0.txt 2>/dev/null || true
+          git commit -m 'Research360 v1.4 build result [skip ci]' || true
+          git push origin HEAD:research360-build-v1.4.0
+
+      - name: Enforce compile success
+        shell: bash
+        run: exit "$(cat /tmp/v14-build-exit)"
