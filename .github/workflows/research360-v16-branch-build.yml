@@ -62,17 +62,26 @@ jobs:
           cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk#' > research360-build/APK-SHA256-v1.6.0.txt
           printf 'BUILD_EXIT_CODE=0\n' > research360-build/BUILD-STATUS-v1.6.0.txt
+          rm -rf research360-build/v1.6-apk-parts && mkdir -p research360-build/v1.6-apk-parts
+          base64 -w 0 "$APK" > /tmp/v16-apk.b64
+          split -b 8000 -d -a 3 /tmp/v16-apk.b64 research360-build/v1.6-apk-parts/part
+          printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.6-apk-parts -type f -name 'part*' | wc -l)" > research360-build/BUILD-INFO-v1.6.0.txt
       - name: Upload APK artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL
           path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.6.0-FINAL.apk
           retention-days: 30
+      - name: Save artifact id
+        shell: bash
+        run: |
+          printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > research360-build/ARTIFACT-ID-v1.6.0.txt
       - name: Commit verification
         shell: bash
         run: |
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/APK-SHA256-v1.6.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt research360-build/APK-BADGING-v1.6.0.txt research360-build/BUILD-STATUS-v1.6.0.txt
-          git commit -m 'Build Research360 v1.6.0 verified APK [skip ci]' || true
+          git add research360-build/APK-SHA256-v1.6.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.6.0.txt research360-build/APK-BADGING-v1.6.0.txt research360-build/BUILD-STATUS-v1.6.0.txt research360-build/BUILD-INFO-v1.6.0.txt research360-build/ARTIFACT-ID-v1.6.0.txt research360-build/v1.6-apk-parts
+          git commit -m 'Build Research360 v1.6.0 verified APK payload [skip ci]' || true
           git push origin HEAD:research360-build-v1.6.0
