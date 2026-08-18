@@ -1,0 +1,1 @@
+Research360 Intelligence v1.5 overlay: scroll-stability fix and all-positive-sector Top 5 scanner.
