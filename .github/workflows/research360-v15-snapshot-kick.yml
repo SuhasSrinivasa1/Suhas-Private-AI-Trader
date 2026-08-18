@@ -1,0 +1,48 @@
+name: Research360 v1.5 Snapshot Kick
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/research360-v15-snapshot-kick.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v1.4 branch
+        uses: actions/checkout@v4
+        with:
+          ref: research360-build-v1.4.0
+          fetch-depth: 1
+
+      - name: Restore v1.4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360
+          mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/base.b64
+          base64 -d /tmp/base.b64 > /tmp/base.tgz
+          tar -xzf /tmp/base.tgz -C /tmp/r360
+          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+          tar -xzf /tmp/v14.tgz -C /tmp/r360
+          mkdir -p research360-build/v1.5-snapshot
+          cp /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java research360-build/v1.5-snapshot/MainActivity.java
+          cp /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java research360-build/v1.5-snapshot/SectorMomentumScanner.java
+          cp /tmp/r360/app/src/main/java/com/suhas/research360engine/Engine.java research360-build/v1.5-snapshot/Engine.java 2>/dev/null || true
+          cp /tmp/r360/app/src/main/java/com/suhas/research360engine/GrowwClient.java research360-build/v1.5-snapshot/GrowwClient.java 2>/dev/null || true
+          cp /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java research360-build/v1.5-snapshot/Db.java
+
+      - name: Commit snapshot to v1.4 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Research360 Snapshot Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/v1.5-snapshot
+          git commit -m 'Expose v1.4 source snapshot for v1.5 patch [skip ci]' || true
+          git push origin HEAD:research360-build-v1.4.0
