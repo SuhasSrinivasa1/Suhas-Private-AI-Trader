@@ -1,0 +1,97 @@
+name: Research360 v1.4 APK Build
+
+on:
+  push:
+    branches:
+      - research360-build-v1.4.0
+    paths:
+      - 'research360-build/v1.4/**'
+      - '.github/workflows/research360-v1.4-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore base source and v1.4 overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360
+          mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/r360-base.b64
+          base64 -d /tmp/r360-base.b64 > /tmp/r360-base.tar.gz
+          tar -xzf /tmp/r360-base.tar.gz -C /tmp/r360
+          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+          cat research360-build/v1.4/overlay-part* > /tmp/r360-v14.b64
+          base64 -d /tmp/r360-v14.b64 > /tmp/r360-v14.tar.gz
+          tar -xzf /tmp/r360-v14.tar.gz -C /tmp/r360
+          test -f /tmp/r360/app/build.gradle
+          test -f /tmp/r360/signing/research360-release.p12
+          grep -q "versionName '1.4.0'" /tmp/r360/app/build.gradle
+          grep -q 'VERSION = 4' /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java
+          grep -q 'class SectorMomentumScanner' /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
+          grep -q 'class RecommendationNotifier' /tmp/r360/app/src/main/java/com/suhas/research360engine/RecommendationNotifier.java
+          grep -q 'GROWW TRENDING SECTOR' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
+
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/r360
+          gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APK and prepare retrievable output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner-v14.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 8 | tee /tmp/aapt-v14.txt
+          mkdir -p research360-build/v1.4-apk-parts
+          rm -f research360-build/v1.4-apk-parts/part*
+          base64 -w 0 "$APK" > /tmp/r360-v14-apk.b64
+          split -b 8000 -d -a 2 /tmp/r360-v14-apk.b64 research360-build/v1.4-apk-parts/part
+          sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL.apk#' > research360-build/APK-SHA256-v1.4.0.txt
+          cp /tmp/apksigner-v14.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt
+          cp /tmp/aapt-v14.txt research360-build/APK-BADGING-v1.4.0.txt
+          printf 'APK_SIZE_BYTES=%s\n' "$(stat -c%s "$APK")" > research360-build/BUILD-INFO-v1.4.0.txt
+          printf 'APK_PART_COUNT=%s\n' "$(find research360-build/v1.4-apk-parts -type f -name 'part*' | wc -l)" >> research360-build/BUILD-INFO-v1.4.0.txt
+          printf 'OVERLAY_SHA256=4b558e585752b7bec8bb264f08b9f455d68778303383f4454ab76bf4339e07ff\n' >> research360-build/BUILD-INFO-v1.4.0.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.4.0-FINAL
+          path: /tmp/r360/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Commit verified APK payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Research360 Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/v1.4-apk-parts research360-build/APK-SHA256-v1.4.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.4.0.txt research360-build/APK-BADGING-v1.4.0.txt research360-build/BUILD-INFO-v1.4.0.txt
+          git commit -m 'Build Research360 v1.4.0 verified APK [skip ci]' || exit 0
+          git push origin HEAD:research360-build-v1.4.0
