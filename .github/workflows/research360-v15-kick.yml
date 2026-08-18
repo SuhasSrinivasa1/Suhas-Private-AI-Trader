@@ -1,0 +1,118 @@
+name: Research360 v1.5 Build Kick
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/research360-v15-kick.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v1.5 branch
+        uses: actions/checkout@v4
+        with:
+          ref: research360-build-v1.5.0
+          fetch-depth: 1
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore v1.4 base source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360
+          mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/base.b64
+          base64 -d /tmp/base.b64 > /tmp/base.tgz
+          tar -xzf /tmp/base.tgz -C /tmp/r360
+          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+          tar -xzf /tmp/v14.tgz -C /tmp/r360
+
+      - name: Apply v1.5 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 research360-build/v1.5/apply_v15.py
+          grep -q "versionName '1.5.0'" /tmp/r360/app/build.gradle
+          grep -q 'VERSION = 5' /tmp/r360/app/src/main/java/com/suhas/research360engine/Db.java
+          grep -q 'POSITIVE SECTORS — GLOBAL TOP 5' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
+          grep -q 'parsePositiveSectors' /tmp/r360/app/src/main/java/com/suhas/research360engine/SectorMomentumScanner.java
+
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/r360
+          gradle assembleRelease lintRelease --no-daemon --stacktrace
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
+          test -n "$APK"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apksigner-v15.txt
+          "$BT/aapt" dump badging "$APK" | head -n 8 | tee /tmp/aapt-v15.txt
+          cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk
+          mkdir -p research360-build/v1.5-apk-parts
+          rm -f research360-build/v1.5-apk-parts/part*
+          base64 -w 0 "$APK" > /tmp/apk.b64
+          split -b 8000 -d -a 2 /tmp/apk.b64 research360-build/v1.5-apk-parts/part
+          sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk#' > research360-build/APK-SHA256-v1.5.0.txt
+          cp /tmp/apksigner-v15.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.5.0.txt
+          cp /tmp/aapt-v15.txt research360-build/APK-BADGING-v1.5.0.txt
+          printf 'APK_SIZE_BYTES=%s\nAPK_PART_COUNT=%s\n' "$(stat -c%s "$APK")" "$(find research360-build/v1.5-apk-parts -type f | wc -l)" > research360-build/BUILD-INFO-v1.5.0.txt
+          printf 'BUILD_EXIT_CODE=0\n' > research360-build/BUILD-STATUS-v1.5.0.txt
+
+      - name: Upload direct APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL
+          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record artifact id
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 2
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url=f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/artifacts"
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          data=json.load(urllib.request.urlopen(req))
+          arts=[a for a in data.get('artifacts',[]) if a.get('name')=='Research360-Intelligence-LG-G7-ThinQ-v1.5.0-FINAL']
+          if not arts: raise SystemExit('artifact id not found')
+          open('research360-build/ARTIFACT-ID-v1.5.0.txt','w').write(str(arts[0]['id'])+'\n')
+          PY
+
+      - name: Commit verified output to v1.5 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Research360 Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/v1.5-apk-parts research360-build/APK-SHA256-v1.5.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.5.0.txt research360-build/APK-BADGING-v1.5.0.txt research360-build/BUILD-INFO-v1.5.0.txt research360-build/BUILD-STATUS-v1.5.0.txt research360-build/ARTIFACT-ID-v1.5.0.txt
+          git commit -m 'Build Research360 v1.5.0 verified APK [skip ci]' || true
+          git push origin HEAD:research360-build-v1.5.0
