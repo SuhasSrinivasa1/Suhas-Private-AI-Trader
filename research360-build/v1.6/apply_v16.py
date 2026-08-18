@@ -14,13 +14,17 @@ p.write_text(s)
 src=Path.cwd()/'research360-build/v1.6/LearningBackup.java'
 if not src.exists(): raise SystemExit('LearningBackup.java missing')
 dst=root/'app/src/main/java/com/suhas/research360engine/LearningBackup.java'
-dst.write_text(src.read_text())
+bs=src.read_text()
+# MediaStore.Downloads/RELATIVE_PATH/IS_PENDING are API 29+, and these methods are called only
+# behind explicit SDK_INT >=29 branches. TargetApi tells Android Lint about that runtime gate.
+bs=bs.replace('    private static void writeZipMediaStore(Context c,byte[] json,byte[] diag)throws Exception{','    @android.annotation.TargetApi(29)\n    private static void writeZipMediaStore(Context c,byte[] json,byte[] diag)throws Exception{',1)
+bs=bs.replace('    private static InputStream openBackup(Context c)throws Exception{','    @android.annotation.TargetApi(29)\n    private static InputStream openBackup(Context c)throws Exception{',1)
+dst.write_text(bs)
 
 # ---------- manifest: legacy Downloads permission for LG G7 Android 8/9 ----------
 p=root/'app/src/main/AndroidManifest.xml'
 s=p.read_text()
 if 'android.permission.WRITE_EXTERNAL_STORAGE' not in s:
-    # Insert directly before <application> so this works even if permission ordering changed.
     app=s.find('<application')
     if app<0: raise SystemExit('manifest application marker missing')
     perms='    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n'
@@ -31,11 +35,9 @@ p.write_text(s)
 p=root/'app/src/main/java/com/suhas/research360engine/EngineService.java'
 s=p.read_text()
 if 'LearningBackup.autoRestoreIfFresh(this)' not in s:
-    # The service layout changed between releases, so anchor on Android's super.onCreate call only.
     s,n=re.subn(r'(super\.onCreate\(\);\s*)',r'\1LearningBackup.autoRestoreIfFresh(this); ',s,count=1)
     if n!=1: raise SystemExit('EngineService super.onCreate marker missing')
 if 'LearningBackup.maybeBackup(this)' not in s:
-    # Put the backup immediately before the tick lock is released, independent of the exact try/catch text.
     s,n=re.subn(r'runningTick\.set\(false\);',r'try{LearningBackup.maybeBackup(this);}catch(Exception ignored){}runningTick.set(false);',s,count=1)
     if n!=1: raise SystemExit('EngineService runningTick marker missing')
 p.write_text(s)
@@ -46,7 +48,6 @@ s=p.read_text()
 if 'backupStatus' not in s.split('private LinearLayout',1)[0]:
     s=s.replace('sectorSummary,sectorConfidence;','sectorSummary,sectorConfidence,backupStatus;',1)
     if 'backupStatus' not in s.split('private LinearLayout',1)[0]:
-        # generic fallback: append to the first TextView declaration
         s,n=re.subn(r'(private TextView [^;]+)(;)',r'\1,backupStatus\2',s,count=1)
         if n!=1: raise SystemExit('MainActivity TextView declaration marker missing')
 s=s.replace('v1.5 • LG G7 ThinQ • validated R360 calls + independent model + all-positive-sector scanner',
@@ -62,14 +63,12 @@ if 'PERSISTENT LEARNING BACKUP' not in s:
     if marker not in s: raise SystemExit('DEVICE ACCESS marker missing')
     s=s.replace(marker,backup,1)
 
-# refresh backup status without disturbing scroll position
 if 'backupStatus.setText(LearningBackup.status(this))' not in s:
     marker='stats.setText(String.format(Locale.US,"Validated R360 stock messages:'
     idx=s.find(marker)
     if idx<0: raise SystemExit('stats refresh marker missing')
     s=s[:idx]+'if(backupStatus!=null)backupStatus.setText(LearningBackup.status(this));'+s[idx:]
 
-# add permission request helpers before marketOpen method
 if 'private void requestBackupStoragePermission()' not in s:
     marker='    private boolean marketOpen(){'
     methods='''    private void requestBackupStoragePermission(){if(Build.VERSION.SDK_INT<29&&(checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED||checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED))requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE,Manifest.permission.READ_EXTERNAL_STORAGE},92);}\n    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==92){boolean ok=true;for(int x:grantResults)if(x!=PackageManager.PERMISSION_GRANTED)ok=false;if(ok)new Thread(()->{LearningBackup.Result r=LearningBackup.autoRestoreIfFresh(this);runOnUiThread(()->{Toast.makeText(this,r.ok?r.message:"Downloads backup enabled",Toast.LENGTH_LONG).show();refresh();});}).start();else Toast.makeText(this,"Downloads permission is required to preserve learning across uninstall on this Android version",Toast.LENGTH_LONG).show();}}\n\n'''+marker
@@ -77,7 +76,6 @@ if 'private void requestBackupStoragePermission()' not in s:
     s=s.replace(marker,methods,1)
 p.write_text(s)
 
-# static contract
 checks=[
     (root/'app/build.gradle',"versionName '1.6.0'"),
     (root/'app/src/main/AndroidManifest.xml','WRITE_EXTERNAL_STORAGE'),
@@ -86,6 +84,7 @@ checks=[
     (root/'app/src/main/java/com/suhas/research360engine/EngineService.java','LearningBackup.maybeBackup'),
     (root/'app/src/main/java/com/suhas/research360engine/EngineService.java','LearningBackup.autoRestoreIfFresh'),
     (root/'app/src/main/java/com/suhas/research360engine/LearningBackup.java','Research360-Intelligence-Learning-LATEST.zip'),
+    (root/'app/src/main/java/com/suhas/research360engine/LearningBackup.java','@android.annotation.TargetApi(29)'),
 ]
 for f,t in checks:
     if t not in f.read_text(): raise SystemExit(f'missing {t} in {f}')
