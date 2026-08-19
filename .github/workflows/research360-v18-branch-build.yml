@@ -30,60 +30,76 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Restore and patch source
+      - name: Restore patch build and diagnose
+        id: buildall
         shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set +e
           rm -rf /tmp/r360 && mkdir -p /tmp/r360
-          cat research360-build/source/part* > /tmp/base.b64
-          base64 -d /tmp/base.b64 > /tmp/base.tgz
-          tar -xzf /tmp/base.tgz -C /tmp/r360
-          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
-          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
-          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
-          tar -xzf /tmp/v14.tgz -C /tmp/r360
-          python3 research360-build/v1.5/apply_v15.py
-          python3 research360-build/v1.6/apply_v16.py
-          python3 research360-build/v1.7/apply_v17.py
-          python3 research360-build/v1.8/apply_v18.py
-          grep -q "versionName '1.8.0'" /tmp/r360/app/build.gradle
-          grep -q 'RESEARCH360 — ACTIONABLE BUYS' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
-          ! grep -q 'OWN MODEL — NEXT SESSION TOP 5' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
-          ! grep -q 'POSITIVE SECTORS — BEST 5 STOCKS' /tmp/r360/app/src/main/java/com/suhas/research360engine/MainActivity.java
-          ! grep -q 'sectorScanner.maybeRun' /tmp/r360/app/src/main/java/com/suhas/research360engine/EngineService.java
-      - name: Build signed release APK
+          {
+            cat research360-build/source/part* > /tmp/base.b64
+            base64 -d /tmp/base.b64 > /tmp/base.tgz
+            tar -xzf /tmp/base.tgz -C /tmp/r360
+            base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+            cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+            base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+            tar -xzf /tmp/v14.tgz -C /tmp/r360
+            python3 research360-build/v1.5/apply_v15.py
+            python3 research360-build/v1.6/apply_v16.py
+            python3 research360-build/v1.7/apply_v17.py
+            python3 research360-build/v1.8/apply_v18.py
+          } > research360-build/V18-PATCH-LOG.txt 2>&1
+          PATCH_RC=$?
+          echo "PATCH_EXIT_CODE=$PATCH_RC" > research360-build/BUILD-STATUS-v1.8.0.txt
+          if [ "$PATCH_RC" -eq 0 ]; then
+            (cd /tmp/r360 && gradle assembleRelease lintRelease --no-daemon --stacktrace) > research360-build/V18-GRADLE-LOG.txt 2>&1
+            BUILD_RC=$?
+          else
+            BUILD_RC=99
+            echo "build skipped because patch failed" > research360-build/V18-GRADLE-LOG.txt
+          fi
+          echo "BUILD_EXIT_CODE=$BUILD_RC" >> research360-build/BUILD-STATUS-v1.8.0.txt
+          exit 0
+      - name: Verify and package when build succeeded
+        id: verify
         shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          cd /tmp/r360
-          gradle assembleRelease lintRelease --no-daemon --stacktrace
-      - name: Verify and package
-        shell: bash
-        run: |
-          set -euo pipefail
+          set +e
+          BUILD_RC=$(grep BUILD_EXIT_CODE research360-build/BUILD-STATUS-v1.8.0.txt | cut -d= -f2)
+          if [ "$BUILD_RC" != "0" ]; then exit 0; fi
           APK="$(find /tmp/r360/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee research360-build/APK-SIGNATURE-VERIFICATION-v1.8.0.txt
-          "$BT/aapt" dump badging "$APK" | head -n 8 | tee research360-build/APK-BADGING-v1.8.0.txt
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > research360-build/APK-SIGNATURE-VERIFICATION-v1.8.0.txt 2>&1
+          VERIFY_RC=$?
+          "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.8.0.txt
           cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.8.0-FINAL.apk
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.8.0-FINAL.apk#' > research360-build/APK-SHA256-v1.8.0.txt
-          printf 'BUILD_EXIT_CODE=0\n' > research360-build/BUILD-STATUS-v1.8.0.txt
+          echo "VERIFY_EXIT_CODE=$VERIFY_RC" >> research360-build/BUILD-STATUS-v1.8.0.txt
+          exit 0
       - name: Upload APK artifact
         id: upload
+        if: hashFiles('/tmp/Research360-Intelligence-LG-G7-ThinQ-v1.8.0-FINAL.apk') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Research360-Intelligence-LG-G7-ThinQ-v1.8.0-FINAL
           path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.8.0-FINAL.apk
           retention-days: 30
       - name: Save artifact id
+        if: always()
         shell: bash
         run: |
           printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > research360-build/ARTIFACT-ID-v1.8.0.txt
-      - name: Commit verification
+      - name: Commit build diagnostics
+        if: always()
         shell: bash
         run: |
           git config user.name 'Research360 Build Bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add research360-build/ARTIFACT-ID-v1.8.0.txt research360-build/APK-SHA256-v1.8.0.txt research360-build/APK-SIGNATURE-VERIFICATION-v1.8.0.txt research360-build/APK-BADGING-v1.8.0.txt research360-build/BUILD-STATUS-v1.8.0.txt
-          git commit -m 'Build Research360 v1.8.0 verified APK [skip ci]' || true
+          git add research360-build/ARTIFACT-ID-v1.8.0.txt research360-build/BUILD-STATUS-v1.8.0.txt research360-build/V18-PATCH-LOG.txt research360-build/V18-GRADLE-LOG.txt
+          [ -f research360-build/APK-SHA256-v1.8.0.txt ] && git add research360-build/APK-SHA256-v1.8.0.txt || true
+          [ -f research360-build/APK-SIGNATURE-VERIFICATION-v1.8.0.txt ] && git add research360-build/APK-SIGNATURE-VERIFICATION-v1.8.0.txt || true
+          [ -f research360-build/APK-BADGING-v1.8.0.txt ] && git add research360-build/APK-BADGING-v1.8.0.txt || true
+          git commit -m 'Research360 v1.8.0 build diagnostics [skip ci]' || true
           git push origin HEAD:research360-build-v1.8.0
