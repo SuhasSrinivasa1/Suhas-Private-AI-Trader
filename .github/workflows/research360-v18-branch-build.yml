@@ -49,6 +49,7 @@ jobs:
             python3 research360-build/v1.6/apply_v16.py
             python3 research360-build/v1.7/apply_v17.py
             python3 research360-build/v1.8/apply_v18.py
+            python3 research360-build/v1.8/fix_v18_strings.py
           } > research360-build/V18-PATCH-LOG.txt 2>&1
           PATCH_RC=$?
           echo "PATCH_EXIT_CODE=$PATCH_RC" > research360-build/BUILD-STATUS-v1.8.0.txt
