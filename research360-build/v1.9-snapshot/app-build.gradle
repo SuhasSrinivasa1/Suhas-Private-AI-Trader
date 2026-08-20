@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+def signingProps = new Properties()
+def signingFile = rootProject.file('signing/signing.properties')
+if (signingFile.exists()) signingProps.load(new FileInputStream(signingFile))
+
+android {
+    namespace 'com.suhas.research360engine'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.suhas.research360engine'
+        minSdk 26
+        targetSdk 35
+        versionCode 180
+        versionName '1.8.0'
+    }
+
+    signingConfigs {
+        release {
+            if (signingFile.exists()) {
+                storeFile rootProject.file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources.excludes += ['META-INF/*']
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "Research360-Intelligence-LG-G7-ThinQ-v1.4.0-${variant.name}.apk"
+        }
+    }
+}
+
+dependencies { }
