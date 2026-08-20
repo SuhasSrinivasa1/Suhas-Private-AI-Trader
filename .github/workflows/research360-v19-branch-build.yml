@@ -77,16 +77,17 @@ jobs:
           VERIFY_RC=$?
           "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.9.0.txt
           cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
+          cp "$APK" research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk#' > research360-build/APK-SHA256-v1.9.0.txt
           echo "VERIFY_EXIT_CODE=$VERIFY_RC" >> research360-build/BUILD-STATUS-v1.9.0.txt
           exit 0
       - name: Upload APK artifact
         id: upload
-        if: hashFiles('/tmp/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk') != ''
         uses: actions/upload-artifact@v4
         with:
           name: Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL
-          path: /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
+          path: research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
+          if-no-files-found: error
           retention-days: 30
       - name: Save artifact id
         if: always()
