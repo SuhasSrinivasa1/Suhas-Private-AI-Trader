@@ -1,0 +1,58 @@
+name: Research360 v1.9 Source Export
+
+on:
+  push:
+    branches: [research360-build-v1.9.0]
+    paths:
+      - '.github/workflows/research360-v19-source-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research360-build-v1.9.0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore v1.8 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/r360 && mkdir -p /tmp/r360
+          cat research360-build/source/part* > /tmp/base.b64
+          base64 -d /tmp/base.b64 > /tmp/base.tgz
+          tar -xzf /tmp/base.tgz -C /tmp/r360
+          base64 -d /tmp/r360/signing/research360-release.p12.b64 > /tmp/r360/signing/research360-release.p12
+          cat research360-build/v1.4/overlay-part* > /tmp/v14.b64
+          base64 -d /tmp/v14.b64 > /tmp/v14.tgz
+          tar -xzf /tmp/v14.tgz -C /tmp/r360
+          python3 research360-build/v1.5/apply_v15.py
+          python3 research360-build/v1.6/apply_v16.py
+          python3 research360-build/v1.7/apply_v17.py
+          python3 research360-build/v1.8/apply_v18.py
+          python3 research360-build/v1.8/fix_v18_strings.py
+      - name: Snapshot key source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p research360-build/v1.9-snapshot
+          SRC=/tmp/r360/app/src/main/java/com/suhas/research360engine
+          for f in EngineService.java StrategyEngine.java MainActivity.java Db.java RecommendationNotifier.java ResearchNotificationListener.java GrowwClient.java AppState.java LearningBackup.java; do
+            test -f "$SRC/$f" && cp "$SRC/$f" "research360-build/v1.9-snapshot/$f" || true
+          done
+          cp /tmp/r360/app/build.gradle research360-build/v1.9-snapshot/app-build.gradle
+      - name: Commit snapshot
+        shell: bash
+        run: |
+          git config user.name 'Research360 Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add research360-build/v1.9-snapshot
+          git commit -m 'Export v1.8 source for v1.9 architecture [skip ci]' || true
+          git push origin HEAD:research360-build-v1.9.0
