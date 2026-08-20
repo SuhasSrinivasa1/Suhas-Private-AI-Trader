@@ -15,8 +15,8 @@ Daemon will be stopped at the end of the build
 > Task :app:processReleaseMainManifest
 > Task :app:processReleaseManifest
 > Task :app:extractProguardFiles
-> Task :app:mergeReleaseJniLibFolders
 > Task :app:processReleaseManifestForPackage
+> Task :app:mergeReleaseJniLibFolders
 > Task :app:mergeReleaseNativeLibs NO-SOURCE
 > Task :app:stripReleaseDebugSymbols NO-SOURCE
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
@@ -68,7 +68,7 @@ Note: Recompile with -Xlint:deprecation for details.
 Wrote HTML report to file:///tmp/r360/app/build/reports/lint-results-release.html
 
 > Task :app:lintRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/buildall-1787205862711.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/buildall-1787206060698.json
 
 BUILD SUCCESSFUL in 48s
 48 actionable tasks: 48 executed
