@@ -78,11 +78,13 @@ jobs:
           "$BT/aapt" dump badging "$APK" | head -n 8 > research360-build/APK-BADGING-v1.9.0.txt
           cp "$APK" /tmp/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
           cp "$APK" research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk
+          base64 -w 100 "$APK" > research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk.b64
           sha256sum "$APK" | sed 's#  .*#  Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk#' > research360-build/APK-SHA256-v1.9.0.txt
           echo "VERIFY_EXIT_CODE=$VERIFY_RC" >> research360-build/BUILD-STATUS-v1.9.0.txt
           exit 0
       - name: Upload APK artifact
         id: upload
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL
@@ -94,7 +96,7 @@ jobs:
         shell: bash
         run: |
           printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > research360-build/ARTIFACT-ID-v1.9.0.txt
-      - name: Commit build diagnostics
+      - name: Commit build diagnostics and retrievable APK payload
         if: always()
         shell: bash
         run: |
@@ -104,5 +106,6 @@ jobs:
           [ -f research360-build/APK-SHA256-v1.9.0.txt ] && git add research360-build/APK-SHA256-v1.9.0.txt || true
           [ -f research360-build/APK-SIGNATURE-VERIFICATION-v1.9.0.txt ] && git add research360-build/APK-SIGNATURE-VERIFICATION-v1.9.0.txt || true
           [ -f research360-build/APK-BADGING-v1.9.0.txt ] && git add research360-build/APK-BADGING-v1.9.0.txt || true
+          [ -f research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk.b64 ] && git add research360-build/v1.9/Research360-Intelligence-LG-G7-ThinQ-v1.9.0-FINAL.apk.b64 || true
           git commit -m 'Build Research360 v1.9.0 verified APK payload [skip ci]' || true
           git push origin HEAD:research360-build-v1.9.0
