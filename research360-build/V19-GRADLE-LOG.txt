@@ -2,8 +2,8 @@ To honour the JVM settings for this build a single-use Daemon process will be fo
 Daemon will be stopped at the end of the build 
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:javaPreCompileRelease
 > Task :app:checkReleaseAarMetadata
+> Task :app:javaPreCompileRelease
 > Task :app:generateReleaseResValues
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources
@@ -15,8 +15,8 @@ Daemon will be stopped at the end of the build
 > Task :app:processReleaseMainManifest
 > Task :app:processReleaseManifest
 > Task :app:extractProguardFiles
-> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseJniLibFolders
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeReleaseNativeLibs NO-SOURCE
 > Task :app:stripReleaseDebugSymbols NO-SOURCE
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
@@ -68,7 +68,7 @@ Note: Recompile with -Xlint:deprecation for details.
 Wrote HTML report to file:///tmp/r360/app/build/reports/lint-results-release.html
 
 > Task :app:lintRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/buildall-1787206060698.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/buildall-1787206187598.json
 
-BUILD SUCCESSFUL in 48s
+BUILD SUCCESSFUL in 46s
 48 actionable tasks: 48 executed
