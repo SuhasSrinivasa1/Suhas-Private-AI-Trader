@@ -1,0 +1,6 @@
+v1.5 patch applied
+v1.6 persistent backup patch applied
+v1.7 patch applied
+v1.8 Research360-only patch applied
+v1.8 Java strings fixed
+v1.9 architecture patch applied
