@@ -1,0 +1,116 @@
+name: Fresh Multyfi Delivery Buy APK
+
+on:
+  push:
+    branches: [ fresh-instant-delivery-20260825 ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct brand-new source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat fresh-delivery-source/chunk1.b64 fresh-delivery-source/chunk2.b64 fresh-delivery-source/chunk3.b64 fresh-delivery-source/chunk4.b64 | tr -d '\r\n' | base64 -d > fresh-delivery-buy-source.zip
+          unzip -q fresh-delivery-buy-source.zip
+          mv Multyfi-Delivery-Buy-FRESH fresh-delivery-buy
+          test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Validate locked BUY-only contract
+        working-directory: fresh-delivery-buy
+        run: python3 scripts/validate_contract.py
+
+      - name: Unit tests
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:testReleaseUnitTest
+
+      - name: Generate brand-new release signing identity
+        working-directory: fresh-delivery-buy
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 18)"
+          keytool -genkeypair -v \
+            -keystore fresh-delivery-release.p12 \
+            -storetype PKCS12 \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias deliverybuy \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -dname "CN=Multyfi Delivery Buy Fresh, OU=Private Build, O=Personal, L=Bengaluru, ST=Karnataka, C=IN"
+          {
+            echo "Keystore: fresh-delivery-release.p12"
+            echo "Type: PKCS12"
+            echo "Alias: deliverybuy"
+            echo "Store password: $PASS"
+            echo "Key password: $PASS"
+          } > SIGNING-BACKUP.txt
+          echo "RELEASE_STORE_FILE=$PWD/fresh-delivery-release.p12" >> "$GITHUB_ENV"
+          echo "RELEASE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=deliverybuy" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify and package
+        working-directory: fresh-delivery-buy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/signing-backup
+          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk
+          cp fresh-delivery-release.p12 output/signing-backup/
+          cp SIGNING-BACKUP.txt output/signing-backup/
+          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.0.0-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
+          rm -rf output/signing-backup
+          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk | tee output/APK-SHA256.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
+          {
+            echo "Multyfi Delivery Buy FRESH v1.0.0"
+            echo "Package: com.suhas.multyfideliverybuy"
+            echo "Intraday release: INR 1,00,000 budget / CNC delivery MARKET BUY"
+            echo "Swing release: INR 10,000 budget / toggle / CNC delivery MARKET BUY"
+            echo "Multibagger release: INR 10,000 budget / toggle / CNC delivery MARKET BUY"
+            echo "No SELL, target, stop, trailing, re-entry, P&L, live-price, candle, position, holdings, cancel or modify logic."
+            echo "Quantity is derived from the price embedded in the Multyfi release notification; no LTP lookup is performed."
+          } > output/RELEASE-NOTES.txt
+          cd ..
+          zip -qr output/fresh-delivery-buy-source.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt'
+
+      - name: Upload APK and private handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: multyfi-delivery-buy-fresh-v1
+          path: fresh-delivery-buy/output/*
+          if-no-files-found: error
+          retention-days: 30
