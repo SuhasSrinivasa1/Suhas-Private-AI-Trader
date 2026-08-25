@@ -6,6 +6,11 @@ on:
     paths:
       - 'android-fastbuy-core/**'
       - '.github/workflows/build-multyfi-fastbuy-core.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-fastbuy-core/**'
+      - '.github/workflows/build-multyfi-fastbuy-core.yml'
   workflow_dispatch:
 
 permissions:
