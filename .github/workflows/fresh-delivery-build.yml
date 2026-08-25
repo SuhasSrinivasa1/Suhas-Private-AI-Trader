@@ -57,6 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           PASS="$(openssl rand -hex 18)"
+          echo "::add-mask::$PASS"
           keytool -genkeypair -v \
             -keystore fresh-delivery-release.p12 \
             -storetype PKCS12 \
@@ -104,7 +105,6 @@ jobs:
             echo "No SELL, target, stop, trailing, re-entry, P&L, live-price, candle, position, holdings, cancel or modify logic."
             echo "Quantity is derived from the price embedded in the Multyfi release notification; no LTP lookup is performed."
           } > output/RELEASE-NOTES.txt
-          cd ..
           zip -qr output/fresh-delivery-buy-source.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt'
 
       - name: Upload APK and private handoff
