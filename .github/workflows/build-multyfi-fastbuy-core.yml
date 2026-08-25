@@ -1,0 +1,43 @@
+name: Build Multyfi FastBuy Core
+
+on:
+  push:
+    branches: [multyfi-fastbuy-core-v1]
+    paths:
+      - 'android-fastbuy-core/**'
+      - '.github/workflows/build-multyfi-fastbuy-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build fresh APK
+        run: gradle -p android-fastbuy-core clean assembleDebug --no-daemon --stacktrace
+      - name: Verify APK package
+        run: |
+          APK=android-fastbuy-core/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          $ANDROID_HOME/build-tools/35.0.0/zipalign -c -v 4 "$APK"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$APK"
+          cp "$APK" Multyfi-FastBuy-Core-v1.0.0-S24-FRESH-INSTALL.apk
+          sha256sum Multyfi-FastBuy-Core-v1.0.0-S24-FRESH-INSTALL.apk > SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-FastBuy-Core-v1.0.0-S24
+          path: |
+            Multyfi-FastBuy-Core-v1.0.0-S24-FRESH-INSTALL.apk
+            SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
