@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -17,14 +18,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct brand-new source package
+      - name: Reconstruct v1.0.1 source package
         shell: bash
         run: |
           set -euo pipefail
-          cat fresh-delivery-source/chunk1.b64 fresh-delivery-source/chunk2.b64 fresh-delivery-source/chunk3.b64 fresh-delivery-source/chunk4.b64 | tr -d '\r\n' | base64 -d > fresh-delivery-buy-source.zip
-          unzip -q fresh-delivery-buy-source.zip
-          mv Multyfi-Delivery-Buy-FRESH fresh-delivery-buy
+          cat fresh-delivery-source-v101/chunk1.b64 fresh-delivery-source-v101/chunk2.b64 fresh-delivery-source-v101/chunk3.b64 fresh-delivery-source-v101/chunk4.b64 | tr -d '\r\n' | base64 -d > fresh-delivery-buy-source-v1.0.1.zip
+          mkdir -p fresh-delivery-buy
+          unzip -q fresh-delivery-buy-source-v1.0.1.zip -d fresh-delivery-buy
           test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
+          test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/NetworkCheck.java
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -51,29 +53,23 @@ jobs:
         working-directory: fresh-delivery-buy
         run: gradle --no-daemon :app:testReleaseUnitTest
 
-      - name: Generate brand-new release signing identity
-        working-directory: fresh-delivery-buy
+      - name: Restore v1.0.0 signing identity
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          PASS="$(openssl rand -hex 18)"
+          mkdir -p prior-artifact fresh-delivery-buy/signing-restored
+          gh run download 32809775204 --repo "${{ github.repository }}" -n multyfi-delivery-buy-fresh-v1 -D prior-artifact
+          unzip -q prior-artifact/Multyfi-Delivery-Buy-v1.0.0-SIGNING-BACKUP.zip -d fresh-delivery-buy/signing-restored
+          PASS="$(sed -n 's/^Store password: //p' fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt)"
+          test -n "$PASS"
           echo "::add-mask::$PASS"
-          keytool -genkeypair -v \
-            -keystore fresh-delivery-release.p12 \
-            -storetype PKCS12 \
-            -storepass "$PASS" \
-            -keypass "$PASS" \
-            -alias deliverybuy \
-            -keyalg RSA -keysize 4096 -validity 10000 \
-            -dname "CN=Multyfi Delivery Buy Fresh, OU=Private Build, O=Personal, L=Bengaluru, ST=Karnataka, C=IN"
-          {
-            echo "Keystore: fresh-delivery-release.p12"
-            echo "Type: PKCS12"
-            echo "Alias: deliverybuy"
-            echo "Store password: $PASS"
-            echo "Key password: $PASS"
-          } > SIGNING-BACKUP.txt
-          echo "RELEASE_STORE_FILE=$PWD/fresh-delivery-release.p12" >> "$GITHUB_ENV"
+          cp fresh-delivery-buy/signing-restored/fresh-delivery-release.p12 fresh-delivery-buy/fresh-delivery-release.p12
+          cp fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt fresh-delivery-buy/SIGNING-BACKUP.txt
+          keytool -list -v -keystore fresh-delivery-buy/fresh-delivery-release.p12 -storetype PKCS12 -storepass "$PASS" -alias deliverybuy > signing-cert.txt
+          grep -qi 'E0:B1:C6:11:90:9C:F0:87:9B:19:D5:3F:24:54:70:80:49:F0:76:AB:F4:CF:96:DE:E0:1C:58:D6:5B:78:BE:97' signing-cert.txt
+          echo "RELEASE_STORE_FILE=$PWD/fresh-delivery-buy/fresh-delivery-release.p12" >> "$GITHUB_ENV"
           echo "RELEASE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
           echo "RELEASE_KEY_ALIAS=deliverybuy" >> "$GITHUB_ENV"
           echo "RELEASE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
@@ -88,29 +84,40 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output/signing-backup
-          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk
+          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.0.1.apk
           cp fresh-delivery-release.p12 output/signing-backup/
           cp SIGNING-BACKUP.txt output/signing-backup/
-          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.0.0-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
+          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.0.1-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
           rm -rf output/signing-backup
-          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk | tee output/APK-SHA256.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.0.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.0.1.apk | tee output/APK-SHA256.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.0.1.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          grep -qi 'e0b1c611909cf0879b19d53f2454708049f076abf4cf96dee01c58d65b78be97' output/APK-SIGNATURE-VERIFY.txt
           python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
           {
-            echo "Multyfi Delivery Buy FRESH v1.0.0"
+            echo "Multyfi Delivery Buy FRESH v1.0.1"
             echo "Package: com.suhas.multyfideliverybuy"
+            echo "Same signing identity as v1.0.0 for in-place update."
             echo "Intraday release: INR 1,00,000 budget / CNC delivery MARKET BUY"
             echo "Swing release: INR 10,000 budget / toggle / CNC delivery MARKET BUY"
             echo "Multibagger release: INR 10,000 budget / toggle / CNC delivery MARKET BUY"
+            echo "New: DETECT STATIC IP compares current public IPv4 with the saved Groww-whitelisted IP."
+            echo "New: REFRESH & TEST AUTHENTICATION refreshes the Groww token and validates it with the read-only user profile endpoint."
+            echo "ARM is allowed only after static-IP match and successful authentication test."
+            echo "Static-IP detection is deliberately excluded from the notification-to-BUY hot path."
             echo "No SELL, target, stop, trailing, re-entry, P&L, live-price, candle, position, holdings, cancel or modify logic."
-            echo "Quantity is derived from the price embedded in the Multyfi release notification; no LTP lookup is performed."
           } > output/RELEASE-NOTES.txt
-          zip -qr output/fresh-delivery-buy-source.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt'
+          {
+            echo "Install Multyfi-Delivery-Buy-FRESH-v1.0.1.apk directly over v1.0.0."
+            echo "Do not uninstall v1.0.0 first if you want to preserve saved app settings."
+            echo "The package name and signing certificate are unchanged from v1.0.0."
+            echo "After update, save the expected Groww-whitelisted static public IP, then run DETECT STATIC IP and REFRESH & TEST AUTHENTICATION before arming."
+          } > output/INSTALL-v1.0.1.txt
+          zip -qr output/fresh-delivery-buy-source-v1.0.1.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt' 'signing-restored/*'
 
       - name: Upload APK and private handoff
         uses: actions/upload-artifact@v4
         with:
-          name: multyfi-delivery-buy-fresh-v1
+          name: multyfi-delivery-buy-fresh-v101
           path: fresh-delivery-buy/output/*
           if-no-files-found: error
           retention-days: 30
