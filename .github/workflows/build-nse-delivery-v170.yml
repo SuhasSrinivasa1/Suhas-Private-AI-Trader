@@ -7,6 +7,10 @@ on:
     paths:
       - 'apply-v180.sh'
       - '.github/workflows/build-nse-delivery-v170.yml'
+  pull_request:
+    paths:
+      - 'apply-v180.sh'
+      - '.github/workflows/build-nse-delivery-v170.yml'
   workflow_dispatch:
 
 jobs:
