@@ -120,3 +120,5 @@ jobs:
             nse-intraday-v180/APK-SIGNATURE-VERIFY.txt
             nse-intraday-v180/RELEASE-NOTES-v1.8.0.txt
             NSE-Intraday-Momentum-v1.8.0-SOURCE.zip
+
+# PR synchronize trigger for v1.8.0 validation
