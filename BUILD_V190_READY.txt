@@ -1,0 +1,4 @@
+NSE Intraday Momentum v1.9.0 hourly performance controller build trigger.
+Target: 5 successful notified-target hits per full market hour.
+Adaptive learning/exploration: 1.00x to 3.00x when behind pace.
+Final confirmation gates remain protected; target is not a profit guarantee.
