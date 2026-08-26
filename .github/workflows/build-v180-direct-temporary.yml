@@ -1,15 +1,15 @@
 name: Direct temporary build NSE Intraday Momentum v1.8.0
 
 on:
-  issues:
-    types: [opened]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   build-v180:
-    if: contains(github.event.issue.title, '[BUILD-V180]')
+    if: contains(github.event.pull_request.title, '[BUILD-V180-DIRECT]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
