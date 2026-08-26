@@ -7,6 +7,12 @@ on:
     paths:
       - 'nse-v150-xz.part.*'
       - '.github/workflows/build-nse-delivery-v150.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'nse-v150-xz.part.*'
+      - '.github/workflows/build-nse-delivery-v150.yml'
   workflow_dispatch:
 
 jobs:
