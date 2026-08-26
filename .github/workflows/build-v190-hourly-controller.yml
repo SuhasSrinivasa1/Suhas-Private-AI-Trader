@@ -26,8 +26,12 @@ jobs:
           tar -xJf /tmp/nse-v160.tar.xz
           bash apply-v170.sh
           bash apply-v180.sh
-          test -f v190-overlay.b64
-          tr -d '\r\n' < v190-overlay.b64 | base64 -d > /tmp/v190-overlay.zip
+          test -f v190-overlay.part.00
+          test -f v190-overlay.part.01
+          test -f v190-overlay.part.02
+          test -f v190-overlay.part.03
+          cat v190-overlay.part.00 v190-overlay.part.01 v190-overlay.part.02 v190-overlay.part.03 | tr -d '\r\n' | base64 -d > /tmp/v190-overlay.zip
+          unzip -t /tmp/v190-overlay.zip
           unzip -oq /tmp/v190-overlay.zip -d nse-intraday-v180
           test -f nse-intraday-v180/app/build.gradle
           grep -q "versionCode 190" nse-intraday-v180/app/build.gradle
