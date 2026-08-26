@@ -1,15 +1,15 @@
-name: Build NSE Delivery Momentum v1.7.0
+name: Build NSE Intraday Momentum v1.8.0
 
 on:
   push:
     branches:
-      - build/nse-delivery-v1.7.0-housekeeping2
+      - build/nse-intraday-v1.8.0-alerts
     paths:
-      - 'apply-v170.sh'
+      - 'apply-v180.sh'
       - '.github/workflows/build-nse-delivery-v170.yml'
   pull_request:
     paths:
-      - 'apply-v170.sh'
+      - 'apply-v180.sh'
       - '.github/workflows/build-nse-delivery-v170.yml'
   workflow_dispatch:
 
@@ -23,18 +23,19 @@ jobs:
       - name: Checkout build branch
         uses: actions/checkout@v4
 
-      - name: Restore v1.6.0 baseline and apply v1.7.0 housekeeping
+      - name: Restore v1.6.0 baseline, apply v1.7.0 and v1.8.0
         shell: bash
         run: |
           set -euo pipefail
           cat nse-v160-b64.part.00 nse-v160-b64.part.01 nse-v160-b64.part.02 nse-v160-b64.part.03 nse-v160-b64.part.04 nse-v160-b64.part.05 nse-v160-b64.part.06 | base64 -d > /tmp/nse-v160.tar.xz
           tar -xJf /tmp/nse-v160.tar.xz
-          test -f nse-delivery-v160/app/build.gradle
-          grep -q "versionName '1.6.0'" nse-delivery-v160/app/build.gradle
           bash apply-v170.sh
-          test -f nse-delivery-v170/app/src/main/java/com/suhas/nsedeliverymomentum/Housekeeping.java
-          grep -q "versionName '1.7.0'" nse-delivery-v170/app/build.gradle
-          grep -q "CLEAN LEARNING STORAGE NOW" nse-delivery-v170/app/src/main/java/com/suhas/nsedeliverymomentum/MainActivity.java
+          bash apply-v180.sh
+          test -f nse-intraday-v180/app/build.gradle
+          grep -q "versionName '1.8.0'" nse-intraday-v180/app/build.gradle
+          test -f nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/TargetMath.java
+          grep -q 'notifySignal("SHORT"' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'notifySignal("LONG"' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -57,38 +58,38 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Unit tests
-        working-directory: nse-delivery-v170
+        working-directory: nse-intraday-v180
         run: gradle --no-daemon testDebugUnitTest
 
       - name: Android lint
-        working-directory: nse-delivery-v170
+        working-directory: nse-intraday-v180
         run: gradle --no-daemon lintDebug
 
       - name: Assemble release APK
-        working-directory: nse-delivery-v170
+        working-directory: nse-intraday-v180
         run: gradle --no-daemon assembleRelease
 
       - name: Fresh-sign and verify APK
-        working-directory: nse-delivery-v170
+        working-directory: nse-intraday-v180
         shell: bash
         run: |
           set -euo pipefail
           UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
-          SIGNED="NSE-Delivery-Momentum-S24-v1.7.0-NIGHT-LAB-HOUSEKEEPING-FRESH-SIGNED.apk"
-          OUT_UNSIGNED="NSE-Delivery-Momentum-S24-v1.7.0-NIGHT-LAB-HOUSEKEEPING-UNSIGNED.apk"
+          SIGNED="NSE-Intraday-Momentum-S24-v1.8.0-CONFIRMED-ENTRY-TARGET-FRESH-SIGNED.apk"
+          OUT_UNSIGNED="NSE-Intraday-Momentum-S24-v1.8.0-CONFIRMED-ENTRY-TARGET-UNSIGNED.apk"
           test -s "$UNSIGNED"
           keytool -genkeypair -v \
-            -keystore fresh-v170.jks \
+            -keystore fresh-v180.jks \
             -storepass changeit \
             -keypass changeit \
-            -alias nse-v170 \
+            -alias nse-v180 \
             -keyalg RSA \
             -keysize 4096 \
             -validity 3650 \
-            -dname "CN=NSE Delivery Momentum v1.7.0, OU=Night Lab Housekeeping, O=NSE Delivery Momentum, L=Bengaluru, ST=Karnataka, C=IN"
+            -dname "CN=NSE Intraday Momentum v1.8.0, OU=Confirmed Signal Build, O=NSE Intraday Momentum, L=Bengaluru, ST=Karnataka, C=IN"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           "$APKSIGNER" sign \
-            --ks fresh-v170.jks \
+            --ks fresh-v180.jks \
             --ks-pass pass:changeit \
             --key-pass pass:changeit \
             --out "$SIGNED" \
@@ -101,21 +102,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          zip -qr NSE-Delivery-Momentum-v1.7.0-SOURCE.zip nse-delivery-v170 \
-            -x 'nse-delivery-v170/app/build/*' \
-               'nse-delivery-v170/.gradle/*' \
-               'nse-delivery-v170/fresh-v170.jks'
+          zip -qr NSE-Intraday-Momentum-v1.8.0-SOURCE.zip nse-intraday-v180 \
+            -x 'nse-intraday-v180/app/build/*' \
+               'nse-intraday-v180/.gradle/*' \
+               'nse-intraday-v180/fresh-v180.jks'
 
-      - name: Upload v1.7.0 package
+      - name: Upload v1.8.0 package
         uses: actions/upload-artifact@v4
         with:
-          name: NSE-Delivery-Momentum-v1.7.0-NIGHT-LAB-HOUSEKEEPING
+          name: NSE-Intraday-Momentum-v1.8.0-CONFIRMED-ENTRY-TARGET
           if-no-files-found: error
           retention-days: 30
           path: |
-            nse-delivery-v170/NSE-Delivery-Momentum-S24-v1.7.0-NIGHT-LAB-HOUSEKEEPING-FRESH-SIGNED.apk
-            nse-delivery-v170/NSE-Delivery-Momentum-S24-v1.7.0-NIGHT-LAB-HOUSEKEEPING-UNSIGNED.apk
-            nse-delivery-v170/SHA256.txt
-            nse-delivery-v170/APK-SIGNATURE-VERIFY.txt
-            nse-delivery-v170/RELEASE-NOTES-v1.7.0.txt
-            NSE-Delivery-Momentum-v1.7.0-SOURCE.zip
+            nse-intraday-v180/NSE-Intraday-Momentum-S24-v1.8.0-CONFIRMED-ENTRY-TARGET-FRESH-SIGNED.apk
+            nse-intraday-v180/NSE-Intraday-Momentum-S24-v1.8.0-CONFIRMED-ENTRY-TARGET-UNSIGNED.apk
+            nse-intraday-v180/SHA256.txt
+            nse-intraday-v180/APK-SIGNATURE-VERIFY.txt
+            nse-intraday-v180/RELEASE-NOTES-v1.8.0.txt
+            NSE-Intraday-Momentum-v1.8.0-SOURCE.zip
