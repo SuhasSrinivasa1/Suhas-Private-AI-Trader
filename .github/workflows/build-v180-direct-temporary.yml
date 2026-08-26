@@ -18,7 +18,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Reconstruct verified v1.8 base and apply v1.9 overlay
+      - name: Reconstruct v1.8 and apply v1.9
         shell: bash
         run: |
           set -euo pipefail
@@ -26,64 +26,53 @@ jobs:
           tar -xJf /tmp/nse-v160.tar.xz
           bash apply-v170.sh
           bash apply-v180.sh
-          cat v190-overlay.part.00 v190-overlay.part.01 v190-overlay.part.02 v190-overlay.part.03 | tr -d '\r\n' | base64 -d > /tmp/v190-overlay.zip
-          unzip -t /tmp/v190-overlay.zip
-          unzip -oq /tmp/v190-overlay.zip -d nse-intraday-v180
-          grep -q "versionCode 190" nse-intraday-v180/app/build.gradle
-          grep -q "versionName '1.9.0'" nse-intraday-v180/app/build.gradle
-          grep -q 'class HourlyPerformance' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/HourlyPerformance.java
-          grep -q 'FULL_HOUR_TARGET = 5' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/HourlyPerformance.java
-          grep -q 'adaptive_learning_rate_x100' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
-          grep -q 'hour_wins' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
-          grep -q 'target-hits per full market hour' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/MainActivity.java
-          grep -q 'notifySignal("LONG"' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
-          grep -q 'notifySignal("SHORT"' nse-intraday-v180/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          bash apply-v190.sh
+          grep -q "versionCode 190" nse-intraday-v190/app/build.gradle
+          grep -q "versionName '1.9.0'" nse-intraday-v190/app/build.gradle
+          grep -q 'TARGET_HITS_PER_HOUR=5' nse-intraday-v190/app/src/main/java/com/suhas/nsedeliverymomentum/HourlyAdaptiveLearning.java
+          grep -q 'MAX_RATE=3.0' nse-intraday-v190/app/src/main/java/com/suhas/nsedeliverymomentum/HourlyAdaptiveLearning.java
+          grep -q 'hourly_report' nse-intraday-v190/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'notifySignal("LONG"' nse-intraday-v190/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'notifySignal("SHORT"' nse-intraday-v190/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v3
 
-      - name: Install Android API 36 and emulator
+      - name: Install Android API 36
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Unit tests
-        working-directory: nse-intraday-v180
-        run: gradle --no-daemon --console=plain testDebugUnitTest
-
-      - name: Android lint
-        working-directory: nse-intraday-v180
-        run: gradle --no-daemon --console=plain lintRelease
+      - name: Unit tests and lint
+        working-directory: nse-intraday-v190
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest lintDebug
 
       - name: Assemble release
-        working-directory: nse-intraday-v180
+        working-directory: nse-intraday-v190
         run: gradle --no-daemon --console=plain assembleRelease
 
-      - name: Fresh sign and verify v1.9.0
-        working-directory: nse-intraday-v180
+      - name: Fresh sign and verify
+        working-directory: nse-intraday-v190
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
           UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
-          SIGNED='out/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-CONTROLLER-FRESH-SIGNED.apk'
+          SIGNED='out/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-ADAPTIVE-FRESH-SIGNED.apk'
           test -s "$UNSIGNED"
-          keytool -genkeypair -v -keystore /tmp/fresh-v190.jks -storepass changeit -keypass changeit -alias nse-v190 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=NSE Intraday Momentum v1.9.0, OU=Private Build, O=NSE Intraday Momentum, L=Bengaluru, ST=Karnataka, C=IN'
+          keytool -genkeypair -v -keystore /tmp/v190.jks -storepass changeit -keypass changeit -alias nse-v190 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=NSE Intraday Momentum v1.9.0, OU=Private Build, O=NSE Intraday Momentum, L=Bengaluru, ST=Karnataka, C=IN'
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
-          "$APKSIGNER" sign --ks /tmp/fresh-v190.jks --ks-pass pass:changeit --key-pass pass:changeit --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$UNSIGNED"
+          "$APKSIGNER" sign --ks /tmp/v190.jks --ks-pass pass:changeit --key-pass pass:changeit --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$UNSIGNED"
           "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
           "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
           grep -q "package: name='com.suhas.nsedeliverymomentum'" out/APK-BADGING.txt
@@ -93,8 +82,8 @@ jobs:
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
 
-      - name: Android 16 install and cold-launch acceptance
-        working-directory: nse-intraday-v180
+      - name: Android 16 install and cold launch
+        working-directory: nse-intraday-v190
         timeout-minutes: 15
         shell: bash
         run: |
@@ -117,7 +106,7 @@ jobs:
             sleep 3
           done
           test "$booted" = "1"
-          adb install "$OUT/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-CONTROLLER-FRESH-SIGNED.apk" | tee "$OUT/install-api36.txt"
+          adb install "$OUT/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-ADAPTIVE-FRESH-SIGNED.apk" | tee "$OUT/install-api36.txt"
           grep -q Success "$OUT/install-api36.txt"
           adb shell pm grant com.suhas.nsedeliverymomentum android.permission.POST_NOTIFICATIONS || true
           adb logcat -c
@@ -125,28 +114,24 @@ jobs:
           sleep 8
           adb shell dumpsys activity activities > "$OUT/activity-api36.txt"
           grep -Eq '(topResumedActivity|ResumedActivity|mResumedActivity).*com.suhas.nsedeliverymomentum/.MainActivity' "$OUT/activity-api36.txt"
-          pid=$(adb shell pidof com.suhas.nsedeliverymomentum | tr -d '\r')
-          test -n "$pid"
+          test -n "$(adb shell pidof com.suhas.nsedeliverymomentum | tr -d '\r')"
           adb logcat -d -v threadtime > "$OUT/logcat-api36.txt"
-          if grep -E 'FATAL EXCEPTION|Process: com.suhas.nsedeliverymomentum|ClassNotFoundException.*com.suhas.nsedeliverymomentum' "$OUT/logcat-api36.txt"; then
-            echo 'Application crash detected' >&2
-            exit 1
-          fi
+          if grep -E 'FATAL EXCEPTION|Process: com.suhas.nsedeliverymomentum|ClassNotFoundException.*com.suhas.nsedeliverymomentum' "$OUT/logcat-api36.txt"; then exit 1; fi
           echo 'PASS: Android 16 install and cold launch' | tee "$OUT/INSTALL-ACCEPTANCE.txt"
 
-      - name: Upload verified v1.9.0 APK
+      - name: Upload verified APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-CONTROLLER-VERIFIED
+          name: NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-ADAPTIVE-VERIFIED
           path: |
-            nse-intraday-v180/out/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-CONTROLLER-FRESH-SIGNED.apk
-            nse-intraday-v180/out/APK-SIGNATURE-VERIFY.txt
-            nse-intraday-v180/out/APK-BADGING.txt
-            nse-intraday-v180/out/SHA256.txt
-            nse-intraday-v180/out/INSTALL-ACCEPTANCE.txt
-            nse-intraday-v180/out/install-api36.txt
-            nse-intraday-v180/out/cold-launch-api36.txt
-            nse-intraday-v180/out/logcat-api36.txt
+            nse-intraday-v190/out/NSE-Intraday-Momentum-S24-v1.9.0-HOURLY-ADAPTIVE-FRESH-SIGNED.apk
+            nse-intraday-v190/out/APK-SIGNATURE-VERIFY.txt
+            nse-intraday-v190/out/APK-BADGING.txt
+            nse-intraday-v190/out/SHA256.txt
+            nse-intraday-v190/out/INSTALL-ACCEPTANCE.txt
+            nse-intraday-v190/out/install-api36.txt
+            nse-intraday-v190/out/cold-launch-api36.txt
+            nse-intraday-v190/out/logcat-api36.txt
           if-no-files-found: error
           retention-days: 30
