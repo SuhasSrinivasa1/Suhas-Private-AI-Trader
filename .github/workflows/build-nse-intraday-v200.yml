@@ -26,6 +26,9 @@ jobs:
           echo 'baabb4ea5644f1eb156b425ce772951bf903706a8c128a1189489ff9cd2a9ea2  /tmp/nse-v200-source.tar.xz' | sha256sum -c -
           tar -xJf /tmp/nse-v200-source.tar.xz
           test -d v200src
+          # Conservative precision fix: ensure generated trade plans clear the 1.30 R:R floor with margin.
+          sed -i 's/double rrMin=1\.30;/double rrMin=1.35;/' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/TradePlanMath.java
+          grep -q 'double rrMin=1.35' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/TradePlanMath.java
           grep -q "versionCode 200" v200src/app/build.gradle
           grep -q "versionName '2.0.0'" v200src/app/build.gradle
           test ! -f v200src/app/src/main/java/com/suhas/nsedeliverymomentum/NightLab.java
