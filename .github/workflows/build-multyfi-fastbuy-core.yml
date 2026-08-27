@@ -1,0 +1,85 @@
+name: Build Multyfi FastBuy Core
+
+on:
+  push:
+    branches: [multyfi-fastbuy-core-v1]
+    paths:
+      - 'android-fastbuy-core/**'
+      - '.github/workflows/build-multyfi-fastbuy-core.yml'
+      - '.ci/fastbuy-release.p12.b64'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-fastbuy-core/**'
+      - '.github/workflows/build-multyfi-fastbuy-core.yml'
+      - '.ci/fastbuy-release.p12.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FASTBUY_STORE_PASS: 'PUZtxJRWGPj9ElQoG%BU34EpxcCS'
+  FASTBUY_ALIAS: 'fastbuy'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Prepare persistent release key
+        run: |
+          if [ -f .ci/fastbuy-release.p12.b64 ]; then
+            base64 -d .ci/fastbuy-release.p12.b64 > fastbuy-release.p12
+          else
+            keytool -genkeypair -noprompt \
+              -storetype PKCS12 \
+              -keystore fastbuy-release.p12 \
+              -storepass "$FASTBUY_STORE_PASS" \
+              -keypass "$FASTBUY_STORE_PASS" \
+              -alias "$FASTBUY_ALIAS" \
+              -keyalg RSA -keysize 3072 -validity 10000 \
+              -dname "CN=Multyfi FastBuy Core, OU=Private Trading, O=FastBuy Core, C=IN"
+          fi
+          base64 -w0 fastbuy-release.p12 > fastbuy-release.p12.b64
+      - name: Build fresh unsigned release APK
+        run: gradle -p android-fastbuy-core clean assembleRelease --no-daemon --stacktrace
+      - name: Align, sign and verify APK
+        run: |
+          UNSIGNED=android-fastbuy-core/app/build/outputs/apk/release/app-release-unsigned.apk
+          ALIGNED=Multyfi-FastBuy-Core-v1.0.0-S24-ALIGNED.apk
+          FINAL=Multyfi-FastBuy-Core-v1.0.0-S24-FRESH-INSTALL.apk
+          test -f "$UNSIGNED"
+          $ANDROID_HOME/build-tools/35.0.0/zipalign -p -f 4 "$UNSIGNED" "$ALIGNED"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+            --ks fastbuy-release.p12 \
+            --ks-type PKCS12 \
+            --ks-key-alias "$FASTBUY_ALIAS" \
+            --ks-pass "pass:$FASTBUY_STORE_PASS" \
+            --key-pass "pass:$FASTBUY_STORE_PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$FINAL" "$ALIGNED"
+          $ANDROID_HOME/build-tools/35.0.0/zipalign -c -v 4 "$FINAL"
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose --print-certs "$FINAL" | tee APK-SIGNATURE.txt
+          sha256sum "$FINAL" > SHA256.txt
+          printf 'alias=%s\nstore_password=%s\nkey_password=%s\n' "$FASTBUY_ALIAS" "$FASTBUY_STORE_PASS" "$FASTBUY_STORE_PASS" > SIGNING-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-FastBuy-Core-v1.0.0-S24-RELEASE
+          path: |
+            Multyfi-FastBuy-Core-v1.0.0-S24-FRESH-INSTALL.apk
+            SHA256.txt
+            APK-SIGNATURE.txt
+            fastbuy-release.p12.b64
+            SIGNING-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
