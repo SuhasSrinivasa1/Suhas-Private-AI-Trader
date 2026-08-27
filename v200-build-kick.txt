@@ -1,0 +1,2 @@
+Build v2.0 Live Candle Fusion
+Source SHA256: baabb4ea5644f1eb156b425ce772951bf903706a8c128a1189489ff9cd2a9ea2
