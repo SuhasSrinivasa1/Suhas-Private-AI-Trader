@@ -1,0 +1,37 @@
+name: Build Dhruva Multyfi APK
+
+on:
+  push:
+    branches: [multyfi-bridge-apk-v1]
+    paths:
+      - 'android-multyfi-bridge/**'
+      - '.github/workflows/build-multyfi-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-multyfi-bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Dhruva-Multyfi-Bridge-v1.0.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dhruva-Multyfi-Bridge-v1.0.0
+          path: android-multyfi-bridge/app/build/outputs/apk/debug/Dhruva-Multyfi-Bridge-v1.0.0.apk
+          if-no-files-found: error
