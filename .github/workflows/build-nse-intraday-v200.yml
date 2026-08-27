@@ -18,11 +18,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Reconstruct v2.0 source
+      - name: Reconstruct and verify v2.0 source
         shell: bash
         run: |
           set -euo pipefail
-          cat nse-v200-b64.part.* | base64 -d > /tmp/nse-v200-source.tar.xz
+          cat v2chunk.00 v2chunk.01 v2chunk.02 v2chunk.03 v2chunk.04 v2chunk.05 | base64 -d > /tmp/nse-v200-source.tar.xz
+          echo 'baabb4ea5644f1eb156b425ce772951bf903706a8c128a1189489ff9cd2a9ea2  /tmp/nse-v200-source.tar.xz' | sha256sum -c -
           tar -xJf /tmp/nse-v200-source.tar.xz
           test -d v200src
           grep -q "versionCode 200" v200src/app/build.gradle
