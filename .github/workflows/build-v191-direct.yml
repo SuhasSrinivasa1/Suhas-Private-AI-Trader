@@ -1,0 +1,113 @@
+name: Build NSE Intraday Momentum v1.9.1 Hourly Pace
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-v191:
+    if: contains(github.event.pull_request.title, '[BUILD-V191]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout v1.9.1 build branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Reconstruct v1.9.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat nse-v160-b64.part.00 nse-v160-b64.part.01 nse-v160-b64.part.02 nse-v160-b64.part.03 nse-v160-b64.part.04 nse-v160-b64.part.05 nse-v160-b64.part.06 | base64 -d > /tmp/nse-v160.tar.xz
+          tar -xJf /tmp/nse-v160.tar.xz
+          bash apply-v170.sh
+          bash apply-v180.sh
+          bash apply-v190.sh
+          bash apply-v191.sh
+          grep -q "versionCode 191" nse-intraday-v191/app/build.gradle
+          grep -q "versionName '1.9.1'" nse-intraday-v191/app/build.gradle
+          grep -q 'requiredByMinute' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/HourlyAdaptiveLearning.java
+          grep -q 'marketHourKey' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/LearningStore.java
+          grep -q 'ELITE VWAP/STRUCTURE CONFIRM' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'BLOCKER LEARNING' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'notifySignal("LONG"' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+          grep -q 'notifySignal("SHORT"' nse-intraday-v191/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Unit tests and lint
+        working-directory: nse-intraday-v191
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest lintDebug
+
+      - name: Assemble release
+        working-directory: nse-intraday-v191
+        run: gradle --no-daemon --console=plain assembleRelease
+
+      - name: Align sign and validate APK
+        working-directory: nse-intraday-v191
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='out/app-release-aligned.apk'
+          SIGNED='out/NSE-Intraday-Momentum-S24-v1.9.1-HOURLY-PACE-FRESH-SIGNED.apk'
+          test -s "$UNSIGNED"
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          "$ZIPALIGN" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          keytool -genkeypair -v -keystore /tmp/v191.jks -storepass changeit -keypass changeit -alias nse-v191 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=NSE Intraday Momentum v1.9.1, OU=Private Build, O=NSE Intraday Momentum, L=Bengaluru, ST=Karnataka, C=IN'
+          "$APKSIGNER" sign --ks /tmp/v191.jks --ks-pass pass:changeit --key-pass pass:changeit --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
+          "$ZIPALIGN" -c -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
+          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+          grep -q "package: name='com.suhas.nsedeliverymomentum'" out/APK-BADGING.txt
+          grep -q "versionCode='191'" out/APK-BADGING.txt
+          grep -q "versionName='1.9.1'" out/APK-BADGING.txt
+          grep -q "application-label:'NSE Intraday Momentum'" out/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
+          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
+          sha256sum "$SIGNED" | tee out/SHA256.txt
+          (cd .. && zip -qr nse-intraday-v191/out/NSE-Intraday-Momentum-v1.9.1-SOURCE.zip nse-intraday-v191 -x 'nse-intraday-v191/app/build/*' 'nse-intraday-v191/.gradle/*' 'nse-intraday-v191/out/*')
+
+      - name: Upload verified v1.9.1 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NSE-Intraday-Momentum-S24-v1.9.1-HOURLY-PACE-VERIFIED
+          path: |
+            nse-intraday-v191/out/NSE-Intraday-Momentum-S24-v1.9.1-HOURLY-PACE-FRESH-SIGNED.apk
+            nse-intraday-v191/out/APK-SIGNATURE-VERIFY.txt
+            nse-intraday-v191/out/APK-BADGING.txt
+            nse-intraday-v191/out/ZIPALIGN-VERIFY.txt
+            nse-intraday-v191/out/ZIP-INTEGRITY.txt
+            nse-intraday-v191/out/SHA256.txt
+            nse-intraday-v191/out/NSE-Intraday-Momentum-v1.9.1-SOURCE.zip
+            nse-intraday-v191/RELEASE-NOTES-v1.9.1.txt
+          if-no-files-found: error
+          retention-days: 30
