@@ -35,8 +35,10 @@ jobs:
           cat patch-v110/remaining-src-00.b64 patch-v110/remaining-src-01.b64 patch-v110/remaining-src-02.b64 patch-v110/remaining-src-03.b64 patch-v110/remaining-src-04.b64 | tr -d '\r\n' | base64 -d > /tmp/v110-remaining.zip
           unzip -qo /tmp/v110-remaining.zip -d fresh-delivery-buy
           cp patch-v110/scripts/short_target_day_limit_fix.py fresh-delivery-buy/scripts/short_target_day_limit_fix.py
+          cp patch-v110/scripts/preserve_official_tick_size.py fresh-delivery-buy/scripts/preserve_official_tick_size.py
           cd fresh-delivery-buy
           python3 scripts/short_target_day_limit_fix.py
+          python3 scripts/preserve_official_tick_size.py
           cd ..
 
           test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
@@ -44,6 +46,7 @@ jobs:
           test -f fresh-delivery-buy/app/src/test/java/com/suhas/multyfideliverybuy/ManualTradeTest.java
           grep -q "versionName '1.1.0'" fresh-delivery-buy/app/build.gradle
           grep -q 'submitShortCoverLimit' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
+          ! grep -q 'return v / 100.0' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/InstrumentRepository.java
 
       - name: Bundle current NSE CASH equity universe
         shell: bash
@@ -168,6 +171,7 @@ jobs:
             echo "No stop-loss, trailing, P&L engine, candles, re-entry, position/holdings polling, order modification or cancellation logic."
             echo "The app does not continuously monitor stock prices after target placement."
             echo "NSE CASH EQ autocomplete snapshot bundled from Groww official instrument CSV during this build and refreshable by the app."
+            echo "Target rounding preserves the official Groww instrument tick_size exactly."
           } > output/RELEASE-NOTES.txt
           {
             echo "Install Multyfi-Delivery-Buy-FRESH-v1.1.0.apk directly over v1.0.1."
