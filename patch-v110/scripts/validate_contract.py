@@ -36,6 +36,7 @@ checks = {
     'manual default budget 50000': 'getInt("manual_budget", 50000)' in (root / 'app/src/main/java/com/suhas/multyfideliverybuy/AppPrefs.java').read_text(),
     'official Groww instrument master': 'growwapi-assets.groww.in/instruments/instrument.csv' in instruments,
     'NSE CASH EQ filter': '"NSE"' in instruments and '"CASH"' in instruments and '"EQ"' in instruments,
+    'official tick size preserved': 'return v / 100.0' not in instruments,
     'notification listener service': 'BIND_NOTIFICATION_LISTENER_SERVICE' in manifest,
     'read-only user profile auth test': '/v1/user/detail' in java and 'refreshAndTestAuthentication' in java,
     'static public IP detector': 'api4.ipify.org' in network and 'checkip.amazonaws.com' in network,
