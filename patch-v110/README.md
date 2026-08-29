@@ -32,13 +32,13 @@ This is an in-place update to v1.0.1. The existing Multyfi notification BUY engi
 - Shorting necessarily opens with `SELL`, not `BUY`.
 - Entry: `NSE / CASH / MIS / MARKET / SELL`, producing a negative intraday position when accepted/executed.
 - Target: actual average fill × 0.99, rounded in the favourable direction to the instrument tick size.
-- A broker-hosted Groww GTT is then created with `BUY`, `DOWN`, `MIS`, `LIMIT` to cover the short at the target.
+- A `DAY` `LIMIT BUY` with product `MIS` is then placed at the 1% lower target to cover the short. This target is broker/exchange hosted and needs no app price monitoring.
 - No stop-loss.
 - MIS cannot be carried overnight. Groww/exchange end-of-day square-off behaviour is outside this app.
 
 ## Important interpretation of “no sell logic”
 
-The app still has no active exit engine, price watcher, trailing logic, stop-loss engine, or reaction to Multyfi closure messages. However, a LONG +1% GTT target is technically a future SELL instruction stored at Groww. That one-time broker-hosted target is required by the requested LONG target behaviour. For SHORT, the target is a BUY-to-cover instruction.
+The app still has no active exit engine, price watcher, trailing logic, stop-loss engine, or reaction to Multyfi closure messages. However, a LONG +1% GTT target is technically a future SELL instruction stored at Groww. That one-time broker-hosted target is required by the requested LONG target behaviour. For SHORT, the target is a same-day BUY-to-cover limit order, not a persistent GTT, so it does not survive the intraday position into a later session.
 
 ## Stock universe
 
