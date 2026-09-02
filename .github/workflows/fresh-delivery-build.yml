@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct v1.1.0 source package
+      - name: Reconstruct v1.1.1 source package
         shell: bash
         run: |
           set -euo pipefail
@@ -39,13 +39,15 @@ jobs:
           cd fresh-delivery-buy
           python3 scripts/short_target_day_limit_fix.py
           python3 scripts/preserve_official_tick_size.py
+          python3 ../patch-v111/apply_v111.py
           cd ..
 
           test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
-          test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/InstrumentRepository.java
-          test -f fresh-delivery-buy/app/src/test/java/com/suhas/multyfideliverybuy/ManualTradeTest.java
-          grep -q "versionName '1.1.0'" fresh-delivery-buy/app/build.gradle
-          grep -q 'submitShortCoverLimit' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
+          test -f fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/DeliveryNetTarget.java
+          test -f fresh-delivery-buy/app/src/test/java/com/suhas/multyfideliverybuy/DeliveryNetTargetTest.java
+          grep -q "versionName '1.1.1'" fresh-delivery-buy/app/build.gradle
+          grep -q 'placeDeliveryMarketBuyWithNetGtt' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
+          grep -q 'DeliveryNetTarget.targetPrice' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/GrowwClient.java
           ! grep -q 'return v / 100.0' fresh-delivery-buy/app/src/main/java/com/suhas/multyfideliverybuy/InstrumentRepository.java
 
       - name: Bundle current NSE CASH equity universe
@@ -111,7 +113,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Validate v1.1.0 contract
+      - name: Validate v1.1.1 contract
         working-directory: fresh-delivery-buy
         run: python3 scripts/validate_contract.py
 
@@ -150,42 +152,41 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output/signing-backup
-          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.1.0.apk
+          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.1.1.apk
           cp fresh-delivery-release.p12 output/signing-backup/
           cp SIGNING-BACKUP.txt output/signing-backup/
-          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.1.0-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
+          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.1.1-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
           rm -rf output/signing-backup
-          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.1.0.apk | tee output/APK-SHA256.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.1.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.1.1.apk | tee output/APK-SHA256.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.1.1.apk | tee output/APK-SIGNATURE-VERIFY.txt
           grep -qi 'e0b1c611909cf0879b19d53f2454708049f076abf4cf96dee01c58d65b78be97' output/APK-SIGNATURE-VERIFY.txt
           python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
           {
-            echo "Multyfi Delivery Buy FRESH v1.1.0"
+            echo "Multyfi Delivery Buy FRESH v1.1.1"
             echo "Package: com.suhas.multyfideliverybuy"
-            echo "Same signing identity as v1.0.1 for in-place update."
-            echo "Existing Multyfi automation unchanged: Intraday INR 1,00,000 CNC MARKET BUY; Swing/Multibagger INR 10,000 CNC MARKET BUY when enabled; closure notifications ignored."
-            echo "Manual budget: INR 0..1,00,000 slider in INR 10,000 steps; default INR 50,000."
-            echo "Manual LONG: one LTP read for sizing -> CNC MARKET BUY -> brief order-detail fill confirmation -> +1% broker-hosted CNC GTT LIMIT SELL target."
-            echo "Manual SHORT: one LTP read for sizing -> MIS MARKET SELL -> brief order-detail fill confirmation -> -1% DAY MIS LIMIT BUY-to-cover target."
-            echo "SHORT deliberately uses a DAY cover order rather than a persistent GTT so an unfilled target does not survive the intraday position into a later session."
-            echo "No stop-loss, trailing, P&L engine, candles, re-entry, position/holdings polling, order modification or cancellation logic."
-            echo "The app does not continuously monitor stock prices after target placement."
-            echo "NSE CASH EQ autocomplete snapshot bundled from Groww official instrument CSV during this build and refreshable by the app."
-            echo "Target rounding preserves the official Groww instrument tick_size exactly."
+            echo "Same signing identity as v1.0.1/v1.1.0 for in-place update."
+            echo "Multyfi INTRADAY entry unchanged: INR 1,00,000 nominal budget -> immediate NSE CASH CNC MARKET BUY from notification price sizing."
+            echo "After actual fill confirmation, v1.1.1 calculates the delivery SELL price required for at least 1.00% estimated NET profit after current Groww/NSE delivery charges and creates a broker-hosted CNC GTT LIMIT SELL."
+            echo "The GTT target uses actual average fill price and filled quantity, then rounds upward to the official instrument tick size."
+            echo "No LTP lookup is added to the Multyfi notification BUY hot path."
+            echo "No stop-loss, price monitoring, trailing, re-entry, Multyfi close/exit reaction, positions/holdings polling, cancel or modify logic is added."
+            echo "Swing and Multibagger notification BUY behavior remains unchanged."
+            echo "Existing manual LONG/SHORT launcher remains unchanged from v1.1.0."
+            echo "GTT placement itself has no extra Groww charge; normal delivery execution charges apply when its SELL executes."
           } > output/RELEASE-NOTES.txt
           {
-            echo "Install Multyfi-Delivery-Buy-FRESH-v1.1.0.apk directly over v1.0.1."
+            echo "Install Multyfi-Delivery-Buy-FRESH-v1.1.1.apk directly over v1.1.0."
             echo "Do not uninstall first if you want saved credentials/settings retained."
             echo "Package name and signing certificate are unchanged."
-            echo "Manual LONG/SHORT buttons require the same static-IP match and successful Groww authentication readiness."
-            echo "For LONG, the +1% target is a broker-hosted GTT SELL. For SHORT, entry is MIS SELL and the -1% target is a DAY LIMIT BUY-to-cover."
-          } > output/INSTALL-v1.1.0.txt
-          zip -qr output/fresh-delivery-buy-source-v1.1.0.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt' 'signing-restored/*'
+            echo "For every Multyfi INTRADAY release, the BUY remains CNC delivery and immediate. After fill, a broker-hosted GTT SELL is created at the price estimated to leave at least 1.00% net profit after delivery charges."
+            echo "If the BUY executes but fill/GTT confirmation fails, the app reports that explicitly and does not blindly create duplicate GTT orders."
+          } > output/INSTALL-v1.1.1.txt
+          zip -qr output/fresh-delivery-buy-source-v1.1.1.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt' 'signing-restored/*'
 
       - name: Upload APK and private handoff
         uses: actions/upload-artifact@v4
         with:
-          name: multyfi-delivery-buy-fresh-v110
+          name: multyfi-delivery-buy-fresh-v111
           path: fresh-delivery-buy/output/*
           if-no-files-found: error
           retention-days: 30
