@@ -45,9 +45,14 @@ jobs:
           cd chatgpt-build/multyfi-mobile-v1
           echo 'b10cfdabbc7c02c4cece454509bc43bc7faaa6d20b687f41b8cc7b5c191aae98  source.part02a' | sha256sum -c -
           echo '5aa3a341d23f7b0b7480a62711fe99f32046f03581b35dde7c80f85c5d3e0c64  source.part02b' | sha256sum -c -
-          echo 'c0399ab12da11b1a6d6b17cd2a8bc96f2262cf84bd4d647b504d5d3413f81ec1  source.part02c' | sha256sum -c -
+          echo 'e609ccbe59ef26f2ab64b69a2c515cfe4e9d2993d3039322b08428ea9f76c1f6  source.part02c0' | sha256sum -c -
+          echo '1b0ce15d470ff31839500d9b6d35c6d497e8145e32ffbd4c11c36110d68b5311  source.part02c1' | sha256sum -c -
+          echo 'eebc165ce2bec729b1829261173f96d3f4f45d4d9c8d7389b1309584d75cc93b  source.part02c2' | sha256sum -c -
+          echo 'c09b7344e03bcd861f1df6ad681ca0f9e26c1386ed2f2a1d22dd350f5a30b87f  source.part02c3' | sha256sum -c -
+          cat source.part02c0 source.part02c1 source.part02c2 source.part02c3 > source.part02c.fixed
+          echo 'c0399ab12da11b1a6d6b17cd2a8bc96f2262cf84bd4d647b504d5d3413f81ec1  source.part02c.fixed' | sha256sum -c -
           echo 'ef4756d7fd7abc636d69890c7d882a80cd49833399118d8b12fb9ed79dd0e378  source.part02d' | sha256sum -c -
-          cat source.part02a source.part02b source.part02c source.part02d > source.part02.fixed
+          cat source.part02a source.part02b source.part02c.fixed source.part02d > source.part02.fixed
           echo '29ee0cc02973508c73656d10dc733c4d49e2971e03998e07fa461a205c88ee51  source.part02.fixed' | sha256sum -c -
           echo '93ffba02bdc173cff4f2ebc379c9ff46fca18d6a036c02684f098f405bcd91ef  source.part00' | sha256sum -c -
           echo '955ccc18b70d20dd835af65f7f1518ce59a55d30747b6feed8a6d8ecc75e336b  source.part01' | sha256sum -c -
