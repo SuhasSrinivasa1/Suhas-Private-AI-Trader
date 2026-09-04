@@ -1,4 +1,4 @@
-name: Build Multyfi Intraday Mobile V1.1
+name: Build Multyfi Intraday Mobile V1.2
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - chatgpt-multyfi-mobile-v1-apk
     paths:
       - 'chatgpt-build/multyfi-mobile-v1/**'
+      - 'chatgpt-build/multyfi-mobile-v1.2/**'
       - '.github/workflows/build-multyfi-mobile-v1.yml'
   workflow_dispatch:
 
@@ -80,14 +81,36 @@ jobs:
           grep -q 'FREE_EQUITY' "$APP/app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt"
           grep -q 'ENTER_SHORT' "$APP/app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt"
 
-      - name: Build unsigned release APK
+      - name: Verify and apply V1.2 update patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          V12="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1.2"
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          cd "$V12"
+          echo 'a573b4d4fd1d3505067869b93fb2a1dc41ca7524c00673645ea0d250d9b0f1ad  patch.part00' | sha256sum -c -
+          echo '7317db0721241847fe8fb6d4083dbc7c3d737876a4f914b76086105abfa470ad  patch.part01' | sha256sum -c -
+          echo '74584119badb8c9cfc585da0a6a31123959f32ff8220005e6656c6ffadee5c12  patch.part02' | sha256sum -c -
+          cat patch.part00 patch.part01 patch.part02 > v12.patch.gz.b64
+          echo '6f55830cdcdd6c1b30fd9b0edfaad44250215766e727f04b4d10fe54290e8150  v12.patch.gz.b64' | sha256sum -c -
+          base64 --decode v12.patch.gz.b64 | gzip -d > v12.patch
+          cd "$APP"
+          patch -p1 < "$V12/v12.patch"
+          grep -q 'versionName = "1.2.0"' app/build.gradle.kts
+          grep -q 'versionCode = 120' app/build.gradle.kts
+          grep -q 'profitFundedRiskBudget' app/src/main/java/com/intradayone/mobile/core/Models.kt
+          grep -q 'relativeVolume' app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          grep -q 'maxLiveNotionalRupees' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
+          grep -q 'Multyfi Intraday V1.2' app/src/main/AndroidManifest.xml
+
+      - name: Build unsigned V1.2 release APK
         shell: bash
         run: |
           set -euo pipefail
           cd chatgpt-build/multyfi-mobile-v1/work/android-app
           gradle --no-daemon --stacktrace :app:assembleRelease
 
-      - name: Recover original V1 signing identity
+      - name: Recover original signing identity
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -105,7 +128,7 @@ jobs:
           test -s "$ROOT/signing-old/multyfi-v1-signing.p12"
           test -s "$ROOT/signing-old/SIGNING_PASSWORD.txt"
 
-      - name: Sign and verify V1.1 APK
+      - name: Sign and verify V1.2 APK
         shell: bash
         run: |
           set -euo pipefail
@@ -114,25 +137,25 @@ jobs:
           BT="$ANDROID_HOME/build-tools/35.0.0"
           mkdir -p "$ROOT/out"
           PASS="$(cat "$ROOT/signing-old/SIGNING_PASSWORD.txt")"
-          "$BT/zipalign" -p -f 4 "$APP/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/out/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
+          "$BT/zipalign" -p -f 4 "$APP/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/out/Multyfi_Intraday_Mobile_V1_2-aligned.apk"
           "$BT/apksigner" sign \
             --ks "$ROOT/signing-old/multyfi-v1-signing.p12" \
             --ks-type PKCS12 \
             --ks-key-alias multyfi-intraday-v1 \
             --ks-pass "pass:$PASS" \
             --key-pass "pass:$PASS" \
-            --out "$ROOT/out/Multyfi_Intraday_Mobile_V1_1.apk" \
-            "$ROOT/out/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
-          "$BT/apksigner" verify --verbose --print-certs "$ROOT/out/Multyfi_Intraday_Mobile_V1_1.apk" | tee "$ROOT/out/SIGNATURE.txt"
-          sha256sum "$ROOT/out/Multyfi_Intraday_Mobile_V1_1.apk" | tee "$ROOT/out/APK_SHA256.txt"
-          rm -f "$ROOT/out/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
+            --out "$ROOT/out/Multyfi_Intraday_Mobile_V1_2.apk" \
+            "$ROOT/out/Multyfi_Intraday_Mobile_V1_2-aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$ROOT/out/Multyfi_Intraday_Mobile_V1_2.apk" | tee "$ROOT/out/SIGNATURE.txt"
+          sha256sum "$ROOT/out/Multyfi_Intraday_Mobile_V1_2.apk" | tee "$ROOT/out/APK_SHA256.txt"
+          rm -f "$ROOT/out/Multyfi_Intraday_Mobile_V1_2-aligned.apk"
 
-      - name: Upload signed V1.1 APK
+      - name: Upload signed V1.2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Multyfi-Intraday-Mobile-V1.1-signed
+          name: Multyfi-Intraday-Mobile-V1.2-signed
           path: |
-            chatgpt-build/multyfi-mobile-v1/out/Multyfi_Intraday_Mobile_V1_1.apk
+            chatgpt-build/multyfi-mobile-v1/out/Multyfi_Intraday_Mobile_V1_2.apk
             chatgpt-build/multyfi-mobile-v1/out/APK_SHA256.txt
             chatgpt-build/multyfi-mobile-v1/out/SIGNATURE.txt
           if-no-files-found: error
