@@ -91,11 +91,26 @@ jobs:
           echo 'a573b4d4fd1d3505067869b93fb2a1dc41ca7524c00673645ea0d250d9b0f1ad  patch.part00' | sha256sum -c -
           echo '7317db0721241847fe8fb6d4083dbc7c3d737876a4f914b76086105abfa470ad  patch.part01' | sha256sum -c -
           echo '74584119badb8c9cfc585da0a6a31123959f32ff8220005e6656c6ffadee5c12  patch.part02' | sha256sum -c -
+          echo 'b1cdc590630780c478736768723ac54ce1a041ce10e8bab1733804fe69c0ffae  SignalEngine.kt' | sha256sum -c -
           cat patch.part00 patch.part01 patch.part02 > v12.patch.gz.b64
           echo '6f55830cdcdd6c1b30fd9b0edfaad44250215766e727f04b4d10fe54290e8150  v12.patch.gz.b64' | sha256sum -c -
           base64 --decode v12.patch.gz.b64 | gzip -d > v12.patch
           cd "$APP"
+          set +e
           patch -p1 < "$V12/v12.patch"
+          PATCH_STATUS=$?
+          set -e
+          if [ "$PATCH_STATUS" -ne 0 ]; then
+            REJECTS="$(find app -name '*.rej' -print)"
+            EXPECTED='app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt.rej'
+            if [ "$REJECTS" != "$EXPECTED" ]; then
+              echo "Unexpected patch rejection(s): $REJECTS"
+              exit 1
+            fi
+          fi
+          cp "$V12/SignalEngine.kt" app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          find app -name '*.rej' -delete
+          echo 'b1cdc590630780c478736768723ac54ce1a041ce10e8bab1733804fe69c0ffae  app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt' | sha256sum -c -
           grep -q 'versionName = "1.2.0"' app/build.gradle.kts
           grep -q 'versionCode = 120' app/build.gradle.kts
           grep -q 'profitFundedRiskBudget' app/src/main/java/com/intradayone/mobile/core/Models.kt
