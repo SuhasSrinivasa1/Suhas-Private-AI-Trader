@@ -72,10 +72,15 @@ jobs:
           cd chatgpt-build/multyfi-mobile-v1-1
           echo '3bb4eb1090c777b50b1171b617839700e7edc71d26f1fe3b65111282fa868e96  patch.part00' | sha256sum -c -
           echo '7b5ad6de85ecc6c560728d739046f1da6a86f849edfcf774bd56659c47eb72cf  patch.part01' | sha256sum -c -
-          echo '30ca6d9622ec5cf5e42f1c3303381236323de8709a94a367c08d7953e403d35e  patch.part02' | sha256sum -c -
+          echo 'a037dd904c114451349a35a6fd357080dd89a8706663c5e9af7d96a6ff2e760d  patch.part02seg0' | sha256sum -c -
+          echo '9ee8cc8bc89b46ca257c3b923934e878066f1b2af37ed5b463926fb275194deb  patch.part02seg1' | sha256sum -c -
+          echo '8cd65cdeab3b7b458515893df8abbfbd781484b95a0a4400d653e592b2240140  patch.part02seg2' | sha256sum -c -
+          echo 'a0825d4b9c81ddfe53df4a03419968b3f285afc49f3948141af93f5da5c0e9b0  patch.part02seg3' | sha256sum -c -
+          cat patch.part02seg0 patch.part02seg1 patch.part02seg2 patch.part02seg3 > patch.part02.fixed
+          echo '30ca6d9622ec5cf5e42f1c3303381236323de8709a94a367c08d7953e403d35e  patch.part02.fixed' | sha256sum -c -
           echo '925930fe60bc911a49afb86c51e9b7f02c8f1c53dcfa7c187b6d00741b832db6  patch.part03' | sha256sum -c -
           echo '2508453924a5471b01db1321b12967f00c042a7e941a649e9f22506ba62ff66e  patch.part04' | sha256sum -c -
-          cat patch.part00 patch.part01 patch.part02 patch.part03 patch.part04 | base64 --decode | gunzip > v11.patch
+          cat patch.part00 patch.part01 patch.part02.fixed patch.part03 patch.part04 | base64 --decode | gunzip > v11.patch
           echo '142c500ce28d654c67f30825f46083fb23235f527fea445b0e152d882d4b3791  v11.patch' | sha256sum -c -
           cd work
           patch -p1 < ../v11.patch
