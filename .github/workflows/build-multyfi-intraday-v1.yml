@@ -46,7 +46,8 @@ jobs:
           test -f mobile-v1/android-app/app/build.gradle.kts
           grep -q 'versionName = "1.0.0"' mobile-v1/android-app/app/build.gradle.kts
           grep -q 'Multyfi Intraday V1' mobile-v1/android-app/app/src/main/AndroidManifest.xml
-          grep -q '"ORDER"' mobile-v1/android-app/app/src/main/java/com/intradayone/mobile/notification/OrderActionReceiver.kt
+          grep -q 'ACTION_ORDER' mobile-v1/android-app/app/src/main/java/com/intradayone/mobile/notification/OrderActionReceiver.kt
+          grep -q 'FOREGROUND_SERVICE_DATA_SYNC' mobile-v1/android-app/app/src/main/AndroidManifest.xml
 
       - name: Build debug APK
         working-directory: mobile-v1/android-app
