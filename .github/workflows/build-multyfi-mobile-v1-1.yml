@@ -1,0 +1,137 @@
+name: Build Multyfi Intraday Mobile V1.1
+
+on:
+  push:
+    branches:
+      - chatgpt-multyfi-mobile-v1-1-apk
+    paths:
+      - 'chatgpt-build/multyfi-mobile-v1-1/**'
+      - '.github/workflows/build-multyfi-mobile-v1-1.yml'
+  workflow_dispatch:
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform/build tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Reconstruct exact V1 base source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1
+          echo 'b10cfdabbc7c02c4cece454509bc43bc7faaa6d20b687f41b8cc7b5c191aae98  source.part02a' | sha256sum -c -
+          echo '5aa3a341d23f7b0b7480a62711fe99f32046f03581b35dde7c80f85c5d3e0c64  source.part02b' | sha256sum -c -
+          echo 'e609ccbe59ef26f2ab64b69a2c515cfe4e9d2993d3039322b08428ea9f76c1f6  source.part02c0' | sha256sum -c -
+          echo '1b0ce15d470ff31839500d9b6d35c6d497e8145e32ffbd4c11c36110d68b5311  source.part02c1' | sha256sum -c -
+          echo 'eebc165ce2bec729b1829261173f96d3f4f45d4d9c8d7389b1309584d75cc93b  source.part02c2' | sha256sum -c -
+          echo 'c09b7344e03bcd861f1df6ad681ca0f9e26c1386ed2f2a1d22dd350f5a30b87f  source.part02c3' | sha256sum -c -
+          cat source.part02c0 source.part02c1 source.part02c2 source.part02c3 > source.part02c.fixed
+          echo 'c0399ab12da11b1a6d6b17cd2a8bc96f2262cf84bd4d647b504d5d3413f81ec1  source.part02c.fixed' | sha256sum -c -
+          echo 'ef4756d7fd7abc636d69890c7d882a80cd49833399118d8b12fb9ed79dd0e378  source.part02d' | sha256sum -c -
+          cat source.part02a source.part02b source.part02c.fixed source.part02d > source.part02.fixed
+          echo '29ee0cc02973508c73656d10dc733c4d49e2971e03998e07fa461a205c88ee51  source.part02.fixed' | sha256sum -c -
+          echo '93ffba02bdc173cff4f2ebc379c9ff46fca18d6a036c02684f098f405bcd91ef  source.part00' | sha256sum -c -
+          echo '955ccc18b70d20dd835af65f7f1518ce59a55d30747b6feed8a6d8ecc75e336b  source.part01' | sha256sum -c -
+          echo 'bbbd1b91b04c9b031224cf214f4653db0a47d26c2260fe5a5e5bb4ed14c7b1fd  source.part03' | sha256sum -c -
+          echo '7471234da200665079b9bcaf120768f420ee99df0a486448cb1a4673114e4e89  source.part04' | sha256sum -c -
+          echo '74f92b5e83ebe5e537a19373691198bddeb611ad504be0aabca13219f9b18e52  source.part05' | sha256sum -c -
+          echo 'acf7c06625dd55512b5153922a47e9b2cf635efd21d06ac1f40898d7d2b81b5f  source.part06' | sha256sum -c -
+          cat source.part00 source.part01 source.part02.fixed source.part03 source.part04 source.part05 source.part06 | base64 --decode > source.zip
+          echo '30ea3109978c06b3082b922a3416d8d71e77dc5995b97334648260dc49dbbed0  source.zip' | sha256sum -c -
+          unzip -q source.zip -d ../multyfi-mobile-v1-1/work
+
+      - name: Verify and apply V1.1 long-short patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1-1
+          echo '3bb4eb1090c777b50b1171b617839700e7edc71d26f1fe3b65111282fa868e96  patch.part00' | sha256sum -c -
+          echo '7b5ad6de85ecc6c560728d739046f1da6a86f849edfcf774bd56659c47eb72cf  patch.part01' | sha256sum -c -
+          echo '30ca6d9622ec5cf5e42f1c3303381236323de8709a94a367c08d7953e403d35e  patch.part02' | sha256sum -c -
+          echo '925930fe60bc911a49afb86c51e9b7f02c8f1c53dcfa7c187b6d00741b832db6  patch.part03' | sha256sum -c -
+          echo '2508453924a5471b01db1321b12967f00c042a7e941a649e9f22506ba62ff66e  patch.part04' | sha256sum -c -
+          cat patch.part00 patch.part01 patch.part02 patch.part03 patch.part04 | base64 --decode | gunzip > v11.patch
+          echo '142c500ce28d654c67f30825f46083fb23235f527fea445b0e152d882d4b3791  v11.patch' | sha256sum -c -
+          cd work
+          patch -p1 < ../v11.patch
+          grep -q 'versionCode = 110' android-app/app/build.gradle.kts
+          grep -q 'versionName = "1.1.0"' android-app/app/build.gradle.kts
+          grep -q 'FREE_EQUITY' android-app/app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt
+          grep -q 'ENTER_SHORT' android-app/app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+
+      - name: Build unsigned release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1-1/work/android-app
+          gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Download original V1 signing identity
+        uses: actions/download-artifact@v4
+        with:
+          name: Multyfi-Intraday-Mobile-V1-signed
+          path: chatgpt-build/multyfi-mobile-v1-1/signing
+          github-token: ${{ github.token }}
+          repository: SuhasSrinivasa1/Suhas-Private-AI-Trader
+          run-id: 33887086681
+
+      - name: Sign V1.1 with same V1 certificate and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1-1"
+          APP="$ROOT/work/android-app/app"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          SIGN="$ROOT/signing"
+          OUT="$ROOT/out"
+          mkdir -p "$OUT"
+          PASS="$(cat "$SIGN/SIGNING_PASSWORD.txt")"
+          "$BT/zipalign" -p -f 4 "$APP/build/outputs/apk/release/app-release-unsigned.apk" "$OUT/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$SIGN/multyfi-v1-signing.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias multyfi-intraday-v1 \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --out "$OUT/Multyfi_Intraday_Mobile_V1_1.apk" \
+            "$OUT/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$OUT/Multyfi_Intraday_Mobile_V1_1.apk" | tee "$OUT/SIGNATURE.txt"
+          grep -q '29e4bbc9aaab335612610905a99a295f2aee68d0a265e996910297eab3f9dfed' "$OUT/SIGNATURE.txt"
+          sha256sum "$OUT/Multyfi_Intraday_Mobile_V1_1.apk" | tee "$OUT/APK_SHA256.txt"
+          rm -f "$OUT/Multyfi_Intraday_Mobile_V1_1-aligned.apk"
+
+      - name: Upload signed V1.1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Intraday-Mobile-V1-1-signed
+          path: |
+            chatgpt-build/multyfi-mobile-v1-1/out/Multyfi_Intraday_Mobile_V1_1.apk
+            chatgpt-build/multyfi-mobile-v1-1/out/APK_SHA256.txt
+            chatgpt-build/multyfi-mobile-v1-1/out/SIGNATURE.txt
+          if-no-files-found: error
+          retention-days: 7
