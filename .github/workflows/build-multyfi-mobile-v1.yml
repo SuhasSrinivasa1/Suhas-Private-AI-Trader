@@ -38,21 +38,24 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Verify source chunks and reconstruct exact V1 source
+      - name: Verify and reconstruct exact V1 source
         shell: bash
         run: |
           set -euo pipefail
           cd chatgpt-build/multyfi-mobile-v1
-          wc -c source.part00 source.part01 source.part02 source.part03 source.part04 source.part05 source.part06
-          sha256sum source.part00 source.part01 source.part02 source.part03 source.part04 source.part05 source.part06
+          echo 'b10cfdabbc7c02c4cece454509bc43bc7faaa6d20b687f41b8cc7b5c191aae98  source.part02a' | sha256sum -c -
+          echo '5aa3a341d23f7b0b7480a62711fe99f32046f03581b35dde7c80f85c5d3e0c64  source.part02b' | sha256sum -c -
+          echo 'c0399ab12da11b1a6d6b17cd2a8bc96f2262cf84bd4d647b504d5d3413f81ec1  source.part02c' | sha256sum -c -
+          echo 'ef4756d7fd7abc636d69890c7d882a80cd49833399118d8b12fb9ed79dd0e378  source.part02d' | sha256sum -c -
+          cat source.part02a source.part02b source.part02c source.part02d > source.part02.fixed
+          echo '29ee0cc02973508c73656d10dc733c4d49e2971e03998e07fa461a205c88ee51  source.part02.fixed' | sha256sum -c -
           echo '93ffba02bdc173cff4f2ebc379c9ff46fca18d6a036c02684f098f405bcd91ef  source.part00' | sha256sum -c -
           echo '955ccc18b70d20dd835af65f7f1518ce59a55d30747b6feed8a6d8ecc75e336b  source.part01' | sha256sum -c -
-          echo '29ee0cc02973508c73656d10dc733c4d49e2971e03998e07fa461a205c88ee51  source.part02' | sha256sum -c -
           echo 'bbbd1b91b04c9b031224cf214f4653db0a47d26c2260fe5a5e5bb4ed14c7b1fd  source.part03' | sha256sum -c -
           echo '7471234da200665079b9bcaf120768f420ee99df0a486448cb1a4673114e4e89  source.part04' | sha256sum -c -
           echo '74f92b5e83ebe5e537a19373691198bddeb611ad504be0aabca13219f9b18e52  source.part05' | sha256sum -c -
           echo 'acf7c06625dd55512b5153922a47e9b2cf635efd21d06ac1f40898d7d2b81b5f  source.part06' | sha256sum -c -
-          cat source.part00 source.part01 source.part02 source.part03 source.part04 source.part05 source.part06 | base64 --decode > source.zip
+          cat source.part00 source.part01 source.part02.fixed source.part03 source.part04 source.part05 source.part06 | base64 --decode > source.zip
           echo '30ea3109978c06b3082b922a3416d8d71e77dc5995b97334648260dc49dbbed0  source.zip' | sha256sum -c -
           unzip -q source.zip -d work
 
