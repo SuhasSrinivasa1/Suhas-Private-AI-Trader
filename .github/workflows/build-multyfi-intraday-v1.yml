@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - chatgpt-multyfi-v1-build
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
