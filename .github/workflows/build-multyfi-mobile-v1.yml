@@ -118,24 +118,12 @@ jobs:
           from pathlib import Path
           p = Path('app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt')
           s = p.read_text()
-          old = '''                lastSubmittedEntry?.takeIf { it.symbol == symbol && !it.isExit && broker != null && it.referencePrice > 0.0 }?.let { submitted ->
-                    val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0
-                    val slippagePct = direction * (broker.netPrice - submitted.referencePrice) / submitted.referencePrice * 100.0
-                    append(context, "LIVE FILL $symbol @ ₹${"%.2f".format(broker.netPrice)} | signal ₹${"%.2f".format(submitted.referencePrice)} | slippage ${"%.3f".format(slippagePct)}%")
-                    _state.value = _state.value.copy(lastLiveSlippagePct = slippagePct)
-                }
-          '''
-          new = '''                lastSubmittedEntry?.takeIf { it.symbol == symbol && !it.isExit && broker != null && it.referencePrice > 0.0 }?.let { submitted ->
-                    val confirmedBroker = broker ?: return@let
-                    val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0
-                    val slippagePct = direction * (confirmedBroker.netPrice - submitted.referencePrice) / submitted.referencePrice * 100.0
-                    append(context, "LIVE FILL $symbol @ ₹${"%.2f".format(confirmedBroker.netPrice)} | signal ₹${"%.2f".format(submitted.referencePrice)} | slippage ${"%.3f".format(slippagePct)}%")
-                    _state.value = _state.value.copy(lastLiveSlippagePct = slippagePct)
-                }
-          '''
-          if old not in s:
-              raise SystemExit('Expected V1.2 broker-fill block not found')
-          p.write_text(s.replace(old, new))
+          marker = 'val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0'
+          if s.count('broker.netPrice') != 2 or marker not in s:
+              raise SystemExit(f'Unexpected broker-fill shape: broker.netPrice={s.count("broker.netPrice")}, marker={marker in s}')
+          s = s.replace(marker, 'val confirmedBroker = broker ?: return@let\n                    ' + marker, 1)
+          s = s.replace('broker.netPrice', 'confirmedBroker.netPrice')
+          p.write_text(s)
           PY
           grep -q 'val confirmedBroker = broker ?: return@let' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
           grep -q 'versionName = "1.2.0"' app/build.gradle.kts
