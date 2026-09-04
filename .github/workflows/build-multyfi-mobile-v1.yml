@@ -92,6 +92,7 @@ jobs:
           echo '7317db0721241847fe8fb6d4083dbc7c3d737876a4f914b76086105abfa470ad  patch.part01' | sha256sum -c -
           echo '74584119badb8c9cfc585da0a6a31123959f32ff8220005e6656c6ffadee5c12  patch.part02' | sha256sum -c -
           echo 'b1cdc590630780c478736768723ac54ce1a041ce10e8bab1733804fe69c0ffae  SignalEngine.kt' | sha256sum -c -
+          echo '8771c19145333c29aefc6d1dc5df4be3f3df60d5c4faab0098a120e71641a4a9  MultyfiParser.kt' | sha256sum -c -
           cat patch.part00 patch.part01 patch.part02 > v12.patch.gz.b64
           echo '6f55830cdcdd6c1b30fd9b0edfaad44250215766e727f04b4d10fe54290e8150  v12.patch.gz.b64' | sha256sum -c -
           base64 --decode v12.patch.gz.b64 | gzip -d > v12.patch
@@ -109,12 +110,39 @@ jobs:
             fi
           fi
           cp "$V12/SignalEngine.kt" app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          cp "$V12/MultyfiParser.kt" app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt
           find app -name '*.rej' -delete
           echo 'b1cdc590630780c478736768723ac54ce1a041ce10e8bab1733804fe69c0ffae  app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt' | sha256sum -c -
+          echo '8771c19145333c29aefc6d1dc5df4be3f3df60d5c4faab0098a120e71641a4a9  app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt')
+          s = p.read_text()
+          old = '''                lastSubmittedEntry?.takeIf { it.symbol == symbol && !it.isExit && broker != null && it.referencePrice > 0.0 }?.let { submitted ->
+                    val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0
+                    val slippagePct = direction * (broker.netPrice - submitted.referencePrice) / submitted.referencePrice * 100.0
+                    append(context, "LIVE FILL $symbol @ ₹${"%.2f".format(broker.netPrice)} | signal ₹${"%.2f".format(submitted.referencePrice)} | slippage ${"%.3f".format(slippagePct)}%")
+                    _state.value = _state.value.copy(lastLiveSlippagePct = slippagePct)
+                }
+          '''
+          new = '''                lastSubmittedEntry?.takeIf { it.symbol == symbol && !it.isExit && broker != null && it.referencePrice > 0.0 }?.let { submitted ->
+                    val confirmedBroker = broker ?: return@let
+                    val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0
+                    val slippagePct = direction * (confirmedBroker.netPrice - submitted.referencePrice) / submitted.referencePrice * 100.0
+                    append(context, "LIVE FILL $symbol @ ₹${"%.2f".format(confirmedBroker.netPrice)} | signal ₹${"%.2f".format(submitted.referencePrice)} | slippage ${"%.3f".format(slippagePct)}%")
+                    _state.value = _state.value.copy(lastLiveSlippagePct = slippagePct)
+                }
+          '''
+          if old not in s:
+              raise SystemExit('Expected V1.2 broker-fill block not found')
+          p.write_text(s.replace(old, new))
+          PY
+          grep -q 'val confirmedBroker = broker ?: return@let' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
           grep -q 'versionName = "1.2.0"' app/build.gradle.kts
           grep -q 'versionCode = 120' app/build.gradle.kts
           grep -q 'profitFundedRiskBudget' app/src/main/java/com/intradayone/mobile/core/Models.kt
           grep -q 'relativeVolume' app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          grep -q 'RecommendationType.FREE_EQUITY' app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt
           grep -q 'maxLiveNotionalRupees' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
           grep -q 'Multyfi Intraday V1.2' app/src/main/AndroidManifest.xml
 
