@@ -1,0 +1,99 @@
+name: Build Multyfi Intraday Mobile V1
+
+on:
+  push:
+    branches:
+      - chatgpt-multyfi-mobile-v1-apk
+    paths:
+      - 'chatgpt-build/multyfi-mobile-v1/**'
+      - '.github/workflows/build-multyfi-mobile-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform/build tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Reconstruct exact V1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1
+          cat source.part00 source.part01 source.part02 source.part03 source.part04 source.part05 source.part06 | base64 --decode > source.zip
+          echo '30ea3109978c06b3082b922a3416d8d71e77dc5995b97334648260dc49dbbed0  source.zip' | sha256sum -c -
+          unzip -q source.zip -d work
+
+      - name: Build unsigned release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1/work/android-app
+          gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Sign and verify release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1"
+          APP="$ROOT/work/android-app/app"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p "$ROOT/out"
+          PASS="$(openssl rand -hex 24)"
+          printf '%s' "$PASS" > "$ROOT/out/SIGNING_PASSWORD.txt"
+          keytool -genkeypair -noprompt \
+            -keystore "$ROOT/out/multyfi-v1-signing.p12" \
+            -storetype PKCS12 \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias multyfi-intraday-v1 \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -dname 'CN=Multyfi Intraday Mobile V1, OU=Mobile, O=Independent, L=Bengaluru, ST=Karnataka, C=IN'
+          "$BT/zipalign" -p -f 4 "$APP/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/out/Multyfi_Intraday_Mobile_V1-aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$ROOT/out/multyfi-v1-signing.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias multyfi-intraday-v1 \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --out "$ROOT/out/Multyfi_Intraday_Mobile_V1.apk" \
+            "$ROOT/out/Multyfi_Intraday_Mobile_V1-aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$ROOT/out/Multyfi_Intraday_Mobile_V1.apk" | tee "$ROOT/out/SIGNATURE.txt"
+          sha256sum "$ROOT/out/Multyfi_Intraday_Mobile_V1.apk" | tee "$ROOT/out/APK_SHA256.txt"
+          rm -f "$ROOT/out/Multyfi_Intraday_Mobile_V1-aligned.apk"
+
+      - name: Upload signed APK and signing material
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Intraday-Mobile-V1-signed
+          path: |
+            chatgpt-build/multyfi-mobile-v1/out/Multyfi_Intraday_Mobile_V1.apk
+            chatgpt-build/multyfi-mobile-v1/out/APK_SHA256.txt
+            chatgpt-build/multyfi-mobile-v1/out/SIGNATURE.txt
+            chatgpt-build/multyfi-mobile-v1/out/multyfi-v1-signing.p12
+            chatgpt-build/multyfi-mobile-v1/out/SIGNING_PASSWORD.txt
+          if-no-files-found: error
+          retention-days: 7
