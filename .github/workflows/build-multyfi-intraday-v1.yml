@@ -1,0 +1,67 @@
+name: Build Multyfi Intraday V1 APK
+
+on:
+  push:
+    branches:
+      - chatgpt-multyfi-v1-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout isolated build branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Ensure Android SDK 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Decode Version 1 Android project
+        shell: bash
+        run: |
+          mkdir -p mobile-v1
+          base64 -d mobile-v1/android.zip.b64 > /tmp/multyfi-v1-android.zip
+          unzip -q /tmp/multyfi-v1-android.zip -d mobile-v1
+          test -f mobile-v1/android-app/app/build.gradle.kts
+          grep -q 'versionName = "1.0.0"' mobile-v1/android-app/app/build.gradle.kts
+          grep -q 'Multyfi Intraday V1' mobile-v1/android-app/app/src/main/AndroidManifest.xml
+          grep -q '"ORDER"' mobile-v1/android-app/app/src/main/java/com/intradayone/mobile/notification/OrderActionReceiver.kt
+
+      - name: Build debug APK
+        working-directory: mobile-v1/android-app
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Prepare installable APK
+        shell: bash
+        run: |
+          test -f mobile-v1/android-app/app/build/outputs/apk/debug/app-debug.apk
+          cp mobile-v1/android-app/app/build/outputs/apk/debug/app-debug.apk Multyfi_Intraday_V1.apk
+          sha256sum Multyfi_Intraday_V1.apk > Multyfi_Intraday_V1.apk.sha256
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Intraday-V1-APK
+          path: |
+            Multyfi_Intraday_V1.apk
+            Multyfi_Intraday_V1.apk.sha256
+          if-no-files-found: error
+          retention-days: 7
