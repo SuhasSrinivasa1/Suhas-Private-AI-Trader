@@ -123,11 +123,33 @@ jobs:
           base64 --decode "$V21/v21.patch.gz.b64" | gzip -d > "$V21/v21.patch"
           echo 'b904750a51308856bb46c28af5542be9e4c72c16a365cd55ba4915405b2f8f60  v21.patch' | (cd "$V21" && sha256sum -c -)
           cd "$APP"
+          set +e
           patch -p1 < "$V21/v21.patch"
-          test -z "$(find app -name '*.rej' -print)"
+          PATCH_STATUS=$?
+          set -e
+          if [ "$PATCH_STATUS" -ne 0 ]; then
+            REJECTS="$(find app -name '*.rej' -print)"
+            EXPECTED='app/src/main/AndroidManifest.xml.rej'
+            if [ "$REJECTS" != "$EXPECTED" ]; then
+              echo "Unexpected V2.1 patch rejection(s): $REJECTS"
+              exit 1
+            fi
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          s, n = re.subn(r'android:label="[^"]*"', 'android:label="Multyfi Intraday Mobile V2.1"', s, count=1)
+          if n != 1:
+              raise SystemExit('Could not set V2.1 application label')
+          p.write_text(s)
+          PY
+          find app -name '*.rej' -delete
           grep -q 'versionCode = 210' app/build.gradle.kts
           grep -q 'versionName = "2.1.0"' app/build.gradle.kts
           grep -q 'applicationId = "com.multyfi.intraday.mobile"' app/build.gradle.kts
+          grep -q 'Multyfi Intraday Mobile V2.1' app/src/main/AndroidManifest.xml
           grep -q 'authenticateTotp' app/src/main/java/com/intradayone/mobile/network/GrowwClient.kt
           grep -q '.put("key_type", "totp")' app/src/main/java/com/intradayone/mobile/network/GrowwClient.kt
           grep -q 'Groww TOTP Token' app/src/main/java/com/intradayone/mobile/ui/IntradayOneApp.kt
