@@ -161,7 +161,7 @@ jobs:
           set -euo pipefail
           V22="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v2.2"
           APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
-          echo 'd2b7888136103c54e6fed4876fc392eaff8f0f20f552eb9ecfe01cf324061943  v22.patch.gz.b64' | (cd "$V22" && sha256sum -c -)
+          echo '68bc8108badc21d7e30faf346d015eb442789796e1f1ee6a5a480ce0c25258f2  v22.patch.gz.b64' | (cd "$V22" && sha256sum -c -)
           base64 --decode "$V22/v22.patch.gz.b64" | gzip -d > "$V22/v22.patch"
           echo '08135918f4516e8981ca8134f1a8182eed1dedaccee6879b6d3c2e13fb1987bc  v22.patch' | (cd "$V22" && sha256sum -c -)
           cd "$APP"
