@@ -1,0 +1,261 @@
+name: Build Multyfi Intraday Mobile V2.3
+
+on:
+  push:
+    branches:
+      - chatgpt-multyfi-mobile-v2-build
+    paths:
+      - 'chatgpt-build/multyfi-mobile-v2.3/**'
+      - '.github/workflows/build-multyfi-mobile-v23.yml'
+  workflow_dispatch:
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform/build tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Reconstruct V1 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1
+          cat source.part02c0 source.part02c1 source.part02c2 source.part02c3 > source.part02c.fixed
+          cat source.part02a source.part02b source.part02c.fixed source.part02d > source.part02.fixed
+          cat source.part00 source.part01 source.part02.fixed source.part03 source.part04 source.part05 source.part06 | base64 --decode > source.zip
+          echo '30ea3109978c06b3082b922a3416d8d71e77dc5995b97334648260dc49dbbed0  source.zip' | sha256sum -c -
+          unzip -q source.zip -d work
+
+      - name: Apply V1.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1"
+          APP="$ROOT/work/android-app"
+          cp "$ROOT/overrides/MultyfiParser.kt" "$APP/app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt"
+          cp "$ROOT/overrides/SignalEngine.kt" "$APP/app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt"
+          sed -i 's/versionCode = 100/versionCode = 110/' "$APP/app/build.gradle.kts"
+          sed -i 's/versionName = "1.0.0"/versionName = "1.1.0"/' "$APP/app/build.gradle.kts"
+
+      - name: Apply V1.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          V12="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1.2"
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          cat "$V12/patch.part00" "$V12/patch.part01" "$V12/patch.part02" > "$V12/v12.patch.gz.b64"
+          base64 --decode "$V12/v12.patch.gz.b64" | gzip -d > "$V12/v12.patch"
+          cd "$APP"
+          set +e
+          patch -p1 < "$V12/v12.patch"
+          set -e
+          cp "$V12/SignalEngine.kt" app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          cp "$V12/MultyfiParser.kt" app/src/main/java/com/intradayone/mobile/notification/MultyfiParser.kt
+          find app -name '*.rej' -delete
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt')
+          s = p.read_text()
+          marker = 'val direction = if (submitted.transactionType == "BUY") 1.0 else -1.0'
+          if 'confirmedBroker = broker ?: return@let' not in s:
+              s = s.replace(marker, 'val confirmedBroker = broker ?: return@let\n                    ' + marker, 1)
+              s = s.replace('broker.netPrice', 'confirmedBroker.netPrice')
+          p.write_text(s)
+          PY
+
+      - name: Apply V1.2.1 and convert to V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          V121="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1.2.1-final"
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          cat "$V121/patch.part00" "$V121/patch.part01" "$V121/patch.part02" > "$V121/v121.patch.gz.b64"
+          base64 --decode "$V121/v121.patch.gz.b64" | gzip -d > "$V121/v121.patch"
+          cd "$APP"
+          set +e
+          patch -p2 < "$V121/v121.patch"
+          set -e
+          find app -name '*.rej' -delete
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/build.gradle.kts')
+          s=p.read_text()
+          s=s.replace('applicationId = "com.intradayone.mobile"','applicationId = "com.multyfi.intraday.mobile"')
+          s=s.replace('versionCode = 121','versionCode = 200')
+          s=s.replace('versionName = "1.2.1"','versionName = "2.0.0"')
+          p.write_text(s)
+          p=Path('app/src/main/AndroidManifest.xml')
+          s=p.read_text().replace('android:label="Multyfi Intraday V1.2.1"','android:label="Multyfi Intraday Mobile V2"')
+          p.write_text(s)
+          PY
+
+      - name: Apply V2.1 TOTP authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          V21="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v2.1"
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          echo '86c48424d8671aa997abe8cb19f70d13b3633815c2e0491bbc1e24a46ee9f3a8  v21.patch.gz.b64' | (cd "$V21" && sha256sum -c -)
+          base64 --decode "$V21/v21.patch.gz.b64" | gzip -d > "$V21/v21.patch"
+          echo 'b904750a51308856bb46c28af5542be9e4c72c16a365cd55ba4915405b2f8f60  v21.patch' | (cd "$V21" && sha256sum -c -)
+          cd "$APP"
+          set +e
+          patch -p1 < "$V21/v21.patch"
+          PATCH_STATUS=$?
+          set -e
+          if [ "$PATCH_STATUS" -ne 0 ]; then
+            REJECTS="$(find app -name '*.rej' -print)"
+            EXPECTED='app/src/main/AndroidManifest.xml.rej'
+            if [ "$REJECTS" != "$EXPECTED" ]; then
+              echo "Unexpected V2.1 patch rejection(s): $REJECTS"
+              exit 1
+            fi
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          s, n = re.subn(r'android:label="[^"]*"', 'android:label="Multyfi Intraday Mobile V2.1"', s, count=1)
+          if n != 1:
+              raise SystemExit('Could not set V2.1 application label')
+          p.write_text(s)
+          PY
+          find app -name '*.rej' -delete
+          grep -q 'versionCode = 210' app/build.gradle.kts
+          grep -q 'versionName = "2.1.0"' app/build.gradle.kts
+          grep -q 'applicationId = "com.multyfi.intraday.mobile"' app/build.gradle.kts
+          grep -q 'authenticateTotp' app/src/main/java/com/intradayone/mobile/network/GrowwClient.kt
+          grep -q '.put("key_type", "totp")' app/src/main/java/com/intradayone/mobile/network/GrowwClient.kt
+          grep -q 'Groww TOTP Token' app/src/main/java/com/intradayone/mobile/ui/IntradayOneApp.kt
+          grep -q 'authenticateTotp' app/src/main/java/com/intradayone/mobile/service/MarketSessionService.kt
+
+      - name: Apply V2.2 engine and performance fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          V22="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v2.2"
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          echo 'd2b7888136103c54e6fed4876fc392eaff8f0f20f552eb9ecfe01cf324061943  v22.patch.gz.b64' | (cd "$V22" && sha256sum -c -)
+          base64 --decode "$V22/v22.patch.gz.b64" | gzip -d > "$V22/v22.patch"
+          echo '08135918f4516e8981ca8134f1a8182eed1dedaccee6879b6d3c2e13fb1987bc  v22.patch' | (cd "$V22" && sha256sum -c -)
+          cd "$APP"
+          patch -p1 < "$V22/v22.patch"
+          cp "$V22/SignalEngine.kt" app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('app/build.gradle.kts')
+          s=p.read_text().replace('versionCode = 210','versionCode = 220').replace('versionName = "2.1.0"','versionName = "2.2.0"')
+          p.write_text(s)
+          p=Path('app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          s,n=re.subn(r'android:label="[^"]*"','android:label="Multyfi Intraday Mobile V2.2"',s,count=1)
+          if n != 1: raise SystemExit('Could not set V2.2 label')
+          p.write_text(s)
+          p=Path('app/src/main/java/com/intradayone/mobile/ui/IntradayOneApp.kt')
+          s=p.read_text().replace('₹1L Paper P&L','Paper P&L (sum)')
+          p.write_text(s)
+          PY
+          test -z "$(find app -name '*.rej' -print)"
+          grep -q 'versionCode = 220' app/build.gradle.kts
+          grep -q 'versionName = "2.2.0"' app/build.gradle.kts
+          grep -q 'V2.2 time-normalised intraday engine' app/src/main/java/com/intradayone/mobile/core/SignalEngine.kt
+          grep -q 'V2.2 performance path' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
+          grep -q 'engine_version", "2.2"' app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt
+          grep -q 'authenticateTotp' app/src/main/java/com/intradayone/mobile/network/GrowwClient.kt
+
+      - name: Apply V2.3 market-data activation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1/work/android-app"
+          V23="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v2.3"
+          python3 "$V23/apply_v23.py" "$APP" "$V23"
+          grep -q 'versionCode = 230' "$APP/app/build.gradle.kts"
+          grep -q 'versionName = "2.3.0"' "$APP/app/build.gradle.kts"
+          grep -q 'MultyfiApplication' "$APP/app/src/main/AndroidManifest.xml"
+          grep -q 'V2.3 market-data watchdog' "$APP/app/src/main/java/com/intradayone/mobile/data/SessionRepository.kt"
+          test -s "$APP/app/src/main/java/com/intradayone/mobile/MultyfiApplication.kt"
+
+      - name: Build unsigned V2.3 release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd chatgpt-build/multyfi-mobile-v1/work/android-app
+          gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Recover V2 signing identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1"
+          mkdir -p "$ROOT/recovered-v2" "$ROOT/out"
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/SuhasSrinivasa1/Suhas-Private-AI-Trader/actions/artifacts/9992681448/zip" \
+            -o "$ROOT/v2-signing-artifact.zip"
+          unzip -q "$ROOT/v2-signing-artifact.zip" -d "$ROOT/recovered-v2"
+          test -s "$ROOT/recovered-v2/signing-v2/multyfi-v2-signing.p12"
+          test -s "$ROOT/recovered-v2/signing-v2/SIGNING_PASSWORD.txt"
+
+      - name: Sign and verify V2.3 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/chatgpt-build/multyfi-mobile-v1"
+          APP="$ROOT/work/android-app/app"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          PASS="$(cat "$ROOT/recovered-v2/signing-v2/SIGNING_PASSWORD.txt")"
+          "$BT/zipalign" -p -f 4 "$APP/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/out/Multyfi_Intraday_Mobile_V2_3-aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$ROOT/recovered-v2/signing-v2/multyfi-v2-signing.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias multyfi-intraday-v2 \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --out "$ROOT/out/Multyfi_Intraday_Mobile_V2_3.apk" \
+            "$ROOT/out/Multyfi_Intraday_Mobile_V2_3-aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$ROOT/out/Multyfi_Intraday_Mobile_V2_3.apk" | tee "$ROOT/out/SIGNATURE.txt"
+          grep -q '96fc2796535fbfdcab6bac07ffa0ac5ee30cf4bec5b4a15233b33bcc0b5e1164' "$ROOT/out/SIGNATURE.txt"
+          sha256sum "$ROOT/out/Multyfi_Intraday_Mobile_V2_3.apk" | tee "$ROOT/out/APK_SHA256.txt"
+          rm -f "$ROOT/out/Multyfi_Intraday_Mobile_V2_3-aligned.apk"
+
+      - name: Upload signed V2.3 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Intraday-Mobile-V2.3-signed
+          path: |
+            chatgpt-build/multyfi-mobile-v1/out/Multyfi_Intraday_Mobile_V2_3.apk
+            chatgpt-build/multyfi-mobile-v1/out/APK_SHA256.txt
+            chatgpt-build/multyfi-mobile-v1/out/SIGNATURE.txt
+          if-no-files-found: error
+          retention-days: 7
