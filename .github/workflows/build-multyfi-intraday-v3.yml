@@ -30,6 +30,19 @@ jobs:
           grep -q 'Download Full Daily Diagnostic' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
           grep -q 'NO BROKER ORDERS' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/DiagnosticExporter.kt
 
+      - name: Apply Kotlin compile compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt')
+          s = p.read_text()
+          s = s.replace('        setTextColor(text)\n', '        setTextColor(this@MainActivity.text)\n', 1)
+          s = s.replace('        singleLine = true\n', '        setSingleLine(true)\n', 1)
+          p.write_text(s)
+          PY
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -63,8 +76,8 @@ jobs:
           UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
           ALIGNED='out/Multyfi-Intraday-Mobile-V3.0-aligned.apk'
           SIGNED='out/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
-          KEYSTORE='out/Multyfi-Intraday-V3-Update-Key.jks'
-          PASS='MultyfiV3-Update-Key-2026'
+          KEYSTORE='/tmp/multyfi-v3.jks'
+          PASS="$(openssl rand -hex 16)"
           test -s "$UNSIGNED"
           ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
@@ -85,7 +98,6 @@ jobs:
           grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
-          printf 'Alias: multyfi-v3\nKeystore password: %s\nKey password: %s\nKeep this file/key for future signed updates.\n' "$PASS" "$PASS" > out/SIGNING-INFO.txt
 
       - name: Upload verified V3 package
         uses: actions/upload-artifact@v4
@@ -98,7 +110,5 @@ jobs:
             Multyfi_Intraday_Mobile_V3_0/out/ZIPALIGN-VERIFY.txt
             Multyfi_Intraday_Mobile_V3_0/out/ZIP-INTEGRITY.txt
             Multyfi_Intraday_Mobile_V3_0/out/SHA256.txt
-            Multyfi_Intraday_Mobile_V3_0/out/Multyfi-Intraday-V3-Update-Key.jks
-            Multyfi_Intraday_Mobile_V3_0/out/SIGNING-INFO.txt
           if-no-files-found: error
           retention-days: 30
