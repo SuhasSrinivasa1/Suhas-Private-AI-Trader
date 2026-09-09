@@ -18,16 +18,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Reconstruct source
+      - name: Verify clean source tree
         shell: bash
         run: |
           set -euo pipefail
-          wc -c multyfi_daily_v1_source.b64
-          base64 -d multyfi_daily_v1_source.b64 > /tmp/multyfi_daily_v1_source.tar.xz
-          sha256sum /tmp/multyfi_daily_v1_source.tar.xz
-          xz -t /tmp/multyfi_daily_v1_source.tar.xz
-          tar -xJf /tmp/multyfi_daily_v1_source.tar.xz
-          test -d Multyfi_DailyLearner_V1
+          test -f multyfi_v1_src/settings.gradle.kts
+          test -f multyfi_v1_src/app/build.gradle.kts
+          test -f multyfi_v1_src/app/src/main/AndroidManifest.xml
+          test -f multyfi_v1_src/app/src/main/java/com/multyfi/dailylearner/MainActivity.kt
+          grep -q 'applicationId = "com.multyfi.dailylearner"' multyfi_v1_src/app/build.gradle.kts
+          grep -q 'Download Daily Diagnostic (.txt)' multyfi_v1_src/app/src/main/java/com/multyfi/dailylearner/MainActivity.kt
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -50,11 +50,11 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build release APK
-        working-directory: Multyfi_DailyLearner_V1
+        working-directory: multyfi_v1_src
         run: gradle --no-daemon --console=plain clean assembleRelease
 
       - name: Align, sign, and verify APK
-        working-directory: Multyfi_DailyLearner_V1
+        working-directory: multyfi_v1_src
         shell: bash
         run: |
           set -euo pipefail
@@ -74,6 +74,8 @@ jobs:
           "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
           unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
           grep -q "package: name='com.multyfi.dailylearner'" out/APK-BADGING.txt
+          grep -q "versionCode='1'" out/APK-BADGING.txt
+          grep -q "versionName='1.0'" out/APK-BADGING.txt
           grep -q "application-label:'Multyfi Daily Learner'" out/APK-BADGING.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
@@ -86,11 +88,11 @@ jobs:
         with:
           name: Multyfi-Daily-Learner-V1-VERIFIED
           path: |
-            Multyfi_DailyLearner_V1/out/Multyfi-Daily-Learner-V1-SIGNED.apk
-            Multyfi_DailyLearner_V1/out/APK-SIGNATURE-VERIFY.txt
-            Multyfi_DailyLearner_V1/out/APK-BADGING.txt
-            Multyfi_DailyLearner_V1/out/ZIPALIGN-VERIFY.txt
-            Multyfi_DailyLearner_V1/out/ZIP-INTEGRITY.txt
-            Multyfi_DailyLearner_V1/out/SHA256.txt
+            multyfi_v1_src/out/Multyfi-Daily-Learner-V1-SIGNED.apk
+            multyfi_v1_src/out/APK-SIGNATURE-VERIFY.txt
+            multyfi_v1_src/out/APK-BADGING.txt
+            multyfi_v1_src/out/ZIPALIGN-VERIFY.txt
+            multyfi_v1_src/out/ZIP-INTEGRITY.txt
+            multyfi_v1_src/out/SHA256.txt
           if-no-files-found: error
           retention-days: 7
