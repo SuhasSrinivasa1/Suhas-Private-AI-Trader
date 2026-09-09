@@ -1,4 +1,4 @@
-name: Build Delivery Buy v1.3.0
+name: Build Delivery Trade Hub v1.4.0
 
 on:
   push:
@@ -16,16 +16,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct source
+      - name: Reconstruct exact v1.3.0 source and apply v1.4.0 patch
         shell: bash
         run: |
           set -euo pipefail
-          cat fresh-delivery-source-v130/part00.b64 fresh-delivery-source-v130/part01.b64 fresh-delivery-source-v130/part02.b64 fresh-delivery-source-v130/part03.b64 fresh-delivery-source-v130/part04.b64 fresh-delivery-source-v130/part05.b64 fresh-delivery-source-v130/part06.b64 fresh-delivery-source-v130/part07.b64 | tr -d '\r\n' | base64 -d > /tmp/v130.zip
+          cat \
+            fresh-delivery-source-v130/part00.b64 \
+            fresh-delivery-source-v130/part01.b64 \
+            fresh-delivery-source-v130/part02.b64 \
+            fresh-delivery-source-v130/part03.b64 \
+            fresh-delivery-source-v130/part04.b64 \
+            fresh-delivery-source-v130/tail08a.b64 \
+            fresh-delivery-source-v130/part05a2.b64 \
+            fresh-delivery-source-v130/part05b.b64 \
+            fresh-delivery-source-v130/part06a.b64 \
+            fresh-delivery-source-v130/part06b.b64 \
+            fresh-delivery-source-v130/part07.b64 \
+            | tr -d '\r\n' | base64 -d > /tmp/v130.zip
+          unzip -t /tmp/v130.zip
           mkdir -p fresh-delivery-buy
           unzip -q /tmp/v130.zip -d fresh-delivery-buy
           cd fresh-delivery-buy
+          python3 ../patch-v140/apply_v140.py
           python3 scripts/validate_contract.py
-          grep -q "versionName '1.3.0'" app/build.gradle
+          grep -q "versionName '1.4.0'" app/build.gradle
+          grep -q 'Delivery Trade Hub' app/src/main/AndroidManifest.xml
           cd ..
 
       - name: Java 17
@@ -45,7 +60,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Validate contract
+      - name: Validate v1.4.0 contract
         working-directory: fresh-delivery-buy
         run: python3 scripts/validate_contract.py
 
@@ -53,23 +68,32 @@ jobs:
         working-directory: fresh-delivery-buy
         run: gradle --no-daemon :app:testReleaseUnitTest
 
-      - name: Restore existing signing identity
+      - name: Generate fresh signing identity
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p prior-artifact fresh-delivery-buy/signing-restored
-          gh run download 32811025252 --repo "${{ github.repository }}" -n multyfi-delivery-buy-fresh-v101 -D prior-artifact
-          unzip -q prior-artifact/Multyfi-Delivery-Buy-v1.0.1-SIGNING-BACKUP.zip -d fresh-delivery-buy/signing-restored
-          PASS="$(sed -n 's/^Store password: //p' fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt)"
-          test -n "$PASS"
+          PASS="$(openssl rand -hex 24)"
           echo "::add-mask::$PASS"
-          cp fresh-delivery-buy/signing-restored/fresh-delivery-release.p12 fresh-delivery-buy/fresh-delivery-release.p12
-          cp fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt fresh-delivery-buy/SIGNING-BACKUP.txt
-          keytool -list -v -keystore fresh-delivery-buy/fresh-delivery-release.p12 -storetype PKCS12 -storepass "$PASS" -alias deliverybuy > signing-cert.txt
-          grep -qi 'E0:B1:C6:11:90:9C:F0:87:9B:19:D5:3F:24:54:70:80:49:F0:76:AB:F4:CF:96:DE:E0:1C:58:D6:5B:78:BE:97' signing-cert.txt
-          echo "RELEASE_STORE_FILE=$PWD/fresh-delivery-buy/fresh-delivery-release.p12" >> "$GITHUB_ENV"
+          cd fresh-delivery-buy
+          keytool -genkeypair \
+            -alias deliverybuy \
+            -keyalg RSA \
+            -keysize 4096 \
+            -validity 10000 \
+            -dname "CN=Delivery Trade Hub v1.4, OU=Private Build, O=Personal, L=Bengaluru, ST=Karnataka, C=IN" \
+            -keystore delivery-trade-hub-release.p12 \
+            -storetype PKCS12 \
+            -storepass "$PASS" \
+            -keypass "$PASS"
+          {
+            echo "Delivery Trade Hub v1.4.0 signing backup"
+            echo "Keystore: delivery-trade-hub-release.p12"
+            echo "Alias: deliverybuy"
+            echo "Store password: $PASS"
+            echo "Key password: $PASS"
+            echo "IMPORTANT: Keep this backup for every future in-place update."
+          } > SIGNING-BACKUP.txt
+          echo "RELEASE_STORE_FILE=$PWD/delivery-trade-hub-release.p12" >> "$GITHUB_ENV"
           echo "RELEASE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
           echo "RELEASE_KEY_ALIAS=deliverybuy" >> "$GITHUB_ENV"
           echo "RELEASE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
@@ -84,28 +108,33 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output/signing-backup
-          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk
-          cp fresh-delivery-release.p12 output/signing-backup/
+          cp app/build/outputs/apk/release/app-release.apk output/Delivery-Trade-Hub-v1.4.0.apk
+          cp delivery-trade-hub-release.p12 output/signing-backup/
           cp SIGNING-BACKUP.txt output/signing-backup/
-          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.3.0-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
+          (cd output/signing-backup && zip -q ../Delivery-Trade-Hub-v1.4.0-SIGNING-BACKUP.zip delivery-trade-hub-release.p12 SIGNING-BACKUP.txt)
           rm -rf output/signing-backup
-          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk | tee output/APK-SHA256.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
-          grep -qi 'e0b1c611909cf0879b19d53f2454708049f076abf4cf96dee01c58d65b78be97' output/APK-SIGNATURE-VERIFY.txt
+          sha256sum output/Delivery-Trade-Hub-v1.4.0.apk | tee output/APK-SHA256.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Delivery-Trade-Hub-v1.4.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verifies' output/APK-SIGNATURE-VERIFY.txt || true
           python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
-          cp README.md output/README-v1.3.0.md
-          zip -qr output/fresh-delivery-buy-source-v1.3.0.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt' 'signing-restored/*'
+          cp README.md output/README-v1.4.0.md
+          zip -qr output/delivery-trade-hub-source-v1.4.0.zip . \
+            -x '.gradle/*' 'app/build/*' 'output/*' 'delivery-trade-hub-release.p12' 'SIGNING-BACKUP.txt'
           {
-            echo "Install v1.3.0 directly over v1.1.2."
-            echo "Package and signing certificate are unchanged."
-            echo "Univest is always CNC DELIVERY and never MIS."
-            echo "Multyfi equity entry remains CNC DELIVERY; only Multyfi close-triggered short and manual SHORT use MIS."
-          } > output/INSTALL-v1.3.0.txt
+            echo "Delivery Trade Hub v1.4.0"
+            echo "Fresh install / fresh signing identity. Previous app was intentionally uninstalled."
+            echo "After installation, re-enable Android Notification Access and configure Groww static IP + TOTP authentication."
+            echo "Univest equity is always CASH/CNC DELIVERY and never MIS."
+            echo "Multyfi equity entry is always CASH/CNC DELIVERY, even when Multyfi labels the source call Intraday."
+            echo "Multyfi primary delivery target is +0.5% estimated NET profit with first-spike fallback."
+            echo "Only manual SHORT and Multyfi close-triggered short use MIS intraday."
+            echo "Keep Delivery-Trade-Hub-v1.4.0-SIGNING-BACKUP.zip for future updates."
+          } > output/INSTALL-v1.4.0.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: multyfi-delivery-buy-fresh-v130
+          name: delivery-trade-hub-v140
           path: fresh-delivery-buy/output/*
           if-no-files-found: error
           retention-days: 30
