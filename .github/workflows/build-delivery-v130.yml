@@ -1,0 +1,111 @@
+name: Build Delivery Buy v1.3.0
+
+on:
+  push:
+    branches: [ delivery-v130-build-20260909 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat fresh-delivery-source-v130/part00.b64 fresh-delivery-source-v130/part01.b64 fresh-delivery-source-v130/part02.b64 fresh-delivery-source-v130/part03.b64 | tr -d '\r\n' | base64 -d > /tmp/v130.zip
+          mkdir -p fresh-delivery-buy
+          unzip -q /tmp/v130.zip -d fresh-delivery-buy
+          cd fresh-delivery-buy
+          python3 scripts/validate_contract.py
+          grep -q "versionName '1.3.0'" app/build.gradle
+          cd ..
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Validate contract
+        working-directory: fresh-delivery-buy
+        run: python3 scripts/validate_contract.py
+
+      - name: Unit tests
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:testReleaseUnitTest
+
+      - name: Restore existing signing identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p prior-artifact fresh-delivery-buy/signing-restored
+          gh run download 32811025252 --repo "${{ github.repository }}" -n multyfi-delivery-buy-fresh-v101 -D prior-artifact
+          unzip -q prior-artifact/Multyfi-Delivery-Buy-v1.0.1-SIGNING-BACKUP.zip -d fresh-delivery-buy/signing-restored
+          PASS="$(sed -n 's/^Store password: //p' fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt)"
+          test -n "$PASS"
+          echo "::add-mask::$PASS"
+          cp fresh-delivery-buy/signing-restored/fresh-delivery-release.p12 fresh-delivery-buy/fresh-delivery-release.p12
+          cp fresh-delivery-buy/signing-restored/SIGNING-BACKUP.txt fresh-delivery-buy/SIGNING-BACKUP.txt
+          keytool -list -v -keystore fresh-delivery-buy/fresh-delivery-release.p12 -storetype PKCS12 -storepass "$PASS" -alias deliverybuy > signing-cert.txt
+          grep -qi 'E0:B1:C6:11:90:9C:F0:87:9B:19:D5:3F:24:54:70:80:49:F0:76:AB:F4:CF:96:DE:E0:1C:58:D6:5B:78:BE:97' signing-cert.txt
+          echo "RELEASE_STORE_FILE=$PWD/fresh-delivery-buy/fresh-delivery-release.p12" >> "$GITHUB_ENV"
+          echo "RELEASE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=deliverybuy" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify and package
+        working-directory: fresh-delivery-buy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/signing-backup
+          cp app/build/outputs/apk/release/app-release.apk output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk
+          cp fresh-delivery-release.p12 output/signing-backup/
+          cp SIGNING-BACKUP.txt output/signing-backup/
+          (cd output/signing-backup && zip -q ../Multyfi-Delivery-Buy-v1.3.0-SIGNING-BACKUP.zip fresh-delivery-release.p12 SIGNING-BACKUP.txt)
+          rm -rf output/signing-backup
+          sha256sum output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk | tee output/APK-SHA256.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Multyfi-Delivery-Buy-FRESH-v1.3.0.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          grep -qi 'e0b1c611909cf0879b19d53f2454708049f076abf4cf96dee01c58d65b78be97' output/APK-SIGNATURE-VERIFY.txt
+          python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
+          cp README.md output/README-v1.3.0.md
+          zip -qr output/fresh-delivery-buy-source-v1.3.0.zip . -x '.gradle/*' 'app/build/*' 'output/*' 'fresh-delivery-release.p12' 'SIGNING-BACKUP.txt' 'signing-restored/*'
+          {
+            echo "Install v1.3.0 directly over v1.1.2."
+            echo "Package and signing certificate are unchanged."
+            echo "Univest is always CNC DELIVERY and never MIS."
+            echo "Multyfi equity entry remains CNC DELIVERY; only Multyfi close-triggered short and manual SHORT use MIS."
+          } > output/INSTALL-v1.3.0.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: multyfi-delivery-buy-fresh-v130
+          path: fresh-delivery-buy/output/*
+          if-no-files-found: error
+          retention-days: 30
