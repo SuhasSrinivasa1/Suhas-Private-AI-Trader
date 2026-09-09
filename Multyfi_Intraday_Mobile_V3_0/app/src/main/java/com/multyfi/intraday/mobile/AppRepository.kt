@@ -54,8 +54,11 @@ class AppRepository(private val context: Context) {
 
     fun accessToken(): String = secret.get("groww_access_token")
     fun apiKey(): String = secret.get("groww_api_key")
+    fun apiSecret(): String = secret.get("groww_api_secret")
     fun saveAccessToken(v: String) { secret.put("groww_access_token", v.trim()); prefs.edit().remove("groww_validated_token_day").apply() }
     fun saveApiKey(v: String) { secret.put("groww_api_key", v.trim()) }
+    fun saveApiSecret(v: String) { secret.put("groww_api_secret", v.trim()) }
+    fun growwCredentialsConfigured(): Boolean = apiKey().isNotBlank() && apiSecret().isNotBlank()
 
     fun markGrowwValidated() { prefs.edit().putString("groww_validated_token_day", MarketClock.tokenDay()).putLong("groww_validated_ts", System.currentTimeMillis()).apply() }
     fun clearGrowwValidation() { prefs.edit().remove("groww_validated_token_day").remove("groww_validated_ts").apply() }
