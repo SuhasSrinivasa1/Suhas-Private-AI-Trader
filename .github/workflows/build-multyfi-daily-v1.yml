@@ -22,8 +22,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          wc -c multyfi_daily_v1_source.b64
           base64 -d multyfi_daily_v1_source.b64 > /tmp/multyfi_daily_v1_source.tar.xz
-          echo '918a38b2a7ad57648b3f5765642bdf90dc4ae918f48f7a082b079dfeeff4af31  /tmp/multyfi_daily_v1_source.tar.xz' | sha256sum -c -
+          sha256sum /tmp/multyfi_daily_v1_source.tar.xz
+          xz -t /tmp/multyfi_daily_v1_source.tar.xz
           tar -xJf /tmp/multyfi_daily_v1_source.tar.xz
           test -d Multyfi_DailyLearner_V1
 
