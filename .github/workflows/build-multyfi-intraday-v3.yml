@@ -76,7 +76,7 @@ jobs:
           UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
           ALIGNED='out/Multyfi-Intraday-Mobile-V3.0-aligned.apk'
           SIGNED='out/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
-          KEYSTORE='/tmp/multyfi-v3.jks'
+          KEYSTORE='out/Multyfi-Intraday-V3-Update-Key.jks'
           PASS="$(openssl rand -hex 16)"
           test -s "$UNSIGNED"
           ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
@@ -98,6 +98,7 @@ jobs:
           grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
+          printf '%s\n' "$PASS" > out/SIGNING-PASSWORD.txt
 
       - name: Upload verified V3 package
         uses: actions/upload-artifact@v4
@@ -110,5 +111,7 @@ jobs:
             Multyfi_Intraday_Mobile_V3_0/out/ZIPALIGN-VERIFY.txt
             Multyfi_Intraday_Mobile_V3_0/out/ZIP-INTEGRITY.txt
             Multyfi_Intraday_Mobile_V3_0/out/SHA256.txt
+            Multyfi_Intraday_Mobile_V3_0/out/Multyfi-Intraday-V3-Update-Key.jks
+            Multyfi_Intraday_Mobile_V3_0/out/SIGNING-PASSWORD.txt
           if-no-files-found: error
           retention-days: 30
