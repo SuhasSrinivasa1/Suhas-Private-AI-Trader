@@ -18,14 +18,15 @@ object DiagnosticExporter {
         val tickLines = repo.todayRawTickLines()
 
         return buildString {
-            appendLine("MULTYFI INTRADAY MOBILE V3.0 — FULL DAILY DIAGNOSTIC")
+            appendLine("MULTYFI INTRADAY MOBILE V3.0.1 — FULL DAILY DIAGNOSTIC")
             appendLine("Generated: ${sdf.format(Date())} IST")
             appendLine("Package: com.multyfi.intraday.mobile")
-            appendLine("App version: 3.0.0")
+            appendLine("App version: 3.0.1")
             appendLine("Mode: PAPER ONLY — NO BROKER ORDERS")
             appendLine()
 
             appendLine("==================== SYSTEM ====================")
+            appendLine("Groww credentials configured: ${yesNo(repo.growwCredentialsConfigured())}")
             appendLine("Groww token configured: ${yesNo(repo.accessToken().isNotBlank())}")
             appendLine("Groww token validated today: ${yesNo(repo.growwValidated())}")
             appendLine("Notification access enabled: ${yesNo(repo.notificationAccessEnabled())}")
