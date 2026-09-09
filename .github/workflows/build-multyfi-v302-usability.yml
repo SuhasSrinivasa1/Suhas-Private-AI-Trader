@@ -1,0 +1,103 @@
+name: Build Multyfi V3.0.2 Credential Usability
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-v302-usability:
+    if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Patch credential usability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt')
+          s = p.read_text()
+
+          s = s.replace('        super.onCreate(savedInstanceState)\n', '        super.onCreate(savedInstanceState)\n        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)\n', 1)
+          s = s.replace('        if (::content.isInitialized) renderSelected()\n', '        if (::content.isInitialized && selected != "SETTINGS") renderSelected()\n', 1)
+          s = s.replace('        setTextColor(text)\n', '        setTextColor(this@MainActivity.text)\n', 1)
+          s = s.replace('        singleLine = true\n', '        setSingleLine(true)\n', 1)
+
+          s = s.replace(
+              '        s.addView(statusRow("Groww API", if (groww) "LIVE" else if (repo.accessToken().isBlank()) "NOT CONFIGURED" else "VALIDATION REQUIRED", if (groww) true else false))\n',
+              '''        s.addView(statusRow("Groww API", when {\n            groww -> "LIVE"\n            repo.accessToken().isNotBlank() -> "VALIDATION REQUIRED"\n            repo.growwCredentialsConfigured() -> "CONNECT REQUIRED"\n            else -> "NOT CONFIGURED"\n        }, if (groww) true else false))\n'''
+          )
+
+          start = s.index('        sectionTitle("Groww API",')
+          end = s.index('        sectionTitle("Static IP",', start)
+          new_settings = '''        sectionTitle(\n            "Groww API",\n            "Copy/paste is supported. Switching to another app and back will no longer erase what you pasted. Screenshots are allowed."\n        )\n        val apiKey = editField(if (repo.apiKey().isBlank()) "API Key / TOTP Token" else "Credential 1 configured — paste only to replace", password = true)\n        val apiSecret = editField(if (repo.apiSecret().isBlank()) "API Secret / TOTP Secret" else "Credential 2 configured — paste only to replace", password = true)\n        addCard(apiKey, bottom = 8)\n        addCard(apiSecret, bottom = 10)\n\n        val authHint = cardBox(14, purpleSoft)\n        authHint.addView(t("API Key + API Secret", 14f, purple, true))\n        authHint.addView(t("Paste the API Key into the first field and API Secret into the second, then tap Connect • Key + Secret.", 12f, text).apply { setPadding(0, dp(5), 0, 0) })\n        addCard(authHint, bottom = 10)\n\n        val growwButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }\n        growwButtons.addView(secondaryButton("Connect • Key + Secret") { connectGrowwAsync(apiKey.text.toString(), apiSecret.text.toString(), "APPROVAL") }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))\n        growwButtons.addView(primaryButton("Connect • TOTP") { connectGrowwAsync(apiKey.text.toString(), apiSecret.text.toString(), "TOTP") }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) })\n        content.addView(growwButtons)\n        content.addView(spacer(12))\n\n        val token = editField(if (repo.accessToken().isBlank()) "Optional existing Access Token" else "Access Token configured — paste only to replace", password = true)\n        addCard(token, bottom = 8)\n        addCard(secondaryButton("Validate Existing Access Token") {\n            val entered = token.text.toString().trim()\n            if (entered.isNotBlank()) repo.saveAccessToken(entered)\n            validateGrowwAsync()\n        }, bottom = 20)\n\n'''
+          s = s[:start] + new_settings + s[end:]
+
+          s = s.replace(
+              '''            if (token.text.toString().trim().isNotBlank()) repo.saveAccessToken(token.text.toString())\n            if (apiKey.text.toString().trim().isNotBlank()) repo.saveApiKey(apiKey.text.toString())\n            repo.saveWhitelistIp(ip.text.toString())\n''',
+              '''            if (token.text.toString().trim().isNotBlank()) repo.saveAccessToken(token.text.toString())\n            if (apiKey.text.toString().trim().isNotBlank()) repo.saveApiKey(apiKey.text.toString())\n            if (apiSecret.text.toString().trim().isNotBlank()) repo.saveApiSecret(apiSecret.text.toString())\n            repo.saveWhitelistIp(ip.text.toString())\n'''
+          )
+
+          ms = s.index('    private fun generateTokenAsync(')
+          me = s.index('    private fun detectIpAsync()', ms)
+          connect = '''    private fun connectGrowwAsync(keyEntered: String, secretEntered: String, mode: String) {\n        if (keyEntered.isNotBlank()) repo.saveApiKey(keyEntered)\n        if (secretEntered.isNotBlank()) repo.saveApiSecret(secretEntered)\n        val key = repo.apiKey()\n        val secret = repo.apiSecret()\n        if (key.isBlank() || secret.isBlank()) { toast("Enter both Groww credential values first"); return }\n        val isTotp = mode.equals("TOTP", true)\n        worker.execute {\n            runCatching { if (isTotp) GrowwClient.generateAccessTokenWithTotp(key, secret) else GrowwClient.generateAccessTokenWithApproval(key, secret) }\n                .onSuccess { access ->\n                    repo.saveAccessToken(access)\n                    val ok = GrowwClient.validateAccessToken(access)\n                    if (ok) repo.markGrowwValidated() else repo.clearGrowwValidation()\n                    runOnUiThread { toast(if (ok) "Groww connected and validated" else "Token generated; validation failed"); showSettings() }\n                }\n                .onFailure { e -> repo.clearGrowwValidation(); runOnUiThread { toast(e.message ?: "Groww authentication failed") } }\n        }\n    }\n\n'''
+          s = s[:ms] + connect + s[me:]
+          p.write_text(s)
+          PY
+          grep -q 'window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          grep -q 'selected != "SETTINGS"' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          grep -q 'API Secret / TOTP Secret' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          grep -q 'versionCode = 302' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'versionName = "3.0.2"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        run: gradle --no-daemon --console=plain clean assembleRelease
+
+      - name: Package unsigned APK and signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package/build-tools/lib
+          cp Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk package/Multyfi_Intraday_Mobile_V3_0_2_UNSIGNED.apk
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" package/build-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" package/build-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/aapt" package/build-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" package/build-tools/lib/
+
+      - name: Upload build package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-V3.0.2-UNSIGNED-AND-TOOLS
+          path: package/
+          if-no-files-found: error
+          retention-days: 7
