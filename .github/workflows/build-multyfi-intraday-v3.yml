@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-multyfi-v3:
@@ -98,7 +99,29 @@ jobs:
         working-directory: Multyfi_Intraday_Mobile_V3_0
         run: gradle --no-daemon --console=plain clean assembleRelease
 
-      - name: Align sign and verify APK
+      - name: Restore V3 update signing key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/multyfi-v3-signing
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10109117099/zip" \
+            -o /tmp/multyfi-v3-signing/previous.zip
+          unzip -j /tmp/multyfi-v3-signing/previous.zip \
+            'Multyfi-Intraday-V3-Update-Key.jks' \
+            'SIGNING-PASSWORD.txt' \
+            'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
+            -d /tmp/multyfi-v3-signing
+          test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
+          test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
+          test -s /tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk
+
+      - name: Align sign and verify APK update
         working-directory: Multyfi_Intraday_Mobile_V3_0
         shell: bash
         run: |
@@ -106,21 +129,28 @@ jobs:
           mkdir -p out
           UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
           ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.1-aligned.apk'
-          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED.apk'
-          KEYSTORE='out/Multyfi-Intraday-V3-Update-Key.jks'
-          PASS="$(openssl rand -hex 16)"
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED_UPDATE.apk'
+          KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
+          PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
+          OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
           test -s "$UNSIGNED"
           cp "$UNSIGNED" out/Multyfi_Intraday_Mobile_V3_0_1_UNSIGNED.apk
           ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
           "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
-          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass "$PASS" -keypass "$PASS" -alias multyfi-v3 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=Multyfi Intraday Mobile V3, OU=Private Build, O=Multyfi, L=Bengaluru, ST=Karnataka, C=IN'
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:"$PASS" --key-pass pass:"$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
           "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
           "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
           "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
           unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+          "$APKSIGNER" verify --print-certs "$OLD_APK" > out/OLD-SIGNER.txt
+          "$APKSIGNER" verify --print-certs "$SIGNED" > out/NEW-SIGNER.txt
+          OLD_CERT="$(grep 'Signer #1 certificate SHA-256 digest:' out/OLD-SIGNER.txt | head -1 | awk '{print $NF}')"
+          NEW_CERT="$(grep 'Signer #1 certificate SHA-256 digest:' out/NEW-SIGNER.txt | head -1 | awk '{print $NF}')"
+          test -n "$OLD_CERT"
+          test "$OLD_CERT" = "$NEW_CERT"
+          printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
           grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
           grep -q "versionCode='301'" out/APK-BADGING.txt
           grep -q "versionName='3.0.1'" out/APK-BADGING.txt
@@ -130,21 +160,18 @@ jobs:
           grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
-          printf '%s\n' "$PASS" > out/SIGNING-PASSWORD.txt
 
-      - name: Upload verified V3.0.1 package
+      - name: Upload verified V3.0.1 update
         uses: actions/upload-artifact@v4
         with:
-          name: Multyfi-Intraday-Mobile-V3.0.1-VERIFIED
+          name: Multyfi-Intraday-Mobile-V3.0.1-UPDATE-VERIFIED
           path: |
-            Multyfi_Intraday_Mobile_V3_0/out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED.apk
-            Multyfi_Intraday_Mobile_V3_0/out/Multyfi_Intraday_Mobile_V3_0_1_UNSIGNED.apk
+            Multyfi_Intraday_Mobile_V3_0/out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED_UPDATE.apk
             Multyfi_Intraday_Mobile_V3_0/out/APK-SIGNATURE-VERIFY.txt
             Multyfi_Intraday_Mobile_V3_0/out/APK-BADGING.txt
             Multyfi_Intraday_Mobile_V3_0/out/ZIPALIGN-VERIFY.txt
             Multyfi_Intraday_Mobile_V3_0/out/ZIP-INTEGRITY.txt
+            Multyfi_Intraday_Mobile_V3_0/out/UPDATE-SIGNER-MATCH.txt
             Multyfi_Intraday_Mobile_V3_0/out/SHA256.txt
-            Multyfi_Intraday_Mobile_V3_0/out/Multyfi-Intraday-V3-Update-Key.jks
-            Multyfi_Intraday_Mobile_V3_0/out/SIGNING-PASSWORD.txt
           if-no-files-found: error
           retention-days: 30
