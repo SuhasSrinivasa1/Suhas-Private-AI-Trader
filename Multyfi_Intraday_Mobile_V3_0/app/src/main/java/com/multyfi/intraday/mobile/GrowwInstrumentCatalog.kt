@@ -41,17 +41,24 @@ class GrowwInstrumentCatalog(private val context: Context) {
         if (symbols.isEmpty()) return null
         val upper = text.uppercase(Locale.US)
 
-        val explicit = Regex("(?:NSE\\s*[:/_\\-]\\s*)([A-Z][A-Z0-9&.\\-]{1,24})")
+        val explicitMatches = Regex("(?:NSE\\s*[:/_\\-]\\s*)([A-Z][A-Z0-9&.\\-]{1,24})")
             .findAll(upper)
-            .map { it.groupValues[1] }
-            .firstOrNull { it in symbols }
-        if (explicit != null) return explicit
+            .map { it.groupValues[1].trim('.', '-') }
+            .filter { it in symbols }
+            .distinct()
+            .toList()
+        if (explicitMatches.size == 1) return explicitMatches.first()
+        if (explicitMatches.size > 1) return null
 
-        return Regex("[A-Z][A-Z0-9&.\\-]{1,24}")
+        val validMatches = Regex("[A-Z][A-Z0-9&.\\-]{1,24}")
             .findAll(upper)
             .map { it.value.trim('.', '-') }
             .filter { it.length >= 2 && symbolPattern.matches(it) }
-            .firstOrNull { it in symbols }
+            .filter { it in symbols }
+            .distinct()
+            .toList()
+
+        return validMatches.singleOrNull()
     }
 
     private fun readCache(): Set<String> {
