@@ -58,7 +58,7 @@ idx = s.find(marker)
 if idx < 0:
     raise SystemExit('validator Univest marker not found')
 line_end = s.find('\n', idx)
-extra = "\n 'Univest duration 1-3 months':'DURATION_MONTHS' in univest_parser and 'isEligibleEntryDuration' in univest_parser and 'end <= 3.0' in univest_parser and 'start >= 1.0' in univest_parser,"
+extra = "\n 'Univest duration 1-3 months':'DURATION_MONTHS' in uparser and 'isEligibleEntryDuration' in uparser and 'end <= 3.0' in uparser and 'start >= 1.0' in uparser,"
 s = s[:line_end] + extra + s[line_end:]
 p.write_text(s)
 
