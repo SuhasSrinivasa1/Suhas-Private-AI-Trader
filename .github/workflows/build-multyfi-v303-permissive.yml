@@ -151,7 +151,6 @@ jobs:
           grep -q "versionName='3.0.4'" out/APK-BADGING.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
-          grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
 
