@@ -59,17 +59,8 @@ s = s.replace("'version 1.4.5':\"versionName '1.4.5'\" in gradle and 'versionCod
 marker = "'Univest equity only filters'"
 if marker not in s:
     raise SystemExit('Expected validator Univest equity filter marker not found')
-# Add explicit checks without weakening any existing equity/F&O filter checks.
-checks = "        'Univest BE series supported':'symbol.endsWith(\\\"-BE\\\")' in uparser and '!\\\"BE\\\".equalsIgnoreCase(series)' in instruments,\n"
-# Determine variable used for InstrumentRepository text.
-if "instruments =" not in s:
-    # Older validator uses repository variable name 'instrument'.
-    if "instrument =" in s:
-        checks = checks.replace("in instruments", "in instrument")
-    else:
-        raise SystemExit('Could not locate instrument repository validator variable')
-# Insert before equity-only check to make failure obvious.
-idx = s.find("        'Univest equity only filters'")
+checks = " 'Univest BE series supported':'symbol.endsWith(\\\"-BE\\\")' in uparser and '!\\\"BE\\\".equalsIgnoreCase(series)' in instruments,\n"
+idx = s.find(marker)
 s = s[:idx] + checks + s[idx:]
 p.write_text(s)
 
