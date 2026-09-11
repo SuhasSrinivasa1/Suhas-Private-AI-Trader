@@ -46,7 +46,7 @@ jobs:
           bash /tmp/v307_base.sh
           bash /tmp/v307_dynamic.sh
 
-      - name: Apply V3.0.8 adaptive Groww polling and learning status fix
+      - name: Apply V3.0.8 adaptive polling and evidence UI
         shell: bash
         run: |
           set -euo pipefail
@@ -57,14 +57,10 @@ jobs:
           base = Path('Multyfi_Intraday_Mobile_V3_0')
           src = base/'app/src/main/java/com/multyfi/intraday/mobile'
 
-          # Version bump.
           p = base/'app/build.gradle.kts'
           s = p.read_text().replace('versionCode = 307', 'versionCode = 308').replace('versionName = "3.0.7"', 'versionName = "3.0.8"')
           p.write_text(s)
 
-          # Global live-data rate control: one quote at a time, round-robin, max 4 starts/sec.
-          # Groww's documented Live Data ceiling is 10/sec and 300/min. 4/sec = 240/min,
-          # leaving a 20% minute-budget reserve and a large per-second reserve.
           p = src/'MultyfiNotificationService.kt'
           s = p.read_text()
           hook = '    @Volatile private var lastCatalogRefreshAttempt = 0L\n'
@@ -74,99 +70,90 @@ jobs:
           new_sched = '            ex.scheduleWithFixedDelay({ safePoll() }, 1, 250, TimeUnit.MILLISECONDS)\n'
           if old_sched not in s: raise SystemExit('service scheduler hook not found')
           s = s.replace(old_sched, new_sched, 1)
-
           start = s.index('    private fun safePoll() {')
           end = s.index('    private fun throttledLog(', start)
-          new_safe = r'''    private fun safePoll() {
-        runCatching {
-            repo.markListenerHeartbeat()
-            val validSymbols = catalog.cachedSymbols().ifEmpty {
-                refreshCatalogAndSanitize(force = false) ?: return
-            }
-            if (validSymbols.size < 500) return
-
-            if (MarketClock.shouldForceFlat()) {
-                repo.todayCandidates()
-                    .filter { it.symbol.uppercase(Locale.US) in validSymbols }
-                    .forEach { c ->
-                        val flat = PaperEngine.forceFlat(repo, c)
-                        LiveTradeEngine.sync(repo, c, flat)
-                        if (flat != c) repo.saveCandidate(flat)
-                    }
-                val n = MarketClock.now()
-                if (n.hour >= 15 && n.minute >= 20 && !repo.learningUpToDate()) {
-                    val r = ReplayEngine().learn(repo)
-                    if (r.promoted) repo.saveConfig(r.championAfter)
-                    repo.recordLearning(r)
-                }
-                return
-            }
-            if (!MarketClock.isTrackingWindow()) return
-            val token = repo.accessToken()
-            if (token.isBlank()) return
-
-            val active = repo.todayCandidates()
-                .filter { it.status != "SESSION_LOCKED" }
-                .filter { it.symbol.uppercase(Locale.US) in validSymbols }
-            if (active.isEmpty()) return
-
-            // Adaptive round-robin. Only ONE Groww quote request is issued per invocation.
-            // With fixed-delay 250 ms and a single-thread executor this can never exceed
-            // 4 quote starts/sec (240/min), below Groww Live Data limits of 10/sec, 300/min.
-            val idx = Math.floorMod(quoteCursor, active.size)
-            val c = active[idx]
-            quoteCursor = if (quoteCursor == Int.MAX_VALUE) 0 else quoteCursor + 1
-
-            runCatching {
-                val q = GrowwClient.quote(token, c.symbol)
-                repo.appendTick(c.id, q)
-                val updated = PaperEngine.onQuote(repo, c, repo.ticks(c.id).takeLast(180))
-                LiveTradeEngine.sync(repo, c, updated)
-                repo.saveCandidate(updated)
-            }.onFailure { e ->
-                throttledLog("quote_${c.symbol}", "Market data error • ${c.symbol}", e.message ?: "Groww quote failed", "WARN")
-            }
-        }.onFailure { e -> throttledLog("loop", "Scanner loop error", e.message ?: "Unknown scanner error", "WARN") }
-    }
-
-'''
+          new_safe = '\n'.join([
+              '    private fun safePoll() {',
+              '        runCatching {',
+              '            repo.markListenerHeartbeat()',
+              '            val validSymbols = catalog.cachedSymbols().ifEmpty {',
+              '                refreshCatalogAndSanitize(force = false) ?: return',
+              '            }',
+              '            if (validSymbols.size < 500) return',
+              '',
+              '            if (MarketClock.shouldForceFlat()) {',
+              '                repo.todayCandidates()',
+              '                    .filter { it.symbol.uppercase(Locale.US) in validSymbols }',
+              '                    .forEach { c ->',
+              '                        val flat = PaperEngine.forceFlat(repo, c)',
+              '                        LiveTradeEngine.sync(repo, c, flat)',
+              '                        if (flat != c) repo.saveCandidate(flat)',
+              '                    }',
+              '                val n = MarketClock.now()',
+              '                if (n.hour >= 15 && n.minute >= 20 && !repo.learningUpToDate()) {',
+              '                    val r = ReplayEngine().learn(repo)',
+              '                    if (r.promoted) repo.saveConfig(r.championAfter)',
+              '                    repo.recordLearning(r)',
+              '                }',
+              '                return',
+              '            }',
+              '            if (!MarketClock.isTrackingWindow()) return',
+              '            val token = repo.accessToken()',
+              '            if (token.isBlank()) return',
+              '',
+              '            val active = repo.todayCandidates()',
+              '                .filter { it.status != "SESSION_LOCKED" }',
+              '                .filter { it.symbol.uppercase(Locale.US) in validSymbols }',
+              '            if (active.isEmpty()) return',
+              '',
+              '            // One request per 250ms fixed-delay invocation on one executor.',
+              '            // Maximum theoretical quote cadence: 4/sec = 240/min.',
+              '            val idx = Math.floorMod(quoteCursor, active.size)',
+              '            val c = active[idx]',
+              '            quoteCursor = if (quoteCursor == Int.MAX_VALUE) 0 else quoteCursor + 1',
+              '',
+              '            runCatching {',
+              '                val q = GrowwClient.quote(token, c.symbol)',
+              '                repo.appendTick(c.id, q)',
+              '                val updated = PaperEngine.onQuote(repo, c, repo.ticks(c.id).takeLast(180))',
+              '                LiveTradeEngine.sync(repo, c, updated)',
+              '                repo.saveCandidate(updated)',
+              '            }.onFailure { e ->',
+              '                throttledLog("quote_${c.symbol}", "Market data error • ${c.symbol}", e.message ?: "Groww quote failed", "WARN")',
+              '            }',
+              '        }.onFailure { e -> throttledLog("loop", "Scanner loop error", e.message ?: "Unknown scanner error", "WARN") }',
+              '    }',
+              ''
+          ]) + '\n'
           s = s[:start] + new_safe + s[end:]
           p.write_text(s)
 
-          # Review screen: current evidence must never show the stale last-run count as current.
           p = src/'MainActivity.kt'
           s = p.read_text()
           s = s.replace('screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0")', 'screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0.8")')
-          old = '''        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))
-        statusCard.addView(t(last?.reason ?: "The learner needs at least 6 completed replay sessions before it can challenge the Champion.", 14f, text).apply { setPadding(0, dp(8), 0, 0) })
-'''
-          new = '''        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))
-        val currentEvidenceText = when {
-            !upToDate && sessions < 6 -> "Current evidence: $sessions / 6 replay sessions available. The Champion is unchanged until enough current evidence is available and evaluated."
-            !upToDate -> "Current evidence: $sessions replay sessions available. Re-evaluation is pending; the previous learning result is historical only."
-            last != null -> last.reason
-            else -> "No completed learning evaluation yet."
-        }
-        statusCard.addView(t(currentEvidenceText, 14f, text).apply { setPadding(0, dp(8), 0, 0) })
-'''
+          old = ('        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))\n'
+                 '        statusCard.addView(t(last?.reason ?: "The learner needs at least 6 completed replay sessions before it can challenge the Champion.", 14f, text).apply { setPadding(0, dp(8), 0, 0) })\n')
+          new = ('        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))\n'
+                 '        val currentEvidenceText = when {\n'
+                 '            !upToDate && sessions < 6 -> "Current evidence: $sessions / 6 replay sessions available. The Champion is unchanged until enough current evidence is available and evaluated."\n'
+                 '            !upToDate -> "Current evidence: $sessions replay sessions available. Re-evaluation is pending; the previous learning result is historical only."\n'
+                 '            last != null -> last.reason\n'
+                 '            else -> "No completed learning evaluation yet."\n'
+                 '        }\n'
+                 '        statusCard.addView(t(currentEvidenceText, 14f, text).apply { setPadding(0, dp(8), 0, 0) })\n')
           if old not in s: raise SystemExit('learning status hook not found')
           s = s.replace(old, new, 1)
-
-          # Show the actual REST cadence in Settings.
           needle = '        sectionTitle("Multyfi candidate access", '
           pos = s.find(needle)
-          if pos < 0: raise SystemExit('settings candidate section hook not found')
-          rate_block = '''        sectionTitle("Market data cadence", "Groww Quote REST is polled adaptively across active candidates. The scanner uses one request at a time, round-robin, capped at 4 quote requests/second and 240/minute. Groww currently documents Live Data limits of 10/second and 300/minute, so this keeps reserve capacity.")
-        val cadenceCard = cardBox(16, greenSoft)
-        cadenceCard.addView(t("ADAPTIVE • 4 req/s MAX • 240/min MAX", 14f, green, true))
-        cadenceCard.addView(t("Approximate refresh per candidate: 0.25s × number of active candidates, plus network latency. Two candidates ≈ 0.5s each; seven ≈ 1.75s each.", 13f, text).apply { setPadding(0, dp(6), 0, 0) })
-        addCard(cadenceCard, bottom = 20)
-
-'''
+          if pos < 0: raise SystemExit('settings cadence hook not found')
+          rate_block = ('        sectionTitle("Market data cadence", "Groww Quote REST is polled adaptively across active candidates. The scanner uses one request at a time, round-robin, capped at 4 quote requests/second and 240/minute. Groww currently documents Live Data limits of 10/second and 300/minute, so this keeps reserve capacity.")\n'
+                        '        val cadenceCard = cardBox(16, greenSoft)\n'
+                        '        cadenceCard.addView(t("ADAPTIVE • 4 req/s MAX • 240/min MAX", 14f, green, true))\n'
+                        '        cadenceCard.addView(t("Approximate refresh per candidate: 0.25s × number of active candidates, plus network latency. Two candidates ≈ 0.5s each; seven ≈ 1.75s each.", 13f, text).apply { setPadding(0, dp(6), 0, 0) })\n'
+                        '        addCard(cadenceCard, bottom = 20)\n\n')
           s = s[:pos] + rate_block + s[pos:]
           p.write_text(s)
 
-          # Diagnostic version and explicit cadence record.
           p = src/'DiagnosticExporter.kt'
           s = p.read_text().replace('V3.0.7 — FULL DAILY DIAGNOSTIC', 'V3.0.8 — FULL DAILY DIAGNOSTIC').replace('App version: 3.0.7', 'App version: 3.0.8')
           needle = '            appendLine("Risk controls: DYNAMIC PER ENTRY — stop/trail/min-hold are not manually configured")\n'
@@ -178,7 +165,7 @@ jobs:
           grep -q 'versionCode = 308' "$BASE/app/build.gradle.kts"
           grep -q 'versionName = "3.0.8"' "$BASE/app/build.gradle.kts"
           grep -q '250, TimeUnit.MILLISECONDS' "$SRC/MultyfiNotificationService.kt"
-          grep -q 'Only ONE Groww quote request' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'Maximum theoretical quote cadence: 4/sec = 240/min' "$SRC/MultyfiNotificationService.kt"
           grep -q 'Current evidence: \$sessions / 6 replay sessions available' "$SRC/MainActivity.kt"
           grep -q 'ADAPTIVE • 4 req/s MAX • 240/min MAX' "$SRC/MainActivity.kt"
           grep -q 'MULTYFI INTRADAY MOBILE V3.0.8' "$SRC/DiagnosticExporter.kt"
@@ -225,9 +212,6 @@ jobs:
             'SIGNING-PASSWORD.txt' \
             'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
             -d /tmp/multyfi-v3-signing
-          test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
-          test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
-          test -s /tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk
 
       - name: Sign and verify V3.0.8 update
         shell: bash
@@ -243,27 +227,16 @@ jobs:
           ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
-
           "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE" \
-            --ks-pass pass:"$PASS" \
-            --key-pass pass:"$PASS" \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out "$SIGNED" "$ALIGNED"
-
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:"$PASS" --key-pass pass:"$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
           "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
           "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
           "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
           unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
-
           OLD_CERT="$("$APKSIGNER" verify --print-certs "$OLD_APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
           NEW_CERT="$("$APKSIGNER" verify --print-certs "$SIGNED" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
           test -n "$OLD_CERT" && test "$OLD_CERT" = "$NEW_CERT"
           printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
-
           grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
           grep -q "versionCode='308'" out/APK-BADGING.txt
           grep -q "versionName='3.0.8'" out/APK-BADGING.txt
