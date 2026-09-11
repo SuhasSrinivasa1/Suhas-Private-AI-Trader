@@ -29,11 +29,16 @@ s = s.replace('−10% CNC SELL GTT', '−20% CNC SELL GTT')
 s = s.replace('−10% protective GTT', '−20% protective GTT')
 p.write_text(s)
 
-# Unit test expectation.
+# Unit test expectation for the new stop distance.
 p = root / 'app/src/test/java/com/suhas/multyfideliverybuy/UnivestStrategyContractTest.java'
 s = p.read_text()
+s = s.replace('public void protectiveStopIsTenPercentBelowOriginalEntry()', 'public void protectiveStopIsTwentyPercentBelowOriginalEntry()')
 s = s.replace('org.junit.Assert.assertEquals(0.10, UnivestManager.PROTECTIVE_STOP_DROP, 0.000001);',
               'org.junit.Assert.assertEquals(0.20, UnivestManager.PROTECTIVE_STOP_DROP, 0.000001);')
+s = s.replace('org.junit.Assert.assertEquals(90.0, UnivestManager.protectiveStopPrice(100.0, 0.05), 0.0001);',
+              'org.junit.Assert.assertEquals(80.0, UnivestManager.protectiveStopPrice(100.0, 0.05), 0.0001);')
+s = s.replace('org.junit.Assert.assertEquals(111.15, UnivestManager.protectiveStopPrice(123.47, 0.05), 0.0001);',
+              'org.junit.Assert.assertEquals(98.8, UnivestManager.protectiveStopPrice(123.47, 0.05), 0.0001);')
 p.write_text(s)
 
 # Static contract validator.
