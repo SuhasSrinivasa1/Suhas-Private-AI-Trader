@@ -1,0 +1,31 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/test/java/com/suhas/multyfideliverybuy/AutoAuthSchedulerTest.java v144_src/app/src/test/java/com/suhas/multyfideliverybuy/AutoAuthSchedulerTest.java
+--- v143_orig/app/src/test/java/com/suhas/multyfideliverybuy/AutoAuthSchedulerTest.java	1970-01-01 00:00:00.000000000 +0000
++++ v144_src/app/src/test/java/com/suhas/multyfideliverybuy/AutoAuthSchedulerTest.java	2026-09-12 08:15:36.352381636 +0000
+@@ -0,0 +1,27 @@
++package com.suhas.multyfideliverybuy;
++
++import org.junit.Test;
++
++import java.util.Calendar;
++import java.util.TimeZone;
++
++import static org.junit.Assert.assertEquals;
++
++public class AutoAuthSchedulerTest {
++    private long ist(int year, int month, int day, int hour, int minute) {
++        Calendar c = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kolkata"));
++        c.set(year, month - 1, day, hour, minute, 0);
++        c.set(Calendar.MILLISECOND, 0);
++        return c.getTimeInMillis();
++    }
++
++    @Test public void schedulesSameDayWhenBefore0845Ist() {
++        assertEquals(ist(2026, 9, 12, 8, 45),
++                AutoAuthScheduler.nextDailyMillis(ist(2026, 9, 12, 8, 44)));
++    }
++
++    @Test public void schedulesNextDayWhenAfter0845Ist() {
++        assertEquals(ist(2026, 9, 13, 8, 45),
++                AutoAuthScheduler.nextDailyMillis(ist(2026, 9, 12, 8, 46)));
++    }
++}
