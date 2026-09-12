@@ -1,0 +1,33 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/scripts/validate_contract.py v144_src/scripts/validate_contract.py
+--- v143_orig/scripts/validate_contract.py	2026-09-10 13:59:05.000000000 +0000
++++ v144_src/scripts/validate_contract.py	2026-09-12 08:15:36.352315118 +0000
+@@ -3,14 +3,14 @@
+ root=Path(__file__).resolve().parents[1]
+ j=root/'app/src/main/java/com/suhas/multyfideliverybuy'
+ read=lambda n:(j/n).read_text()
+-groww=read('GrowwClient.java'); service=read('MultyfiNotificationService.java'); main=read('MainActivity.java'); prefs=read('AppPrefs.java')
++groww=read('GrowwClient.java'); service=read('MultyfiNotificationService.java'); main=read('MainActivity.java'); prefs=read('AppPrefs.java'); autoauth=read('AutoAuthManager.java'); autosched=read('AutoAuthScheduler.java'); autorecv=read('AutoAuthReceiver.java')
+ univest=read('UnivestManager.java'); uparser=read('UnivestParser.java'); ustate=read('UnivestStateStore.java')
+ mexit=read('MultyfiExitParser.java'); mstate=read('MultyfiTradeStateStore.java'); mmanager=read('MultyfiStrategyManager.java')
+ charges=read('IntradayChargeTarget.java'); delivery=read('DeliveryNetTarget.java'); network=read('NetworkCheck.java'); instruments=read('InstrumentRepository.java')
+ manifest=(root/'app/src/main/AndroidManifest.xml').read_text(); gradle=(root/'app/build.gradle').read_text()
+ checks={
+  'same package':"applicationId 'com.suhas.multyfideliverybuy'" in gradle,
+- 'version 1.4.3':"versionName '1.4.3'" in gradle and 'versionCode 143' in gradle,
++ 'version 1.4.4':"versionName '1.4.4'" in gradle and 'versionCode 144' in gradle,
+  'Univest toggle':'Enable Univest equity automation' in main and 'isUnivestEnabled' in prefs,
+  'UI delivery wording':'Delivery Trade Hub' in main and 'NEVER MIS / INTRADAY' in main and '+0.5% estimated NET-profit GTT target' in main,
+  'Univest budget slider 0..100k':'univestBudgetBar.setMax(10)' in main and 'progress * 10000' in main and 'SAVE UNIVEST ENTRY BUDGET' in main,
+@@ -48,6 +48,12 @@
+  'Official instrument master':'growwapi-assets.groww.in/instruments/instrument.csv' in instruments,
+  'Notification listener':'BIND_NOTIFICATION_LISTENER_SERVICE' in manifest,
+  'Static IP retained':'api4.ipify.org' in network and 'checkip.amazonaws.com' in network,
++ 'Automatic Groww auth daily':'DAILY_HOUR_IST = 8' in autosched and 'DAILY_MINUTE_IST = 45' in autosched and 'setAndAllowWhileIdle' in autosched and 'refreshAndTestAuthentication' in autoauth,
++ 'Auto auth static IP gate':'NetworkCheck.detectAndCompare' in autoauth and 'network.match' in autoauth,
++ 'Auto auth retries':'MAX_RETRIES = 6' in autorecv and 'scheduleRetry' in autorecv and '5L * 60L * 1000L' in autosched,
++ 'Auto auth boot persistence':'RECEIVE_BOOT_COMPLETED' in manifest and 'BOOT_COMPLETED' in manifest and 'MY_PACKAGE_REPLACED' in manifest and 'AutoAuthReceiver' in manifest,
++ 'Auto auth startup self heal':'refreshIfStaleAsync' in main and 'refreshIfStaleAsync' in service,
++ 'Saved toggles survive stale startup':'loadingPrefs' in main and 'if (loadingPrefs) return' in main,
+  'Entry-pending race guard':'entryPending' in mstate and 'entry is still unresolved' in mmanager,
+ }
+ failed=[k for k,v in checks.items() if not v]
