@@ -1,0 +1,30 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/AndroidManifest.xml v144_src/app/src/main/AndroidManifest.xml
+--- v143_orig/app/src/main/AndroidManifest.xml	2026-09-10 03:49:34.000000000 +0000
++++ v144_src/app/src/main/AndroidManifest.xml	2026-09-12 08:14:51.451254854 +0000
+@@ -2,6 +2,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+ 
+     <application
+         android:allowBackup="false"
+@@ -20,6 +21,18 @@
+             </intent-filter>
+         </activity>
+ 
++
++        <receiver
++            android:name=".AutoAuthReceiver"
++            android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.BOOT_COMPLETED" />
++                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
++                <action android:name="android.intent.action.TIME_SET" />
++                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
++            </intent-filter>
++        </receiver>
++
+         <service
+             android:name=".MultyfiNotificationService"
+             android:label="Delivery Trade Hub listener"
