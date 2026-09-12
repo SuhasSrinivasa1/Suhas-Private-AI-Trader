@@ -1,0 +1,156 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/MainActivity.java v144_src/app/src/main/java/com/suhas/multyfideliverybuy/MainActivity.java
+--- v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/MainActivity.java	2026-09-10 13:59:05.000000000 +0000
++++ v144_src/app/src/main/java/com/suhas/multyfideliverybuy/MainActivity.java	2026-09-12 08:15:36.352055365 +0000
+@@ -68,6 +68,7 @@
+     private Button longButton;
+     private Button shortButton;
+     private volatile List<InstrumentRepository.Instrument> instruments = Collections.emptyList();
++    private boolean loadingPrefs;
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -76,6 +77,8 @@
+         getWindow().setNavigationBarColor(BG);
+         setContentView(buildUi());
+         loadPrefsIntoUi();
++        AutoAuthScheduler.scheduleNextDaily(getApplicationContext());
++        AutoAuthManager.refreshIfStaleAsync(getApplicationContext());
+         requestNotificationPermissionIfNeeded();
+         loadInstrumentUniverse();
+     }
+@@ -102,7 +105,7 @@
+         root.addView(sub);
+ 
+         LinearLayout warning = card(CARD_2);
+-        warning.addView(text("v1.4.3  •  DELIVERY FIRST", 13, WARN, true));
++        warning.addView(text("v1.4.4  •  DELIVERY FIRST", 13, WARN, true));
+         warning.addView(paddedText(
+                 "UNIVEST: only equity entries with Duration 1–3 Months are eligible. Orders are always CNC DELIVERY, with your saved ₹0–₹1,00,000 entry budget. Averaging remains fixed at ₹5,000 at −2% / −4% / −6%; profit capture is ₹2,500 NET.\n\nMULTYFI EQUITY: entry is always CNC DELIVERY even when the source notification says Intraday. Primary exit is +0.5% estimated NET profit, with the first-spike fallback. A confirmed Multyfi close/end signal may start the separate MIS short strategy with +0.5% estimated NET target and a 1% budget-loss stop guard.",
+                 14, TEXT, false, 0, 8, 0, 0));
+@@ -177,7 +180,7 @@
+         LinearLayout groww = card(CARD);
+         groww.addView(text("Groww connection", 19, TEXT, true));
+         groww.addView(paddedText(
+-                "Save your Groww TOTP token/API key, Base32 TOTP secret, and the public static IP whitelisted for Groww. The test refreshes the access token and checks the read-only NSE CASH user profile.",
++                "Save your Groww TOTP token/API key, Base32 TOTP secret, and the public static IP whitelisted for Groww. Delivery Trade Hub automatically refreshes and verifies Groww every day at about 08:45 IST, checks the static IP first, and retries temporary failures. The button below remains as a manual fallback.",
+                 13, MUTED, false, 0, 6, 0, 10));
+ 
+         apiKeyInput = input("Groww TOTP token / API key", false);
+@@ -198,7 +201,7 @@
+         groww.addView(save, saveLp);
+         save.setOnClickListener(v -> {
+             saveConnectionSettings();
+-            Toast.makeText(this, "Saved. Run REFRESH & TEST before trading.", Toast.LENGTH_SHORT).show();
++            Toast.makeText(this, "Saved. Automatic Groww refresh is scheduled; manual test remains available.", Toast.LENGTH_SHORT).show();
+             refreshStatus();
+         });
+ 
+@@ -221,7 +224,7 @@
+             }, "static-ip-check").start();
+         });
+ 
+-        Button auth = button("REFRESH & TEST AUTHENTICATION", ACCENT);
++        Button auth = button("REFRESH & TEST NOW • MANUAL FALLBACK", ACCENT);
+         auth.setTextColor(Color.rgb(4, 27, 23));
+         LinearLayout.LayoutParams authLp = new LinearLayout.LayoutParams(-1, dp(54));
+         authLp.topMargin = dp(10);
+@@ -244,7 +247,7 @@
+                 GrowwClient.Result finalResult = result;
+                 runOnUiThread(() -> {
+                     auth.setEnabled(true);
+-                    auth.setText("REFRESH & TEST AUTHENTICATION");
++                    auth.setText("REFRESH & TEST NOW • MANUAL FALLBACK");
+                     Toast.makeText(this, finalResult.message, Toast.LENGTH_LONG).show();
+                     refreshStatus();
+                 });
+@@ -274,34 +277,36 @@
+         LinearLayout contract = card(Color.rgb(10, 28, 25));
+         contract.addView(text("EXECUTION CONTRACT", 13, ACCENT, true));
+         contract.addView(paddedText(
+-                "• Univest equity: ENTRY only when Duration is 1–3 Months; CNC DELIVERY only; saved entry budget; ₹5,000 averaging at −3% / −6% / −9%; ₹2,500 estimated NET-profit capture.\n\n• Multyfi equity entry: CNC DELIVERY only; saved budget; +0.5% estimated NET-profit GTT target with first-spike fallback.\n\n• Multyfi authoritative close/end: tracked delivery exit is reconciled first, then the separate MIS short may open with +0.5% estimated NET target and a 1% budget-loss stop guard.\n\n• Manual LONG remains CNC delivery. Manual SHORT remains MIS intraday.",
++                "• Univest equity: ENTRY only when Duration is 1–3 Months; CNC DELIVERY only; saved entry budget; ₹5,000 averaging at −2% / −4% / −6%; ₹2,500 estimated NET-profit capture.\n\n• Multyfi equity entry: CNC DELIVERY only; saved budget; +0.5% estimated NET-profit GTT target with first-spike fallback.\n\n• Multyfi authoritative close/end: tracked delivery exit is reconciled first, then the separate MIS short may open with +0.5% estimated NET target and a 1% budget-loss stop guard.\n\n• Manual LONG remains CNC delivery. Manual SHORT remains MIS intraday.",
+                 14, TEXT, false, 0, 8, 0, 0));
+         addCard(root, contract);
+ 
+-        TextView foot = text("v1.4.3 • Delivery Trade Hub", 12, MUTED, false);
++        TextView foot = text("v1.4.4 • Delivery Trade Hub", 12, MUTED, false);
+         foot.setGravity(Gravity.CENTER);
+         foot.setPadding(0, dp(10), 0, 0);
+         root.addView(foot);
+ 
+         armSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
++            if (loadingPrefs) return;
+             if (isChecked && !AppPrefs.isReadyForBuy(getApplicationContext())) {
+                 AppPrefs.setArmed(getApplicationContext(), false);
+                 buttonView.setChecked(false);
+                 Toast.makeText(this,
+-                        "Not armed. Run REFRESH & TEST AUTHENTICATION and confirm STATIC IP MATCH first.",
++                        "Not armed yet. Wait for automatic Groww readiness, or use the manual refresh/test fallback and confirm STATIC IP MATCH.",
+                         Toast.LENGTH_LONG).show();
+                 refreshStatus();
+                 return;
+             }
+             AppPrefs.setArmed(getApplicationContext(), isChecked);
+         });
+-        swingSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> AppPrefs.setSwingEnabled(getApplicationContext(), isChecked));
+-        multibaggerSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> AppPrefs.setMultibaggerEnabled(getApplicationContext(), isChecked));
++        swingSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> { if (!loadingPrefs) AppPrefs.setSwingEnabled(getApplicationContext(), isChecked); });
++        multibaggerSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> { if (!loadingPrefs) AppPrefs.setMultibaggerEnabled(getApplicationContext(), isChecked); });
+         univestSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
++            if (loadingPrefs) return;
+             if (isChecked && !AppPrefs.isReadyForBuy(getApplicationContext())) {
+                 AppPrefs.setUnivestEnabled(getApplicationContext(), false);
+                 buttonView.setChecked(false);
+-                Toast.makeText(this, "Univest not enabled. Confirm static IP and run REFRESH & TEST AUTHENTICATION first.", Toast.LENGTH_LONG).show();
++                Toast.makeText(this, "Univest not enabled yet. Wait for automatic Groww readiness, or use the manual refresh/test fallback and confirm STATIC IP MATCH.", Toast.LENGTH_LONG).show();
+                 refreshStatus();
+                 return;
+             }
+@@ -413,7 +418,7 @@
+ 
+     private void executeManual(boolean isLong) {
+         if (!AppPrefs.isReadyForBuy(getApplicationContext())) {
+-            Toast.makeText(this, "Groww not ready. Confirm static IP and run REFRESH & TEST AUTHENTICATION.", Toast.LENGTH_LONG).show();
++            Toast.makeText(this, "Groww not ready yet. Wait for automatic refresh, or use the manual refresh/test fallback and confirm STATIC IP MATCH.", Toast.LENGTH_LONG).show();
+             return;
+         }
+         int budget = AppPrefs.getManualBudget(this);
+@@ -493,6 +498,7 @@
+     }
+ 
+     private void loadPrefsIntoUi() {
++        loadingPrefs = true;
+         swingSwitch.setChecked(AppPrefs.isSwingEnabled(this));
+         multibaggerSwitch.setChecked(AppPrefs.isMultibaggerEnabled(this));
+         univestSwitch.setChecked(AppPrefs.isUnivestEnabled(this));
+@@ -509,6 +515,7 @@
+         int budget = AppPrefs.getManualBudget(this);
+         manualBudgetBar.setProgress(Math.max(0, Math.min(10, budget / 10000)));
+         manualBudgetValue.setText("₹" + formatInr(budget));
++        loadingPrefs = false;
+         refreshStatus();
+         refreshUnivestStatus();
+         refreshManualStatus();
+@@ -527,6 +534,8 @@
+         if (!oldKey.equals(newKey) || !oldSecret.equals(newSecret) || !oldIp.equals(newIp)) {
+             AppPrefs.invalidateConnectionReadiness(this);
+             if (armSwitch != null && armSwitch.isChecked()) armSwitch.setChecked(false);
++            AutoAuthScheduler.scheduleNextDaily(getApplicationContext());
++            AutoAuthManager.refreshIfStaleAsync(getApplicationContext());
+         }
+     }
+ 
+@@ -557,11 +566,11 @@
+         boolean authOk = AppPrefs.isAuthTestFresh(this);
+         long authTime = AppPrefs.getAuthTestTime(this);
+         if (authOk) {
+-            authStatus.setText("Groww authentication: READY ✓ • access token refreshed + NSE CASH tested" + timeSuffix(authTime));
++            authStatus.setText("Groww authentication: READY ✓ • AUTO daily ~08:45 IST • access token refreshed + NSE CASH tested" + timeSuffix(authTime));
+             authStatus.setTextColor(ACCENT);
+         } else {
+             String msg = AppPrefs.getAuthTestMessage(this);
+-            authStatus.setText("Groww authentication: NOT READY • " + msg + timeSuffix(authTime));
++            authStatus.setText("Groww authentication: NOT READY • AUTO daily ~08:45 IST • " + msg + timeSuffix(authTime));
+             authStatus.setTextColor(WARN);
+         }
+ 
