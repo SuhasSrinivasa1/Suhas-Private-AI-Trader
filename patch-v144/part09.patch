@@ -1,0 +1,21 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/MultyfiNotificationService.java v144_src/app/src/main/java/com/suhas/multyfideliverybuy/MultyfiNotificationService.java
+--- v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/MultyfiNotificationService.java	2026-09-10 08:11:52.000000000 +0000
++++ v144_src/app/src/main/java/com/suhas/multyfideliverybuy/MultyfiNotificationService.java	2026-09-12 08:15:36.352231605 +0000
+@@ -27,6 +27,8 @@
+     @Override
+     public void onCreate() {
+         super.onCreate();
++        AutoAuthScheduler.scheduleNextDaily(getApplicationContext());
++        AutoAuthManager.refreshIfStaleAsync(getApplicationContext());
+         univestMonitor.scheduleWithFixedDelay(() -> {
+             try { UnivestManager.reconcileAll(getApplicationContext()); }
+             catch (Throwable ignored) {}
+@@ -119,7 +121,7 @@
+         }
+         if (!AppPrefs.isReadyForBuy(getApplicationContext())) {
+             AppPrefs.setArmed(getApplicationContext(), false);
+-            setStatus("Ignored " + call.category + " " + call.symbol + " — connection readiness is stale. Run REFRESH & TEST AUTHENTICATION, confirm STATIC IP MATCH, then ARM again."); return;
++            setStatus("Ignored " + call.category + " " + call.symbol + " — connection readiness is stale. Automatic Groww refresh was not ready; use the manual fallback if needed, confirm STATIC IP MATCH, then ARM again."); return;
+         }
+         if (call.category == CallParser.Category.SWING && !AppPrefs.isSwingEnabled(getApplicationContext())) { setStatus("Ignored SWING " + call.symbol + " — Swing toggle is OFF."); return; }
+         if (call.category == CallParser.Category.MULTIBAGGER && !AppPrefs.isMultibaggerEnabled(getApplicationContext())) { setStatus("Ignored MULTIBAGGER " + call.symbol + " — Multibagger toggle is OFF."); return; }
