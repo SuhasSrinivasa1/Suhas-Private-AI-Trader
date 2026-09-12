@@ -1,0 +1,19 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/README.md v144_src/README.md
+--- v143_orig/README.md	2026-09-10 13:59:05.000000000 +0000
++++ v144_src/README.md	2026-09-12 08:14:51.451329574 +0000
+@@ -128,3 +128,15 @@
+ - The app re-lists orders after cancellation; if a conflicting sell is still active or cancellation state is uncertain, it does not send the market sell.
+ - After cleanup, the app fetches the current broker CNC position and sells only min(tracked Univest quantity, remaining broker CNC quantity). This avoids the prior "not enough shares" failure when a manual delivery sell order had reserved the shares.
+ - Univest remains 1–3 month equity entries only and always CASH/CNC DELIVERY; recommendation-cycle dedupe from v1.4.2 remains unchanged.
++
++
++## v1.4.4 — automatic Groww readiness
++
++- Automatically checks the saved Groww-whitelisted public IP and refreshes the TOTP-based access token at about 08:45 IST every day.
++- Performs the same read-only NSE CASH user-profile verification used by the manual refresh button.
++- Reschedules after reboot, app update, clock/time-zone changes, and also self-checks when the app or notification listener starts.
++- Temporary failures retry every 5 minutes up to six times; a static-IP mismatch blocks authentication instead of trading from the wrong egress IP.
++- The manual Refresh & Test button remains available as a fallback.
++- Startup no longer silently disarms previously saved Multyfi/Univest toggles merely because the new token window has begun before auto-auth finishes.
++- Univest averaging remains ₹5,000 at −2% / −4% / −6%; the stale −3% / −6% / −9% text in the execution-contract card is corrected.
++- Groww may still reject token generation if the account/API credential itself requires user approval; this build automates the TOTP-token flow already configured in the app and does not bypass Groww account controls.
