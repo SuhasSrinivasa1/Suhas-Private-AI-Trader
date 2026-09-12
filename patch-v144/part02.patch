@@ -1,0 +1,14 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/build.gradle v144_src/app/build.gradle
+--- v143_orig/app/build.gradle	2026-09-10 13:59:05.000000000 +0000
++++ v144_src/app/build.gradle	2026-09-12 08:14:51.450435636 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.suhas.multyfideliverybuy'
+         minSdk 26
+         targetSdk 35
+-        versionCode 143
+-        versionName '1.4.3'
++        versionCode 144
++        versionName '1.4.4'
+ 
+         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+     }
