@@ -1,0 +1,135 @@
+name: Build Delivery Trade Hub v1.4.4
+
+on:
+  push:
+    branches: [ delivery-v144-autoauth-20260912 ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download verified v1.4.3 release
+        uses: actions/download-artifact@v4
+        with:
+          name: delivery-trade-hub-v143
+          path: previous-v143
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: SuhasSrinivasa1/Suhas-Private-AI-Trader
+          run-id: 34486055212
+
+      - name: Reconstruct v1.4.4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fresh-delivery-buy
+          unzip -q previous-v143/delivery-trade-hub-source-v1.4.3.zip -d fresh-delivery-buy
+          cat patch-v144/part*.patch > /tmp/v144.patch
+          cd fresh-delivery-buy
+          patch -p1 < /tmp/v144.patch
+          python3 scripts/validate_contract.py
+          grep -q "versionName '1.4.4'" app/build.gradle
+          grep -q 'DAILY_HOUR_IST = 8' app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthScheduler.java
+          grep -q 'DAILY_MINUTE_IST = 45' app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthScheduler.java
+          grep -q 'refreshAndTestAuthentication' app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthManager.java
+          grep -q 'RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Validate v1.4.4 contract
+        working-directory: fresh-delivery-buy
+        run: python3 scripts/validate_contract.py
+
+      - name: Unit tests
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:testReleaseUnitTest
+
+      - name: Restore v1.4.x signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -q previous-v143/Delivery-Trade-Hub-SIGNING-BACKUP.zip -d /tmp/v14-signing
+          PASS="$(sed -n 's/^Store password: //p' /tmp/v14-signing/SIGNING-BACKUP.txt | head -n1)"
+          test -n "$PASS"
+          echo "::add-mask::$PASS"
+          cp /tmp/v14-signing/delivery-trade-hub-release.p12 fresh-delivery-buy/delivery-trade-hub-release.p12
+          cp /tmp/v14-signing/SIGNING-BACKUP.txt fresh-delivery-buy/SIGNING-BACKUP.txt
+          echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/fresh-delivery-buy/delivery-trade-hub-release.p12" >> "$GITHUB_ENV"
+          echo "RELEASE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_ALIAS=deliverybuy" >> "$GITHUB_ENV"
+          echo "RELEASE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        working-directory: fresh-delivery-buy
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify signer and package
+        working-directory: fresh-delivery-buy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cp app/build/outputs/apk/release/app-release.apk output/Delivery-Trade-Hub-v1.4.4.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Delivery-Trade-Hub-v1.4.4.apk | tee output/APK-SIGNATURE-VERIFY.txt
+          sha256sum output/Delivery-Trade-Hub-v1.4.4.apk | tee output/APK-SHA256.txt
+          OLD_CERT="$(grep -m1 'Signer #1 certificate SHA-256 digest:' ../previous-v143/APK-SIGNATURE-VERIFY.txt | sed 's/.*digest: //')"
+          NEW_CERT="$(grep -m1 'Signer #1 certificate SHA-256 digest:' output/APK-SIGNATURE-VERIFY.txt | sed 's/.*digest: //')"
+          test -n "$OLD_CERT"
+          test "$OLD_CERT" = "$NEW_CERT"
+          echo "SAME SIGNER PASS: $NEW_CERT" | tee output/SIGNER-COMPATIBILITY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging output/Delivery-Trade-Hub-v1.4.4.apk | head -n 3 | tee output/APK-PACKAGE.txt
+          grep -q "name='com.suhas.multyfideliverybuy'" output/APK-PACKAGE.txt
+          grep -q "versionCode='144'" output/APK-PACKAGE.txt
+          grep -q "versionName='1.4.4'" output/APK-PACKAGE.txt
+          python3 scripts/validate_contract.py | tee output/CONTRACT-VALIDATION.txt
+
+      - name: Package release
+        working-directory: fresh-delivery-buy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp ../previous-v143/Delivery-Trade-Hub-SIGNING-BACKUP.zip output/Delivery-Trade-Hub-SIGNING-BACKUP.zip
+          cp README.md output/README-v1.4.4.md
+          zip -qr output/delivery-trade-hub-source-v1.4.4.zip . \
+            -x '.gradle/*' 'app/build/*' 'output/*' 'delivery-trade-hub-release.p12' 'SIGNING-BACKUP.txt'
+          {
+            echo "Delivery Trade Hub v1.4.4"
+            echo "Install directly over v1.4.3; same package and signing certificate are preserved."
+            echo "Automatic Groww readiness: about 08:45 IST daily, with static-IP verification before TOTP token refresh and read-only NSE CASH profile test."
+            echo "Temporary auto-auth failures retry every 5 minutes up to six times."
+            echo "Auto-auth is also scheduled/self-checked after reboot, app update, time changes, app start, and notification-listener start."
+            echo "Manual Refresh & Test remains available only as a fallback."
+            echo "Saved Multyfi/Univest toggles are not silently cleared at startup just because the new token window began before auto-auth completed."
+            echo "Univest averaging remains ₹5,000 at -2%, -4%, and -6%; the stale -3/-6/-9 UI contract text is corrected."
+            echo "This automates the app's existing Groww TOTP-token flow; it does not bypass any Groww account approval or security requirement if Groww rejects token generation."
+          } > output/INSTALL-v1.4.4.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: delivery-trade-hub-v144
+          path: fresh-delivery-buy/output/*
+          if-no-files-found: error
+          retention-days: 30
