@@ -1,0 +1,52 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthReceiver.java v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthReceiver.java
+--- v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthReceiver.java	1970-01-01 00:00:00.000000000 +0000
++++ v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthReceiver.java	2026-09-12 08:14:20.899301748 +0000
+@@ -0,0 +1,48 @@
++package com.suhas.multyfideliverybuy;
++
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++
++public class AutoAuthReceiver extends BroadcastReceiver {
++    private static final int MAX_RETRIES = 6;
++
++    @Override
++    public void onReceive(Context context, Intent intent) {
++        String action = intent == null ? "" : intent.getAction();
++        Context app = context.getApplicationContext();
++
++        if (Intent.ACTION_BOOT_COMPLETED.equals(action)
++                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
++                || Intent.ACTION_TIME_CHANGED.equals(action)
++                || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
++            AutoAuthScheduler.scheduleNextDaily(app);
++            AutoAuthManager.refreshIfStaleAsync(app);
++            return;
++        }
++
++        if (!AutoAuthScheduler.ACTION_DAILY.equals(action)
++                && !AutoAuthScheduler.ACTION_RETRY.equals(action)) return;
++
++        if (AutoAuthScheduler.ACTION_DAILY.equals(action)) {
++            AutoAuthScheduler.scheduleNextDaily(app);
++            AppPrefs.resetAutoAuthRetryCount(app);
++        }
++
++        final PendingResult pending = goAsync();
++        new Thread(() -> {
++            try {
++                GrowwClient.Result result = AutoAuthManager.refresh(app, true);
++                if (result.success) {
++                    AppPrefs.resetAutoAuthRetryCount(app);
++                    AutoAuthScheduler.cancelRetry(app);
++                } else {
++                    int retry = AppPrefs.incrementAutoAuthRetryCount(app);
++                    if (retry <= MAX_RETRIES) AutoAuthScheduler.scheduleRetry(app);
++                }
++            } finally {
++                pending.finish();
++            }
++        }, "groww-auto-auth-alarm").start();
++    }
++}
