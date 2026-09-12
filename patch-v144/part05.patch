@@ -1,0 +1,66 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthManager.java v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthManager.java
+--- v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthManager.java	1970-01-01 00:00:00.000000000 +0000
++++ v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AutoAuthManager.java	2026-09-12 08:14:20.898312970 +0000
+@@ -0,0 +1,62 @@
++package com.suhas.multyfideliverybuy;
++
++import android.content.Context;
++
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++
++final class AutoAuthManager {
++    private static final Object LOCK = new Object();
++    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
++        Thread t = new Thread(r, "groww-auto-auth");
++        t.setDaemon(true);
++        return t;
++    });
++
++    private AutoAuthManager() {}
++
++    static void refreshIfStaleAsync(Context context) {
++        Context app = context.getApplicationContext();
++        EXECUTOR.execute(() -> refresh(app, false));
++    }
++
++    static GrowwClient.Result refresh(Context context, boolean force) {
++        Context app = context.getApplicationContext();
++        synchronized (LOCK) {
++            if (!force && AppPrefs.isReadyForBuy(app)) {
++                GrowwClient.Result ready = new GrowwClient.Result(true, false, 200,
++                        "Groww AUTO AUTH already ready for the current token window.");
++                AppPrefs.setAutoAuthResult(app, true, ready.message);
++                return ready;
++            }
++
++            if (AppPrefs.getApiKey(app).isEmpty() || AppPrefs.getTotpSecret(app).isEmpty()) {
++                String msg = "Groww AUTO AUTH skipped — TOTP token/API key or TOTP secret is missing.";
++                AppPrefs.setAuthTest(app, false, msg);
++                AppPrefs.setAutoAuthResult(app, false, msg);
++                return new GrowwClient.Result(false, false, 0, msg);
++            }
++            if (AppPrefs.getExpectedStaticIp(app).isEmpty()) {
++                String msg = "Groww AUTO AUTH skipped — whitelisted static IP is not configured.";
++                AppPrefs.setAuthTest(app, false, msg);
++                AppPrefs.setAutoAuthResult(app, false, msg);
++                return new GrowwClient.Result(false, false, 0, msg);
++            }
++
++            NetworkCheck.Result network = NetworkCheck.detectAndCompare(app);
++            if (!network.match) {
++                String msg = "Groww AUTO AUTH blocked — " + network.message;
++                AppPrefs.setAuthTest(app, false, msg);
++                AppPrefs.setAutoAuthResult(app, false, msg);
++                return new GrowwClient.Result(false, false, 0, msg);
++            }
++
++            GrowwClient.Result result = GrowwClient.refreshAndTestAuthentication(app);
++            String msg = result.success
++                    ? "Groww AUTO AUTH READY — static IP matched; access token refreshed; NSE CASH profile test passed."
++                    : "Groww AUTO AUTH failed — " + result.message;
++            AppPrefs.setAutoAuthResult(app, result.success, msg);
++            return new GrowwClient.Result(result.success, result.unknown, result.httpCode, msg);
++        }
++    }
++}
