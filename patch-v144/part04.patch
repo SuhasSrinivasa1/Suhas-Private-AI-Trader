@@ -1,0 +1,27 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AppPrefs.java v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AppPrefs.java
+--- v143_orig/app/src/main/java/com/suhas/multyfideliverybuy/AppPrefs.java	2026-09-09 15:05:55.000000000 +0000
++++ v144_src/app/src/main/java/com/suhas/multyfideliverybuy/AppPrefs.java	2026-09-12 08:14:51.450593910 +0000
+@@ -81,6 +81,23 @@
+                 .apply();
+     }
+ 
++    static boolean wasAutoAuthSuccessful(Context c) { return p(c).getBoolean("auto_auth_ok", false); }
++    static long getAutoAuthTime(Context c) { return p(c).getLong("auto_auth_time", 0L); }
++    static String getAutoAuthMessage(Context c) { return p(c).getString("auto_auth_message", "Automatic Groww refresh has not run yet."); }
++    static void setAutoAuthResult(Context c, boolean ok, String message) {
++        p(c).edit()
++                .putBoolean("auto_auth_ok", ok)
++                .putLong("auto_auth_time", System.currentTimeMillis())
++                .putString("auto_auth_message", message == null ? "" : message)
++                .apply();
++    }
++    static int incrementAutoAuthRetryCount(Context c) {
++        int next = p(c).getInt("auto_auth_retry_count", 0) + 1;
++        p(c).edit().putInt("auto_auth_retry_count", next).apply();
++        return next;
++    }
++    static void resetAutoAuthRetryCount(Context c) { p(c).edit().putInt("auto_auth_retry_count", 0).apply(); }
++
+     static void invalidateConnectionReadiness(Context c) {
+         p(c).edit()
+                 .remove("access_token")
