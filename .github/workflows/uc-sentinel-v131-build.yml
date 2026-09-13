@@ -43,12 +43,9 @@ jobs:
           cd "$SRC"
           patch -p1 --forward --batch < /tmp/v130-to-v131.patch || true
 
-          # Repair the two hunks that can drift because v1.3.0 CI previously
-          # normalized Kotlin generic return-type whitespace after reconstruction.
           python3 - <<'PY'
           from pathlib import Path
           root = Path('/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source')
-
           prefs = root / 'app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt'
           s = prefs.read_text()
           s = s.replace('):Map<String,Double>=', '):Map<String,Double> =')
@@ -62,28 +59,25 @@ jobs:
           if 'fun lastNearCloseAutoScanAt()' not in s:
               s = s.replace(anchor, anchor + extra)
           prefs.write_text(s)
-
           repo = root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt'
           s = repo.read_text()
           s = s.replace('):List<Candidate>=freezeRecordToday', '):List<Candidate> = freezeRecordToday')
           old = '    suspend fun runLearningCycle():Map<ScannerSection,SectionAccuracy>{val token=accessToken();if(token.isNotBlank()&&prefs.loadSettings().learningEnabled)evaluateDueOutcomes(token);prefs.pruneMemory(prefs.loadSettings().memoryRetentionDays);return accuracies()}\n'
-          new = '''    suspend fun runLearningCycle():Map<ScannerSection,SectionAccuracy>{
-        val settings=prefs.loadSettings()
-        if(settings.learningEnabled && ensureAutomationAuthentication()){
-            evaluateDueOutcomes(accessToken())
-            prefs.setLastLearningAt(System.currentTimeMillis())
-        }
-        prefs.pruneMemory(settings.memoryRetentionDays)
-        return accuracies()
-    }
-'''
+          new = ('    suspend fun runLearningCycle():Map<ScannerSection,SectionAccuracy>{\n'
+                 '        val settings=prefs.loadSettings()\n'
+                 '        if(settings.learningEnabled && ensureAutomationAuthentication()){\n'
+                 '            evaluateDueOutcomes(accessToken())\n'
+                 '            prefs.setLastLearningAt(System.currentTimeMillis())\n'
+                 '        }\n'
+                 '        prefs.pruneMemory(settings.memoryRetentionDays)\n'
+                 '        return accuracies()\n'
+                 '    }\n')
           if old in s:
               s = s.replace(old, new)
           repo.write_text(s)
           PY
 
           rm -f app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt.rej app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt.rej
-
           grep -q 'versionCode = 131' app/build.gradle.kts
           grep -q 'versionName = "1.3.1"' app/build.gradle.kts
           grep -q 'bootstrapAfterAuthentication' app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt
