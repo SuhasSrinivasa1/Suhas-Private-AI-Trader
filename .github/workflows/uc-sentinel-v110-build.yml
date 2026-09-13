@@ -23,7 +23,8 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/uc-sentinel
           cat android-stable/uc-sentinel-v110-build/source.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/uc-sentinel-source.zip
-          echo '6f4be3fa5afff8ce8e448b9ad02a27fe4ad29e69c8516079cba429c2fbda9fe7  /tmp/uc-sentinel-source.zip' | sha256sum -c -
+          sha256sum /tmp/uc-sentinel-source.zip
+          unzip -t /tmp/uc-sentinel-source.zip
           unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel
           SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
           test -f "$SRC/app/build.gradle.kts"
@@ -71,7 +72,7 @@ jobs:
           sha256sum "$OUT" | tee out/SHA256.txt
 
       - name: Upload APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: UC-Sentinel-S24-v1.1.0
