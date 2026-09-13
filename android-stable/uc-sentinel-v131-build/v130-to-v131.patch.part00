@@ -1,0 +1,70 @@
+diff -ruN UC-Sentinel-v1.3.0-full-source/README.md UC-Sentinel-v1.3.1-full-source/README.md
+--- UC-Sentinel-v1.3.0-full-source/README.md	2026-09-13 16:34:03.414044606 +0000
++++ UC-Sentinel-v1.3.1-full-source/README.md	2026-09-13 16:58:42.375175554 +0000
+@@ -55,3 +55,12 @@
+ ## Scope
+ 
+ UC Sentinel is a research and decision-support application. It does not guarantee an upper circuit or price spike and does not automatically place trades.
++
++
++## v1.3.1 hands-free automation
++
++After the user authenticates Groww, UC Sentinel automatically bootstraps the instrument universe, recent listings and due learning outcomes. During NSE market hours WorkManager performs rate-safe pre-pressure discovery and near-close dual-model scans, maintains the 3 PM audit, and runs adaptive learning every 24 hours.
++
++With **TOTP** credentials, the encrypted on-device token/secret can be used to renew Groww's daily access token automatically after the 6:00 AM IST token boundary. With **API-key approval** mode, Groww's daily approval remains a manual dependency; once approved, scanning and learning resume without additional app actions.
++
++The application does not place trades automatically.
+diff -ruN UC-Sentinel-v1.3.0-full-source/SOURCE-VALIDATION.json UC-Sentinel-v1.3.1-full-source/SOURCE-VALIDATION.json
+--- UC-Sentinel-v1.3.0-full-source/SOURCE-VALIDATION.json	2026-09-13 15:29:39.277906683 +0000
++++ UC-Sentinel-v1.3.1-full-source/SOURCE-VALIDATION.json	2026-09-13 16:34:20.547934601 +0000
+@@ -1,7 +1,7 @@
+ {
+   "project": "UC Sentinel",
+-  "version": "1.3.0",
+-  "versionCode": 130,
++  "version": "1.3.1",
++  "versionCode": 131,
+   "package": "com.suhas.ucsentinel",
+   "source_files": 46,
+   "kotlin_files": 30,
+@@ -15,5 +15,12 @@
+   ],
+   "strategy_generation_changed": false,
+   "rate_limit_resilience": true,
+-  "auto_order_placement": false
++  "auto_order_placement": false,
++  "hands_free_after_auth": true,
++  "totp_daily_auto_renewal": true,
++  "api_key_approval_requires_daily_manual_approval": true,
++  "background_scan_worker_minutes": 15,
++  "near_close_full_scan_min_gap_minutes": 25,
++  "learning_worker_hours": 24,
++  "automatic_order_placement": false
+ }
+\ No newline at end of file
+diff -ruN UC-Sentinel-v1.3.0-full-source/app/build.gradle.kts UC-Sentinel-v1.3.1-full-source/app/build.gradle.kts
+--- UC-Sentinel-v1.3.0-full-source/app/build.gradle.kts	2026-09-13 15:29:07.065869279 +0000
++++ UC-Sentinel-v1.3.1-full-source/app/build.gradle.kts	2026-09-13 16:34:20.543540180 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.suhas.ucsentinel"
+         minSdk = 28
+         targetSdk = 36
+-        versionCode = 130
+-        versionName = "1.3.0"
++        versionCode = 131
++        versionName = "1.3.1"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables.useSupportLibrary = true
+diff -ruN UC-Sentinel-v1.3.0-full-source/app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt UC-Sentinel-v1.3.1-full-source/app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt
+--- UC-Sentinel-v1.3.0-full-source/app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt	2026-09-13 15:25:59.431763174 +0000
++++ UC-Sentinel-v1.3.1-full-source/app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt	2026-09-13 16:34:20.545012817 +0000
+@@ -64,18 +64,22 @@
+         val stats=loadSignalStats().toMutableMap();signalIds.distinct().forEach{id->val k=statKey(section,modelVersion,id);val cur=stats[k]?:(0 to 0);stats[k]=(cur.first+1) to (cur.second+if(win)1 else 0)};val obj=JSONObject();stats.forEach{(k,v)->obj.put(k,JSONObject().put("observations",v.first).put("wins",v.second))}
+         val outcomes=outcomes();outcomes.put(JSONObject().put("section",section.name).put("modelVersion",modelVersion).put("win",win).put("targetMovePct",targetMovePct?:JSONObject.NULL).put("at",evaluatedAt));while(outcomes.length()>1500)outcomes.remove(0);prefs.edit().putString("signal_stats",obj.toString()).putString("outcomes",outcomes.toString()).apply()
+     }
+-    fun adaptivePrecisionMap(section:ScannerSection,modelVersion:String):Map<String,Double>=loadSignalStats().mapNotNull{(k,pair)->val p=parseStatKey(k)?:return@mapNotNull null;if(p.first!=section||p.second!=modelVersion||pair.first<5)null else p.third to pair.second.toDouble()/pair.first*100}.toMap()
+-    fun signalMetrics():List<StrategyMetric>=loadSignalStats().mapNotNull{(k,pair)->val p=parseStatKey(k)?:return@mapNotNull null;StrategyMetric(p.first,p.third,p.third,pair.first,pair.second,if(pair.first==0)0.0 else pair.second.toDouble()/pair.first*100,p.second)}.sortedWith(compareByDescending<StrategyMetric>{it.observations>=5}.thenByDescending{it.precision})
++    fun adaptivePrecisionMap(section:ScannerSection,modelVersion:String):Map<String,Double> = loadSignalStats().mapNotNull{(k,pair)->val p=parseStatKey(k)?:return@mapNotNull null;if(p.first!=section||p.second!=modelVersion||pair.first<5)null else p.third to pair.second.toDouble()/pair.first*100}.toMap()
++    fun signalMetrics():List<StrategyMetric> = loadSignalStats().mapNotNull{(k,pair)->val p=parseStatKey(k)?:return@mapNotNull null;StrategyMetric(p.first,p.third,p.third,pair.first,pair.second,if(pair.first==0)0.0 else pair.second.toDouble()/pair.first*100,p.second)}.sortedWith(compareByDescending<StrategyMetric>{it.observations>=5}.thenByDescending{it.precision})
+     fun sectionAccuracy(section:ScannerSection,modelVersion:String):SectionAccuracy{val now=System.currentTimeMillis();val cutoff=now-24L*60*60*1000;val rs=buildList{val a=outcomes();for(i in 0 until a.length()){val j=a.optJSONObject(i)?:continue;if(j.optString("section")==section.name&&j.optString("modelVersion")==modelVersion)add(j)}};val hits=rs.count{it.optBoolean("win")};val recent=rs.filter{it.optLong("at")>=cutoff};val rh=recent.count{it.optBoolean("win")};return SectionAccuracy(section,rs.size,hits,if(rs.isEmpty())0.0 else hits*100.0/rs.size,recent.size,rh,if(recent.isEmpty())0.0 els
