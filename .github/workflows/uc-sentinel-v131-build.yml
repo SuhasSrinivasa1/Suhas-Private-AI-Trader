@@ -1,0 +1,82 @@
+name: UC Sentinel v1.3.1 Android Build
+
+on:
+  push:
+    paths:
+      - 'android-stable/uc-sentinel-v131-build/**'
+      - '.github/workflows/uc-sentinel-v131-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract UC Sentinel v1.3.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/uc-sentinel-v131
+          mkdir -p /tmp/uc-sentinel-v131
+          unzip -q android-stable/uc-sentinel-v131-build/UC-Sentinel-v1.3.1-full-source.zip -d /tmp/uc-sentinel-v131
+          SRC=/tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source
+          test -f "$SRC/app/build.gradle.kts"
+          grep -q 'versionCode = 131' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.3.1"' "$SRC/app/build.gradle.kts"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests and debug APK
+        working-directory: /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest assembleDebug
+
+      - name: Verify installable APK
+        working-directory: /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OUT=out/UC-Sentinel-S24-v1.3.1.apk
+          test -s "$APK"
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
+          grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
+          grep -q "versionCode='131'" out/APK-BADGING.txt
+          grep -q "versionName='1.3.1'" out/APK-BADGING.txt
+          sha256sum "$OUT" | tee out/SHA256.txt
+
+      - name: Upload APK and source
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UC-Sentinel-S24-v1.3.1
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/UC-Sentinel-S24-v1.3.1.apk
+            /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/APK-SIGNATURE-VERIFY.txt
+            /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/APK-BADGING.txt
+            /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/SHA256.txt
+            android-stable/uc-sentinel-v131-build/UC-Sentinel-v1.3.1-full-source.zip
