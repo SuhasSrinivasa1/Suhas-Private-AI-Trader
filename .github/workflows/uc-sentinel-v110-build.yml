@@ -1,0 +1,84 @@
+name: UC Sentinel v1.1 Android Build
+
+on:
+  push:
+    paths:
+      - 'android-stable/uc-sentinel-v110-build/**'
+      - '.github/workflows/uc-sentinel-v110-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/uc-sentinel
+          cat android-stable/uc-sentinel-v110-build/source.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/uc-sentinel-source.zip
+          echo '6f4be3fa5afff8ce8e448b9ad02a27fe4ad29e69c8516079cba429c2fbda9fe7  /tmp/uc-sentinel-source.zip' | sha256sum -c -
+          unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel
+          SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+          test -f "$SRC/app/build.gradle.kts"
+          grep -q 'versionCode = 110' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.1.0"' "$SRC/app/build.gradle.kts"
+          grep -q 'class DemandScannerEngine' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
+          grep -q 'class LearningWorker' "$SRC/app/src/main/java/com/suhas/ucsentinel/worker/LearningWorker.kt"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests and debug APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest assembleDebug
+
+      - name: Verify installable APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OUT=out/UC-Sentinel-S24-v1.1.0.apk
+          test -s "$APK"
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
+          grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
+          grep -q "versionCode='110'" out/APK-BADGING.txt
+          grep -q "versionName='1.1.0'" out/APK-BADGING.txt
+          sha256sum "$OUT" | tee out/SHA256.txt
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UC-Sentinel-S24-v1.1.0
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/UC-Sentinel-S24-v1.1.0.apk
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-SIGNATURE-VERIFY.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-BADGING.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/SHA256.txt
