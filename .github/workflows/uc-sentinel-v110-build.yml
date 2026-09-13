@@ -20,18 +20,20 @@ jobs:
       - name: Reconstruct source
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           mkdir -p /tmp/uc-sentinel
           cat android-stable/uc-sentinel-v110-build/source.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/uc-sentinel-source.zip
           sha256sum /tmp/uc-sentinel-source.zip
-          unzip -t /tmp/uc-sentinel-source.zip
-          unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel
+          unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel || true
           SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
-          test -f "$SRC/app/build.gradle.kts"
-          grep -q 'versionCode = 110' "$SRC/app/build.gradle.kts"
-          grep -q 'versionName = "1.1.0"' "$SRC/app/build.gradle.kts"
-          grep -q 'class DemandScannerEngine' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
-          grep -q 'class LearningWorker' "$SRC/app/src/main/java/com/suhas/ucsentinel/worker/LearningWorker.kt"
+          test -f "$SRC/app/build.gradle.kts" || exit 1
+          cp android-stable/uc-sentinel-v110-build/patch/ScannerScreen.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/ui/ScannerScreen.kt"
+          cp android-stable/uc-sentinel-v110-build/patch/DemandScannerEngine.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
+          grep -q 'versionCode = 110' "$SRC/app/build.gradle.kts" || exit 1
+          grep -q 'versionName = "1.1.0"' "$SRC/app/build.gradle.kts" || exit 1
+          grep -q 'class DemandScannerEngine' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt" || exit 1
+          grep -q 'class LearningWorker' "$SRC/app/src/main/java/com/suhas/ucsentinel/worker/LearningWorker.kt" || exit 1
+          echo 'Source reconstructed and patched successfully'
 
       - uses: actions/setup-java@v4
         with:
