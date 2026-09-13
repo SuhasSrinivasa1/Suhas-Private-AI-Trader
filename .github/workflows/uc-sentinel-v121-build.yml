@@ -1,0 +1,224 @@
+name: UC Sentinel v1.2.1 Android Build
+
+on:
+  push:
+    paths:
+      - '.github/workflows/uc-sentinel-v121-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct v1.2 and apply rate-limit resilience
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/uc-sentinel
+          cat android-stable/uc-sentinel-v110-build/source.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/uc-sentinel-source.zip
+          unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel || true
+          SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+          export SRC
+          test -f "$SRC/app/build.gradle.kts"
+
+          cp android-stable/uc-sentinel-v110-build/patch/ScannerScreen.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/ui/ScannerScreen.kt"
+          cp android-stable/uc-sentinel-v110-build/patch/DemandScannerEngine.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['SRC'])
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/remote/GrowwClient.kt'
+          s = p.read_text()
+          if 'Credentials as AppCredentials' not in s:
+              s = s.replace('import com.suhas.ucsentinel.domain.model.*\n', 'import com.suhas.ucsentinel.domain.model.*\nimport com.suhas.ucsentinel.domain.model.Credentials as AppCredentials\n')
+          if 'MediaType.Companion.toMediaType' not in s:
+              s = s.replace('import okhttp3.logging.HttpLoggingInterceptor\n', 'import okhttp3.logging.HttpLoggingInterceptor\nimport okhttp3.MediaType.Companion.toMediaType\nimport okhttp3.RequestBody.Companion.toRequestBody\n')
+          s = s.replace('suspend fun authenticate(credentials: Credentials): Pair<String, String>', 'suspend fun authenticate(credentials: AppCredentials): Pair<String, String>')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt'
+          s = p.read_text()
+          s = s.replace('val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()?:run{allProcessed=false;continue}\n                    val uc=q.upperCircuit', 'val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()\n                    if(q==null){allProcessed=false;continue}\n                    val uc=q.upperCircuit')
+          p.write_text(s)
+          PY
+
+          cat android-stable/uc-sentinel-v120-build/patch-v120.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/v120-patch.zip
+          echo '8358050f9f83e221a86aa014910495269200da682e2e6f4c1409e86e4bc5bd7a  /tmp/v120-patch.zip' | sha256sum -c -
+          unzip -qo /tmp/v120-patch.zip -d "$SRC"
+
+          cat > "$SRC/app/src/main/java/com/suhas/ucsentinel/data/remote/ApiRateLimiter.kt" <<'EOF'
+          package com.suhas.ucsentinel.data.remote
+
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.sync.Mutex
+          import kotlinx.coroutines.sync.withLock
+
+          class ApiRateLimiter(private val minIntervalMs: Long) {
+              private val mutex = Mutex()
+              private var lastPermitNs: Long = 0L
+
+              suspend fun awaitPermit() {
+                  mutex.withLock {
+                      val now = System.nanoTime()
+                      if (lastPermitNs != 0L) {
+                          val elapsedMs = (now - lastPermitNs) / 1_000_000L
+                          val waitMs = minIntervalMs - elapsedMs
+                          if (waitMs > 0L) delay(waitMs)
+                      }
+                      lastPermitNs = System.nanoTime()
+                  }
+              }
+          }
+          EOF
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['SRC'])
+
+          # Version bump.
+          p = root / 'app/build.gradle.kts'
+          s = p.read_text().replace('versionCode = 120', 'versionCode = 121').replace('versionName = "1.2.0"', 'versionName = "1.2.1"')
+          p.write_text(s)
+
+          # Central endpoint rate limiting, OHLC snapshot cache and 429 retry/backoff.
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/remote/GrowwClient.kt'
+          s = p.read_text()
+          if 'import java.util.concurrent.ConcurrentHashMap' not in s:
+              s = s.replace('import java.util.concurrent.TimeUnit\n', 'import java.util.concurrent.TimeUnit\nimport java.util.concurrent.ConcurrentHashMap\n')
+          if 'import kotlin.math.min' not in s:
+              s = s.replace('import kotlin.math.pow\n', 'import kotlin.math.pow\nimport kotlin.math.min\n')
+
+          client_marker = '''    private val client: OkHttpClient = OkHttpClient.Builder()\n        .connectTimeout(20, TimeUnit.SECONDS)\n        .readTimeout(30, TimeUnit.SECONDS)\n        .writeTimeout(20, TimeUnit.SECONDS)\n        .addInterceptor(\n            HttpLoggingInterceptor().apply {\n                level = HttpLoggingInterceptor.Level.BASIC\n            }\n        )\n        .build()\n'''
+          if 'private val liveLimiter' not in s:
+              s = s.replace(client_marker, client_marker + '''\n    private val liveLimiter = ApiRateLimiter(350L)\n    private val historicalLimiter = ApiRateLimiter(300L)\n    private val authLimiter = ApiRateLimiter(250L)\n\n    private data class OhlcCacheEntry(val atMs: Long, val value: Ohlc)\n    private val ohlcCache = ConcurrentHashMap<String, OhlcCacheEntry>()\n    private val ohlcCacheTtlMs = 3 * 60 * 1000L\n''', 1)
+
+          old_auth = '''        client.newCall(request).execute().use { response ->\n            val raw = response.body?.string().orEmpty()\n            if (!response.isSuccessful) {\n                throw IOException("Authentication failed (${response.code}): ${safeMessage(raw)}")\n            }\n            val json = JSONObject(raw)\n            val token = json.optString("token")\n                .ifBlank { json.optJSONObject("payload")?.optString("token").orEmpty() }\n            val expiry = json.optString("expiry")\n                .ifBlank { json.optJSONObject("payload")?.optString("expiry").orEmpty() }\n\n            require(token.isNotBlank()) { "Groww response did not contain an access token" }\n            token to expiry\n        }\n'''
+          new_auth = '''        val raw = executeWithRetry(request, authLimiter, "Authentication", maxAttempts = 3)\n        val json = JSONObject(raw)\n        val token = json.optString("token")\n            .ifBlank { json.optJSONObject("payload")?.optString("token").orEmpty() }\n        val expiry = json.optString("expiry")\n            .ifBlank { json.optJSONObject("payload")?.optString("expiry").orEmpty() }\n\n        require(token.isNotBlank()) { "Groww response did not contain an access token" }\n        token to expiry\n'''
+          if old_auth in s:
+              s = s.replace(old_auth, new_auth, 1)
+
+          start = s.index('    suspend fun getOhlcBatch')
+          end = s.index('    suspend fun getQuote', start)
+          s = s[:start] + '''    suspend fun getOhlcBatch(accessToken: String, symbols: List<String>): Map<String, Ohlc> =\n        withContext(Dispatchers.IO) {\n            if (symbols.isEmpty()) return@withContext emptyMap()\n            require(symbols.size <= 50) { "Groww OHLC accepts a maximum of 50 symbols per call" }\n\n            val now = System.currentTimeMillis()\n            val result = linkedMapOf<String, Ohlc>()\n            val missing = mutableListOf<String>()\n            symbols.forEach { symbol ->\n                val cached = ohlcCache[symbol]\n                if (cached != null && now - cached.atMs <= ohlcCacheTtlMs) result[symbol] = cached.value\n                else missing += symbol\n            }\n\n            if (missing.isNotEmpty()) {\n                val joined = missing.joinToString(",") { "NSE_$it" }\n                val url = HttpUrl.Builder()\n                    .scheme("https").host("api.groww.in")\n                    .addPathSegments("v1/live-data/ohlc")\n                    .addQueryParameter("segment", "CASH")\n                    .addQueryParameter("exchange_symbols", joined)\n                    .build()\n                val raw = executeWithRetry(authedGet(url, accessToken), liveLimiter, "OHLC")\n                val fetched = parseOhlcPayload(JSONObject(raw).optJSONObject("payload") ?: JSONObject())\n                val at = System.currentTimeMillis()\n                fetched.forEach { (symbol, value) ->\n                    ohlcCache[symbol] = OhlcCacheEntry(at, value)\n                    result[symbol] = value\n                }\n            }\n            result\n        }\n\n    suspend fun prefetchOhlcSnapshot(accessToken: String, symbols: List<String>, progress: suspend (String) -> Unit = {}) {\n        val unique = symbols.distinct()\n        unique.chunked(50).forEachIndexed { index, batch ->\n            getOhlcBatch(accessToken, batch)\n            progress("Market snapshot ${((index + 1) * 50).coerceAtMost(unique.size)}/${unique.size}")\n        }\n    }\n\n''' + s[end:]
+
+          old_quote = '''            val request = authedGet(url, accessToken)\n            client.newCall(request).execute().use { response ->\n                val raw = response.body?.string().orEmpty()\n                if (!response.isSuccessful) {\n                    throw IOException("Quote failed for $symbol (${response.code}): ${safeMessage(raw)}")\n                }\n                val payload = JSONObject(raw).optJSONObject("payload")\n                    ?: throw IOException("Missing quote payload for $symbol")\n                parseQuote(symbol, payload)\n            }\n'''
+          new_quote = '''            val request = authedGet(url, accessToken)\n            val raw = executeWithRetry(request, liveLimiter, "Quote for $symbol")\n            val payload = JSONObject(raw).optJSONObject("payload")\n                ?: throw IOException("Missing quote payload for $symbol")\n            parseQuote(symbol, payload)\n'''
+          if old_quote in s:
+              s = s.replace(old_quote, new_quote, 1)
+
+          old_hist = '''        val request = authedGet(url, accessToken)\n        client.newCall(request).execute().use { response ->\n            val raw = response.body?.string().orEmpty()\n            if (!response.isSuccessful) {\n                throw IOException("Historical candles failed for $symbol (${response.code}): ${safeMessage(raw)}")\n            }\n            val payload = JSONObject(raw).optJSONObject("payload") ?: JSONObject()\n            val candles = payload.optJSONArray("candles") ?: JSONArray()\n            buildList {\n                for (i in 0 until candles.length()) {\n                    val row = candles.optJSONArray(i) ?: continue\n                    if (row.length() < 6) continue\n                    add(Candle(epochSeconds = row.optLong(0), open = row.optDouble(1), high = row.optDouble(2), low = row.optDouble(3), close = row.optDouble(4), volume = row.optLong(5)))\n                }\n            }\n        }\n'''
+          if old_hist not in s:
+              # Preserve formatting differences by replacing the call/response envelope only.
+              h0 = s.index('        val request = authedGet(url, accessToken)', s.index('    suspend fun getHistoricalCandles'))
+              h1 = s.index('\n    private fun authedGet', h0)
+              block = s[h0:h1]
+              payload_idx = block.index('            val payload = JSONObject(raw)')
+              tail = block[payload_idx:].replace('            ', '        ', 1)
+              # Remove final response-use brace from the old block.
+              if tail.rstrip().endswith('}'):
+                  tail = tail.rstrip()[:-1].rstrip() + '\n'
+              new_block = '        val request = authedGet(url, accessToken)\n        val raw = executeWithRetry(request, historicalLimiter, "Historical candles for $symbol")\n' + tail
+              s = s[:h0] + new_block + s[h1:]
+          else:
+              new_hist = '''        val request = authedGet(url, accessToken)\n        val raw = executeWithRetry(request, historicalLimiter, "Historical candles for $symbol")\n        val payload = JSONObject(raw).optJSONObject("payload") ?: JSONObject()\n        val candles = payload.optJSONArray("candles") ?: JSONArray()\n        buildList {\n            for (i in 0 until candles.length()) {\n                val row = candles.optJSONArray(i) ?: continue\n                if (row.length() < 6) continue\n                add(Candle(epochSeconds = row.optLong(0), open = row.optDouble(1), high = row.optDouble(2), low = row.optDouble(3), close = row.optDouble(4), volume = row.optLong(5)))\n            }\n        }\n'''
+              s = s.replace(old_hist, new_hist, 1)
+
+          marker = '    private fun authedGet(url: HttpUrl, token: String): Request =\n'
+          helper = '''    private data class HttpResult(val code: Int, val successful: Boolean, val body: String, val retryAfterSeconds: Long?)\n\n    private suspend fun executeWithRetry(request: Request, limiter: ApiRateLimiter, operation: String, maxAttempts: Int = 5): String {\n        var lastCode = 0\n        var lastBody = ""\n        repeat(maxAttempts) { attempt ->\n            limiter.awaitPermit()\n            val result = withContext(Dispatchers.IO) {\n                client.newCall(request).execute().use { response ->\n                    HttpResult(response.code, response.isSuccessful, response.body?.string().orEmpty(), response.header("Retry-After")?.toLongOrNull())\n                }\n            }\n            lastCode = result.code\n            lastBody = result.body\n            if (result.successful) return result.body\n            if (result.code == 429) {\n                val serverMs = result.retryAfterSeconds?.times(1000L)\n                val exponentialMs = min(30_000L, 2_000L * (1L shl attempt.coerceAtMost(4)))\n                delay((serverMs ?: exponentialMs).coerceAtLeast(1_500L))\n            } else {\n                throw IOException("$operation failed (${result.code}): ${safeMessage(result.body)}")\n            }\n        }\n        if (lastCode == 429) throw IOException("Groww live-data rate limit is still active. UC Sentinel slowed down and retried automatically. Please wait about one minute before the next manual scan.")\n        throw IOException("$operation failed ($lastCode): ${safeMessage(lastBody)}")\n    }\n\n'''
+          if 'private data class HttpResult' not in s:
+              s = s.replace(marker, helper + marker, 1)
+          p.write_text(s)
+
+          # Serialize scans and share one full-market OHLC snapshot across both engines.
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt'
+          s = p.read_text()
+          if 'import kotlinx.coroutines.sync.Mutex' not in s:
+              s = s.replace('import kotlin.math.abs\n', 'import kotlin.math.abs\nimport kotlinx.coroutines.sync.Mutex\nimport kotlinx.coroutines.sync.withLock\n')
+          s = s.replace('    private var newListingsCache:List<ListedSecurity> = emptyList()\n', '    private var newListingsCache:List<ListedSecurity> = emptyList()\n    private val scanMutex = Mutex()\n    private var lastDualSummary: DualScanSummary? = null\n    private var lastDualScanAt: Long = 0L\n    private val dualScanReuseMs = 45_000L\n', 1)
+
+          start = s.index('    suspend fun scanAll(')
+          end = s.index('    suspend fun scanDemandOnly', start)
+          scan_all = '''    suspend fun scanAll(progress:suspend(String)->Unit={}):DualScanSummary = scanMutex.withLock {\n        val nowMs=System.currentTimeMillis()\n        val cached=lastDualSummary\n        if(cached!=null && nowMs-lastDualScanAt<dualScanReuseMs){\n            progress("Reusing the recent rate-safe scan snapshot")\n            return@withLock cached\n        }\n        val token=secureStore.accessToken(); require(token.isNotBlank()){ "Authenticate with Groww first" }\n        val settings=prefs.loadSettings()\n        if(settings.learningEnabled) evaluateDueOutcomes(token)\n        prefs.pruneMemory(settings.memoryRetentionDays)\n        val universe=if(instruments.cached().isEmpty()) instruments.refresh() else instruments.cached()\n        val listings=runCatching{refreshNewListings()}.getOrDefault(newListingsCache)\n\n        val allowedSeries=if(settings.includeSmeSeries) setOf("EQ","BE","BZ","SM","ST") else setOf("EQ","BE","BZ")\n        val symbols=universe.asSequence().filter{it.exchange=="NSE" && it.segment=="CASH" && it.series in allowedSeries && it.buyAllowed}.map{it.tradingSymbol}.distinct().toList()\n        progress("Preparing one shared rate-safe market snapshot")\n        groww.prefetchOhlcSnapshot(token,symbols,progress)\n\n        progress("Section 1/2: upper-circuit continuation")\n        val uc=ucScanner.scan(token,universe,listings,settings,prefs.adaptivePrecisionMap(ScannerSection.UC_CONTINUATION,SignalEngine.MODEL_VERSION),progress)\n        progress("Section 2/2: pre-pressure spike prediction")\n        val demand=demandScanner.scan(token,universe,listings,settings,prefs.adaptivePrecisionMap(ScannerSection.DEMAND_SQUEEZE,DemandSignalEngine.MODEL_VERSION),progress)\n        DualScanSummary(uc,demand,listings).also { summary ->\n            lastDualSummary=summary\n            lastDualScanAt=System.currentTimeMillis()\n        }\n    }\n\n'''
+          s = s[:start] + scan_all + s[end:]
+
+          start = s.index('    suspend fun scanDemandOnly(')
+          end = s.index('    suspend fun replay', start)
+          demand_only = '''    suspend fun scanDemandOnly(progress:suspend(String)->Unit={}):ScanSummary = scanMutex.withLock {\n        val token=secureStore.accessToken(); require(token.isNotBlank()){ "Authenticate with Groww first" }\n        val settings=prefs.loadSettings()\n        val universe=if(instruments.cached().isEmpty()) instruments.refresh() else instruments.cached()\n        val listings=if(newListingsCache.isEmpty()) runCatching{refreshNewListings()}.getOrDefault(emptyList()) else newListingsCache\n        demandScanner.scan(token,universe,listings,settings,prefs.adaptivePrecisionMap(ScannerSection.DEMAND_SQUEEZE,DemandSignalEngine.MODEL_VERSION),progress)\n    }\n\n'''
+          s = s[:start] + demand_only + s[end:]
+          p.write_text(s)
+
+          # Convert any final raw 429 into a concise message.
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/ui/MainViewModel.kt'
+          s = p.read_text()
+          old = '.onFailure{_state.value=_state.value.copy(busy=false,error=it.message,status="Scan failed")}}'
+          new = '.onFailure{val raw=it.message.orEmpty();val friendly=if(raw.contains("429")||raw.contains("rate limit",true))"Groww is temporarily rate-limiting live data. UC Sentinel already slows and retries automatically; wait about one minute, then scan again." else raw.ifBlank{"Scan failed"};_state.value=_state.value.copy(busy=false,error=friendly,status="Scan paused")}}'
+          if old in s: s = s.replace(old,new,1)
+          p.write_text(s)
+          PY
+
+          grep -q 'versionCode = 121' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.2.1"' "$SRC/app/build.gradle.kts"
+          grep -q 'class ApiRateLimiter' "$SRC/app/src/main/java/com/suhas/ucsentinel/data/remote/ApiRateLimiter.kt"
+          grep -q 'prefetchOhlcSnapshot' "$SRC/app/src/main/java/com/suhas/ucsentinel/data/remote/GrowwClient.kt"
+          grep -q 'scanMutex' "$SRC/app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt"
+          echo 'UC Sentinel v1.2.1 source reconstructed successfully'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests and debug APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest assembleDebug
+
+      - name: Verify installable APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OUT=out/UC-Sentinel-S24-v1.2.1.apk
+          test -s "$APK"
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
+          grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
+          grep -q "versionCode='121'" out/APK-BADGING.txt
+          grep -q "versionName='1.2.1'" out/APK-BADGING.txt
+          sha256sum "$OUT" | tee out/SHA256.txt
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UC-Sentinel-S24-v1.2.1
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/UC-Sentinel-S24-v1.2.1.apk
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-SIGNATURE-VERIFY.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-BADGING.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/SHA256.txt
