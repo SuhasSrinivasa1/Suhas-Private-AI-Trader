@@ -26,9 +26,33 @@ jobs:
           sha256sum /tmp/uc-sentinel-source.zip
           unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel || true
           SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+          export SRC
           test -f "$SRC/app/build.gradle.kts" || exit 1
           cp android-stable/uc-sentinel-v110-build/patch/ScannerScreen.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/ui/ScannerScreen.kt"
           cp android-stable/uc-sentinel-v110-build/patch/DemandScannerEngine.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['SRC'])
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/remote/GrowwClient.kt'
+          s = p.read_text()
+          if 'Credentials as AppCredentials' not in s:
+              s = s.replace('import com.suhas.ucsentinel.domain.model.*\n', 'import com.suhas.ucsentinel.domain.model.*\nimport com.suhas.ucsentinel.domain.model.Credentials as AppCredentials\n')
+          if 'MediaType.Companion.toMediaType' not in s:
+              s = s.replace('import okhttp3.logging.HttpLoggingInterceptor\n', 'import okhttp3.logging.HttpLoggingInterceptor\nimport okhttp3.MediaType.Companion.toMediaType\nimport okhttp3.RequestBody.Companion.toRequestBody\n')
+          s = s.replace('suspend fun authenticate(credentials: Credentials): Pair<String, String>', 'suspend fun authenticate(credentials: AppCredentials): Pair<String, String>')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt'
+          s = p.read_text()
+          s = s.replace('val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()?:run{allProcessed=false;continue}\n                    val uc=q.upperCircuit', 'val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()\n                    if(q==null){allProcessed=false;continue}\n                    val uc=q.upperCircuit')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/ui/ScannerScreen.kt'
+          s = p.read_text().replace('contentPadding=PaddingValues(vertical=12.dp,bottom=24.dp)', 'contentPadding=PaddingValues(top=12.dp,bottom=24.dp)')
+          p.write_text(s)
+          PY
           grep -q 'versionCode = 110' "$SRC/app/build.gradle.kts" || exit 1
           grep -q 'versionName = "1.1.0"' "$SRC/app/build.gradle.kts" || exit 1
           grep -q 'class DemandScannerEngine' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt" || exit 1
