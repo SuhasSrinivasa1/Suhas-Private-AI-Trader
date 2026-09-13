@@ -40,8 +40,17 @@ jobs:
           grep -q 'versionCode = 121' "$SRC/app/build.gradle.kts"
           grep -q 'versionName = "1.2.1"' "$SRC/app/build.gradle.kts"
 
-          cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/v130-patch.zip
-          sha256sum /tmp/v130-patch.zip
+          {
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part00
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part01a
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part01b0
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part01b1
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part02
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part03
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part04
+            cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part05
+          } | tr -d '\r\n' | base64 -d > /tmp/v130-patch.zip
+          echo '1b6182446c2c978ee3af25368bae9dba86bc1373aacfd2d62ce6529aeb05611e  /tmp/v130-patch.zip' | sha256sum -c -
           unzip -t /tmp/v130-patch.zip >/dev/null
           unzip -qo /tmp/v130-patch.zip -d "$SRC"
 
