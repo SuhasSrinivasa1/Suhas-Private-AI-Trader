@@ -54,6 +54,27 @@ jobs:
           unzip -t /tmp/v130-patch.zip >/dev/null
           unzip -qo /tmp/v130-patch.zip -d "$SRC"
 
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['SRC'])
+          fixes = {
+              root / 'app/src/main/java/com/suhas/ucsentinel/data/local/AppPreferences.kt': [
+                  ('):Map<String,Double>=', '):Map<String,Double> ='),
+                  ('():List<StrategyMetric>=', '():List<StrategyMetric> ='),
+                  ('):List<Candidate>=buildList', '):List<Candidate> = buildList'),
+              ],
+              root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt': [
+                  ('):List<Candidate>=freezeRecordToday', '):List<Candidate> = freezeRecordToday'),
+              ],
+          }
+          for path, replacements in fixes.items():
+              text = path.read_text()
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              path.write_text(text)
+          PY
+
           grep -q 'versionCode = 130' "$SRC/app/build.gradle.kts"
           grep -q 'versionName = "1.3.0"' "$SRC/app/build.gradle.kts"
           grep -q 'enum class FreezeOutcome' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/model/Models.kt"
