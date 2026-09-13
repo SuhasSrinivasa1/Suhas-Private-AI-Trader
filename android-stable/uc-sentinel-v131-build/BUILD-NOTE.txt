@@ -1,0 +1,1 @@
+v1.3.1: after Groww authentication, automatic discovery and adaptive learning are armed. TOTP mode can renew daily tokens automatically; API-key approval still requires the Groww approval step.
