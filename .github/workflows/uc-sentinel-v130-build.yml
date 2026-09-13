@@ -1,0 +1,109 @@
+name: UC Sentinel v1.3 Android Build
+
+on:
+  push:
+    paths:
+      - 'android-stable/uc-sentinel-v130-build/**'
+      - '.github/workflows/uc-sentinel-v130-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct v1.2.1 and apply v1.3 reliability release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          wf = Path('.github/workflows/uc-sentinel-v121-build.yml').read_text()
+          marker = "      - name: Reconstruct v1.2 and apply rate-limit resilience\n        shell: bash\n        run: |\n"
+          start = wf.index(marker) + len(marker)
+          end = wf.index("\n      - uses: actions/setup-java@v4", start)
+          script = textwrap.dedent(wf[start:end])
+          Path('/tmp/reconstruct-v121.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n' + script + '\n')
+          PY
+          chmod +x /tmp/reconstruct-v121.sh
+          /tmp/reconstruct-v121.sh
+
+          SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+          export SRC
+          test -f "$SRC/app/build.gradle.kts"
+          grep -q 'versionCode = 121' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.2.1"' "$SRC/app/build.gradle.kts"
+
+          cat android-stable/uc-sentinel-v130-build/patch-v130.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/v130-patch.zip
+          echo '1b6182446c2c978ee3af25368bae9dba86bc1373aacfd2d62ce6529aeb05611e  /tmp/v130-patch.zip' | sha256sum -c -
+          unzip -t /tmp/v130-patch.zip >/dev/null
+          unzip -qo /tmp/v130-patch.zip -d "$SRC"
+
+          grep -q 'versionCode = 130' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.3.0"' "$SRC/app/build.gradle.kts"
+          grep -q 'enum class FreezeOutcome' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/model/Models.kt"
+          grep -q 'enum class FeedHealthState' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/model/Models.kt"
+          grep -q 'ensureTodayFreezeAudit' "$SRC/app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt"
+          grep -q 'MarketSessionBanner' "$SRC/app/src/main/java/com/suhas/ucsentinel/ui/Components.kt"
+          echo 'UC Sentinel v1.3 source reconstructed successfully'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests and debug APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest assembleDebug
+
+      - name: Verify installable APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OUT=out/UC-Sentinel-S24-v1.3.0.apk
+          test -s "$APK"
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
+          grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
+          grep -q "versionCode='130'" out/APK-BADGING.txt
+          grep -q "versionName='1.3.0'" out/APK-BADGING.txt
+          sha256sum "$OUT" | tee out/SHA256.txt
+          cd ..
+          zip -qr UC-Sentinel-v1.3.0-full-source.zip UC-Sentinel-v1.1.0-full-source -x 'UC-Sentinel-v1.1.0-full-source/.gradle/*' 'UC-Sentinel-v1.1.0-full-source/app/build/*' 'UC-Sentinel-v1.1.0-full-source/build/*' 'UC-Sentinel-v1.1.0-full-source/out/*'
+          mv UC-Sentinel-v1.3.0-full-source.zip UC-Sentinel-v1.1.0-full-source/out/
+
+      - name: Upload APK and source
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UC-Sentinel-S24-v1.3.0
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/UC-Sentinel-S24-v1.3.0.apk
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/UC-Sentinel-v1.3.0-full-source.zip
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-SIGNATURE-VERIFY.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-BADGING.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/SHA256.txt
