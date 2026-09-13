@@ -23,7 +23,10 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/uc-sentinel-v131
           mkdir -p /tmp/uc-sentinel-v131
-          unzip -q android-stable/uc-sentinel-v131-build/UC-Sentinel-v1.3.1-full-source.zip -d /tmp/uc-sentinel-v131
+          tr -d '\r\n ' < android-stable/uc-sentinel-v131-build/UC-Sentinel-v1.3.1-full-source.zip.b64 | base64 -d > /tmp/UC-Sentinel-v1.3.1-full-source.zip
+          echo 'f6c0aabbf204896125e2a4c7521b997520b84589fb74c3ce8ef63ae26d5d5019  /tmp/UC-Sentinel-v1.3.1-full-source.zip' | sha256sum -c -
+          unzip -t /tmp/UC-Sentinel-v1.3.1-full-source.zip >/dev/null
+          unzip -q /tmp/UC-Sentinel-v1.3.1-full-source.zip -d /tmp/uc-sentinel-v131
           SRC=/tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source
           test -f "$SRC/app/build.gradle.kts"
           grep -q 'versionCode = 131' "$SRC/app/build.gradle.kts"
@@ -60,6 +63,7 @@ jobs:
           OUT=out/UC-Sentinel-S24-v1.3.1.apk
           test -s "$APK"
           cp "$APK" "$OUT"
+          cp /tmp/UC-Sentinel-v1.3.1-full-source.zip out/UC-Sentinel-v1.3.1-full-source.zip
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
           grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
@@ -76,7 +80,7 @@ jobs:
           if-no-files-found: error
           path: |
             /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/UC-Sentinel-S24-v1.3.1.apk
+            /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/UC-Sentinel-v1.3.1-full-source.zip
             /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/APK-SIGNATURE-VERIFY.txt
             /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/APK-BADGING.txt
             /tmp/uc-sentinel-v131/UC-Sentinel-v1.3.1-full-source/out/SHA256.txt
-            android-stable/uc-sentinel-v131-build/UC-Sentinel-v1.3.1-full-source.zip
