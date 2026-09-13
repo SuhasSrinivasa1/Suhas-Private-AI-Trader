@@ -1,0 +1,118 @@
+name: UC Sentinel v1.2 Android Build
+
+on:
+  push:
+    paths:
+      - 'android-stable/uc-sentinel-v120-build/**'
+      - '.github/workflows/uc-sentinel-v120-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct v1.1 base and overlay v1.2 predictor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/uc-sentinel
+          cat android-stable/uc-sentinel-v110-build/source.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/uc-sentinel-source.zip
+          unzip -q /tmp/uc-sentinel-source.zip -d /tmp/uc-sentinel || true
+          SRC=/tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+          export SRC
+          test -f "$SRC/app/build.gradle.kts"
+
+          # Restore the two files known to have bad CRCs in the archived v1.1 source.
+          cp android-stable/uc-sentinel-v110-build/patch/ScannerScreen.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/ui/ScannerScreen.kt"
+          cp android-stable/uc-sentinel-v110-build/patch/DemandScannerEngine.kt "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandScannerEngine.kt"
+
+          # Keep the v1.1 compile fixes that were proven by the successful build.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['SRC'])
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/remote/GrowwClient.kt'
+          s = p.read_text()
+          if 'Credentials as AppCredentials' not in s:
+              s = s.replace('import com.suhas.ucsentinel.domain.model.*\n', 'import com.suhas.ucsentinel.domain.model.*\nimport com.suhas.ucsentinel.domain.model.Credentials as AppCredentials\n')
+          if 'MediaType.Companion.toMediaType' not in s:
+              s = s.replace('import okhttp3.logging.HttpLoggingInterceptor\n', 'import okhttp3.logging.HttpLoggingInterceptor\nimport okhttp3.MediaType.Companion.toMediaType\nimport okhttp3.RequestBody.Companion.toRequestBody\n')
+          s = s.replace('suspend fun authenticate(credentials: Credentials): Pair<String, String>', 'suspend fun authenticate(credentials: AppCredentials): Pair<String, String>')
+          p.write_text(s)
+
+          p = root / 'app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt'
+          s = p.read_text()
+          s = s.replace('val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()?:run{allProcessed=false;continue}\n                    val uc=q.upperCircuit', 'val q=runCatching{groww.getQuote(token,symbol)}.getOrNull()\n                    if(q==null){allProcessed=false;continue}\n                    val uc=q.upperCircuit')
+          p.write_text(s)
+          PY
+
+          # Decode and validate the v1.2 source overlay.
+          cat android-stable/uc-sentinel-v120-build/patch-v120.zip.b64.part* | tr -d '\r\n' | base64 -d > /tmp/v120-patch.zip
+          echo '8358050f9f83e221a86aa014910495269200da682e2e6f4c1409e86e4bc5bd7a  /tmp/v120-patch.zip' | sha256sum -c -
+          unzip -t /tmp/v120-patch.zip >/dev/null
+          unzip -qo /tmp/v120-patch.zip -d "$SRC"
+
+          grep -q 'versionCode = 120' "$SRC/app/build.gradle.kts"
+          grep -q 'versionName = "1.2.0"' "$SRC/app/build.gradle.kts"
+          grep -q 'PRE_PRESSURE_SPIKE_V2_2026_09' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/engine/DemandSignalEngine.kt"
+          grep -q 'PredictionPhase' "$SRC/app/src/main/java/com/suhas/ucsentinel/domain/model/Models.kt"
+          grep -q 'scanDemandOnly' "$SRC/app/src/main/java/com/suhas/ucsentinel/data/repository/UCSentinelRepository.kt"
+          echo 'UC Sentinel v1.2 source reconstructed successfully'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Unit tests and debug APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        run: gradle --no-daemon --console=plain clean testDebugUnitTest assembleDebug
+
+      - name: Verify installable APK
+        working-directory: /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OUT=out/UC-Sentinel-S24-v1.2.0.apk
+          test -s "$APK"
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee out/APK-BADGING.txt
+          grep -q "package: name='com.suhas.ucsentinel'" out/APK-BADGING.txt
+          grep -q "versionCode='120'" out/APK-BADGING.txt
+          grep -q "versionName='1.2.0'" out/APK-BADGING.txt
+          sha256sum "$OUT" | tee out/SHA256.txt
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UC-Sentinel-S24-v1.2.0
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/UC-Sentinel-S24-v1.2.0.apk
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-SIGNATURE-VERIFY.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/APK-BADGING.txt
+            /tmp/uc-sentinel/UC-Sentinel-v1.1.0-full-source/out/SHA256.txt
