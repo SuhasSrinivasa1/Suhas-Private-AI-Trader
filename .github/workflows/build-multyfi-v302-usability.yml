@@ -1,4 +1,4 @@
-name: Build Multyfi V3.0.8 Adaptive Polling
+name: Build Multyfi V3.0.9 Feed Resilience
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   actions: read
 
 jobs:
-  build-v308-adaptive-polling:
+  build-v309-feed-resilience:
     if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -19,13 +19,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Reuse verified V3.0.7 transformation
+      - name: Reuse verified V3.0.8 transformation
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          wf = Path('.github/workflows/build-multyfi-v307-dynamic-risk.yml').read_text().splitlines()
+          wf = Path('.github/workflows/build-multyfi-v302-usability.yml').read_text().splitlines()
           def extract(step_name, out):
               start = next(i for i,l in enumerate(wf) if l.strip() == f'- name: {step_name}')
               run_i = next(i for i in range(start+1, len(wf)) if wf[i].strip() == 'run: |')
@@ -40,13 +40,13 @@ jobs:
                       break
                   body.append(line[min(len(line), run_indent+2):])
               Path(out).write_text('\n'.join(body) + '\n')
-          extract('Reuse verified V3.0.6 transformation', '/tmp/v307_base.sh')
-          extract('Apply V3.0.7 budget-only dynamic risk', '/tmp/v307_dynamic.sh')
+          extract('Reuse verified V3.0.7 transformation', '/tmp/v308_base.sh')
+          extract('Apply V3.0.8 adaptive polling and evidence UI', '/tmp/v308_patch.sh')
           PY
-          bash /tmp/v307_base.sh
-          bash /tmp/v307_dynamic.sh
+          bash /tmp/v308_base.sh
+          bash /tmp/v308_patch.sh
 
-      - name: Apply V3.0.8 adaptive polling and evidence UI
+      - name: Apply V3.0.9 connectivity guard and LG G7 compatibility polish
         shell: bash
         run: |
           set -euo pipefail
@@ -57,118 +57,223 @@ jobs:
           base = Path('Multyfi_Intraday_Mobile_V3_0')
           src = base/'app/src/main/java/com/multyfi/intraday/mobile'
 
+          # Version bump. minSdk stays 26, compatible with LG G7 ThinQ's Android 8+ baseline.
           p = base/'app/build.gradle.kts'
-          s = p.read_text().replace('versionCode = 307', 'versionCode = 308').replace('versionName = "3.0.7"', 'versionName = "3.0.8"')
+          s = p.read_text().replace('versionCode = 308', 'versionCode = 309').replace('versionName = "3.0.8"', 'versionName = "3.0.9"')
           p.write_text(s)
 
+          # Persist feed-health state so the UI and diagnostics can show DEGRADED/RECOVERED explicitly.
+          p = src/'AppRepository.kt'
+          s = p.read_text()
+          hook = '    fun markFeed() { prefs.edit().putLong("last_feed_ts", System.currentTimeMillis()).apply() }\n'
+          if hook not in s: raise SystemExit('AppRepository feed hook not found')
+          extra = '''    fun markFeedDegraded(kind: String, detail: String, backoffUntil: Long) {\n        prefs.edit()\n            .putBoolean("feed_degraded", true)\n            .putString("feed_issue_kind", kind)\n            .putString("feed_issue_detail", detail.take(500))\n            .putLong("feed_degraded_ts", System.currentTimeMillis())\n            .putLong("feed_backoff_until", backoffUntil)\n            .apply()\n    }\n    fun markFeedRecovered(entryResumeTs: Long) {\n        prefs.edit()\n            .putBoolean("feed_degraded", false)\n            .putString("feed_issue_kind", "")\n            .putString("feed_issue_detail", "")\n            .putLong("feed_recovered_ts", System.currentTimeMillis())\n            .putLong("feed_backoff_until", 0L)\n            .putLong("feed_entry_resume_ts", entryResumeTs)\n            .apply()\n    }\n    fun feedDegraded(): Boolean = prefs.getBoolean("feed_degraded", false)\n    fun feedIssueKind(): String = prefs.getString("feed_issue_kind", "") ?: ""\n    fun feedIssueDetail(): String = prefs.getString("feed_issue_detail", "") ?: ""\n    fun feedBackoffUntil(): Long = prefs.getLong("feed_backoff_until", 0L)\n    fun feedEntryResumeTs(): Long = prefs.getLong("feed_entry_resume_ts", 0L)\n'''
+          s = s.replace(hook, hook + extra, 1)
+          p.write_text(s)
+
+          # Replace the polling loop with classified failures, controlled backoff, feed-state transitions,
+          # and an explicit new-entry warm-up. Existing paper/live positions still receive successful quotes.
           p = src/'MultyfiNotificationService.kt'
           s = p.read_text()
-          hook = '    @Volatile private var lastCatalogRefreshAttempt = 0L\n'
-          if hook not in s: raise SystemExit('service state hook not found')
-          s = s.replace(hook, hook + '    @Volatile private var quoteCursor = 0\n', 1)
-          old_sched = '            ex.scheduleWithFixedDelay({ safePoll() }, 1, 5, TimeUnit.SECONDS)\n'
-          new_sched = '            ex.scheduleWithFixedDelay({ safePoll() }, 1, 250, TimeUnit.MILLISECONDS)\n'
-          if old_sched not in s: raise SystemExit('service scheduler hook not found')
-          s = s.replace(old_sched, new_sched, 1)
+          hook = '    @Volatile private var quoteCursor = 0\n'
+          if hook not in s: raise SystemExit('V3.0.8 quoteCursor hook not found')
+          state = '''    @Volatile private var feedFailureStreak = 0\n    @Volatile private var feedSuccessStreak = 0\n    @Volatile private var feedDegraded = false\n    @Volatile private var backoffUntilMs = 0L\n    @Volatile private var entryResumeAfterMs = 0L\n'''
+          s = s.replace(hook, hook + state, 1)
+
           start = s.index('    private fun safePoll() {')
           end = s.index('    private fun throttledLog(', start)
-          new_safe = '\n'.join([
-              '    private fun safePoll() {',
-              '        runCatching {',
-              '            repo.markListenerHeartbeat()',
-              '            val validSymbols = catalog.cachedSymbols().ifEmpty {',
-              '                refreshCatalogAndSanitize(force = false) ?: return',
-              '            }',
-              '            if (validSymbols.size < 500) return',
-              '',
-              '            if (MarketClock.shouldForceFlat()) {',
-              '                repo.todayCandidates()',
-              '                    .filter { it.symbol.uppercase(Locale.US) in validSymbols }',
-              '                    .forEach { c ->',
-              '                        val flat = PaperEngine.forceFlat(repo, c)',
-              '                        LiveTradeEngine.sync(repo, c, flat)',
-              '                        if (flat != c) repo.saveCandidate(flat)',
-              '                    }',
-              '                val n = MarketClock.now()',
-              '                if (n.hour >= 15 && n.minute >= 20 && !repo.learningUpToDate()) {',
-              '                    val r = ReplayEngine().learn(repo)',
-              '                    if (r.promoted) repo.saveConfig(r.championAfter)',
-              '                    repo.recordLearning(r)',
-              '                }',
-              '                return',
-              '            }',
-              '            if (!MarketClock.isTrackingWindow()) return',
-              '            val token = repo.accessToken()',
-              '            if (token.isBlank()) return',
-              '',
-              '            val active = repo.todayCandidates()',
-              '                .filter { it.status != "SESSION_LOCKED" }',
-              '                .filter { it.symbol.uppercase(Locale.US) in validSymbols }',
-              '            if (active.isEmpty()) return',
-              '',
-              '            // One request per 250ms fixed-delay invocation on one executor.',
-              '            // Maximum theoretical quote cadence: 4/sec = 240/min.',
-              '            val idx = Math.floorMod(quoteCursor, active.size)',
-              '            val c = active[idx]',
-              '            quoteCursor = if (quoteCursor == Int.MAX_VALUE) 0 else quoteCursor + 1',
-              '',
-              '            runCatching {',
-              '                val q = GrowwClient.quote(token, c.symbol)',
-              '                repo.appendTick(c.id, q)',
-              '                val updated = PaperEngine.onQuote(repo, c, repo.ticks(c.id).takeLast(180))',
-              '                LiveTradeEngine.sync(repo, c, updated)',
-              '                repo.saveCandidate(updated)',
-              '            }.onFailure { e ->',
-              '                throttledLog("quote_${c.symbol}", "Market data error • ${c.symbol}", e.message ?: "Groww quote failed", "WARN")',
-              '            }',
-              '        }.onFailure { e -> throttledLog("loop", "Scanner loop error", e.message ?: "Unknown scanner error", "WARN") }',
-              '    }',
-              ''
-          ]) + '\n'
-          s = s[:start] + new_safe + s[end:]
+          replacement = r'''    private fun safePoll() {
+        runCatching {
+            repo.markListenerHeartbeat()
+            val nowMs = System.currentTimeMillis()
+            if (repo.feedDegraded()) feedDegraded = true
+            val persistedBackoff = repo.feedBackoffUntil()
+            if (nowMs < maxOf(backoffUntilMs, persistedBackoff)) return
+
+            val validSymbols = catalog.cachedSymbols().ifEmpty {
+                refreshCatalogAndSanitize(force = false) ?: return
+            }
+            if (validSymbols.size < 500) return
+
+            if (MarketClock.shouldForceFlat()) {
+                repo.todayCandidates()
+                    .filter { it.symbol.uppercase(Locale.US) in validSymbols }
+                    .forEach { c ->
+                        val flat = PaperEngine.forceFlat(repo, c)
+                        LiveTradeEngine.sync(repo, c, flat)
+                        if (flat != c) repo.saveCandidate(flat)
+                    }
+                val n = MarketClock.now()
+                if (n.hour >= 15 && n.minute >= 20 && !repo.learningUpToDate()) {
+                    val r = ReplayEngine().learn(repo)
+                    if (r.promoted) repo.saveConfig(r.championAfter)
+                    repo.recordLearning(r)
+                }
+                return
+            }
+            if (!MarketClock.isTrackingWindow()) return
+            val token = repo.accessToken()
+            if (token.isBlank()) return
+
+            val active = repo.todayCandidates()
+                .filter { it.status != "SESSION_LOCKED" }
+                .filter { it.symbol.uppercase(Locale.US) in validSymbols }
+            if (active.isEmpty()) return
+
+            val idx = Math.floorMod(quoteCursor, active.size)
+            val c = active[idx]
+            quoteCursor = if (quoteCursor == Int.MAX_VALUE) 0 else quoteCursor + 1
+
+            runCatching {
+                val q = GrowwClient.quote(token, c.symbol)
+                repo.appendTick(c.id, q)
+                noteQuoteSuccess()
+
+                val ticks = repo.ticks(c.id).takeLast(180)
+                val gateUntil = maxOf(entryResumeAfterMs, repo.feedEntryResumeTs())
+                val blockFreshEntry = feedDegraded || repo.feedDegraded() || System.currentTimeMillis() < gateUntil
+                val updated = if (blockFreshEntry && c.paperSide == "FLAT") {
+                    val f = SignalMath.latest(ticks)
+                    c.copy(lastLtp = f.price, lastUpdatedTs = f.ts, score = f.score, rvol = f.rvol, vwapPct = f.vwapPct, trend = f.trend)
+                } else {
+                    PaperEngine.onQuote(repo, c, ticks)
+                }
+                LiveTradeEngine.sync(repo, c, updated)
+                repo.saveCandidate(updated)
+            }.onFailure { e ->
+                noteQuoteFailure(c.symbol, e)
+            }
+        }.onFailure { e -> throttledLog("loop", "Scanner loop error", e.message ?: "Unknown scanner error", "WARN") }
+    }
+
+    private fun classifyFeedError(e: Throwable): String {
+        val m = (e.message ?: e.javaClass.simpleName).lowercase(Locale.US)
+        return when {
+            "unable to resolve host" in m || "no address associated" in m || "unknownhost" in m -> "DNS"
+            "timeout" in m || "timed out" in m || "sockettimeoutexception" in m -> "TIMEOUT"
+            "http 429" in m || ("rate" in m && "limit" in m) -> "RATE LIMIT"
+            "http 401" in m || "http 403" in m || "unauthorized" in m || "forbidden" in m -> "AUTH"
+            "http 4" in m || "bad request" in m -> "API"
+            "connection abort" in m || "failed to connect" in m || "connection reset" in m -> "NETWORK"
+            else -> "NETWORK"
+        }
+    }
+
+    private fun retryDelayMs(kind: String, streak: Int): Long = when (kind) {
+        "RATE LIMIT" -> 60_000L
+        "AUTH" -> 30_000L
+        "DNS" -> when { streak >= 5 -> 20_000L; streak >= 3 -> 10_000L; else -> 5_000L }
+        "TIMEOUT" -> when { streak >= 5 -> 15_000L; streak >= 3 -> 7_000L; else -> 3_000L }
+        "API" -> 5_000L
+        else -> when { streak >= 5 -> 15_000L; streak >= 3 -> 7_000L; else -> 2_000L }
+    }
+
+    private fun noteQuoteFailure(symbol: String, e: Throwable) {
+        val now = System.currentTimeMillis()
+        feedSuccessStreak = 0
+        feedFailureStreak += 1
+        val kind = classifyFeedError(e)
+        val delay = retryDelayMs(kind, feedFailureStreak)
+        backoffUntilMs = now + delay
+        val detail = e.message ?: "Groww quote failed"
+
+        if (feedFailureStreak >= 2 && !feedDegraded) {
+            feedDegraded = true
+            repo.markFeedDegraded(kind, detail, backoffUntilMs)
+            repo.logActivity(
+                "SYSTEM",
+                "FEED DEGRADED • $kind",
+                "${feedFailureStreak} consecutive Groww quote failures. New entries are paused. Existing positions are still managed whenever fresh quotes arrive. Retry backoff ${delay / 1000}s. Last symbol: $symbol • $detail",
+                "WARN"
+            )
+        } else if (feedDegraded) {
+            repo.markFeedDegraded(kind, detail, backoffUntilMs)
+            throttledLog(
+                "feed_degraded",
+                "Feed still degraded • $kind",
+                "New entries remain paused; retrying with controlled backoff. Last symbol: $symbol • $detail",
+                "WARN"
+            )
+        }
+    }
+
+    private fun noteQuoteSuccess() {
+        val wasDegraded = feedDegraded || repo.feedDegraded()
+        if (!wasDegraded) {
+            feedFailureStreak = 0
+            feedSuccessStreak = 0
+            return
+        }
+
+        feedSuccessStreak += 1
+        if (feedSuccessStreak < 3) return
+
+        val now = System.currentTimeMillis()
+        feedDegraded = false
+        feedFailureStreak = 0
+        feedSuccessStreak = 0
+        backoffUntilMs = 0L
+        entryResumeAfterMs = now + 30_000L
+        repo.markFeedRecovered(entryResumeAfterMs)
+        repo.logActivity(
+            "SYSTEM",
+            "FEED RECOVERED",
+            "Three consecutive fresh Groww quotes succeeded. Existing positions continue normally; fresh entries wait for a 30-second clean-data warm-up.",
+            "INFO"
+        )
+    }
+
+'''
+          s = s[:start] + replacement + s[end:]
           p.write_text(s)
 
+          # Live UI: distinguish feed degradation, recovery warm-up, and normal post-close staleness.
           p = src/'MainActivity.kt'
           s = p.read_text()
-          s = s.replace('screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0")', 'screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0.8")')
-          old = ('        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))\n'
-                 '        statusCard.addView(t(last?.reason ?: "The learner needs at least 6 completed replay sessions before it can challenge the Champion.", 14f, text).apply { setPadding(0, dp(8), 0, 0) })\n')
-          new = ('        statusCard.addView(t(headline, 19f, when { headline.contains("PROMOTED") -> green; headline.contains("PENDING") || headline.contains("COLLECTING") -> amber; else -> purple }, true))\n'
-                 '        val currentEvidenceText = when {\n'
-                 '            !upToDate && sessions < 6 -> "Current evidence: $sessions / 6 replay sessions available. The Champion is unchanged until enough current evidence is available and evaluated."\n'
-                 '            !upToDate -> "Current evidence: $sessions replay sessions available. Re-evaluation is pending; the previous learning result is historical only."\n'
-                 '            last != null -> last.reason\n'
-                 '            else -> "No completed learning evaluation yet."\n'
-                 '        }\n'
-                 '        statusCard.addView(t(currentEvidenceText, 14f, text).apply { setPadding(0, dp(8), 0, 0) })\n')
-          if old not in s: raise SystemExit('learning status hook not found')
+          s = s.replace('screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0.8")', 'screenHeader("Multyfi Intraday", "Daily-adaptive paper intelligence • V3.0.9")')
+          old = '        val ready = listener && groww\n'
+          new = '        val exchangeOpen = MarketClock.exchangeState() == "OPEN"\n        val feedDegradedNow = exchangeOpen && repo.feedDegraded()\n        val ready = listener && groww && !feedDegradedNow\n'
+          if old not in s: raise SystemExit('MainActivity ready hook not found')
           s = s.replace(old, new, 1)
-          needle = '        sectionTitle("Multyfi candidate access", '
-          pos = s.find(needle)
-          if pos < 0: raise SystemExit('settings cadence hook not found')
-          rate_block = ('        sectionTitle("Market data cadence", "Groww Quote REST is polled adaptively across active candidates. The scanner uses one request at a time, round-robin, capped at 4 quote requests/second and 240/minute. Groww currently documents Live Data limits of 10/second and 300/minute, so this keeps reserve capacity.")\n'
-                        '        val cadenceCard = cardBox(16, greenSoft)\n'
-                        '        cadenceCard.addView(t("ADAPTIVE • 4 req/s MAX • 240/min MAX", 14f, green, true))\n'
-                        '        cadenceCard.addView(t("Approximate refresh per candidate: 0.25s × number of active candidates, plus network latency. Two candidates ≈ 0.5s each; seven ≈ 1.75s each.", 13f, text).apply { setPadding(0, dp(6), 0, 0) })\n'
-                        '        addCard(cadenceCard, bottom = 20)\n\n')
-          s = s[:pos] + rate_block + s[pos:]
+          old = '        titleRow.addView(t(if (ready) "●  SYSTEM READY" else "●  SETUP REQUIRED", 19f, if (ready) green else amber, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))\n'
+          new = '        titleRow.addView(t(if (feedDegradedNow) "●  FEED DEGRADED" else if (ready) "●  SYSTEM READY" else "●  SETUP REQUIRED", 19f, if (feedDegradedNow) red else if (ready) green else amber, true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))\n'
+          if old not in s: raise SystemExit('MainActivity title hook not found')
+          s = s.replace(old, new, 1)
+          old = '''        val feedAge = if (repo.lastFeedTs() <= 0) "WAITING" else "${((System.currentTimeMillis() - repo.lastFeedTs()) / 1000).coerceAtLeast(0)}s ago"\n        s.addView(statusRow("Market data", feedAge, if (repo.lastFeedTs() > 0 && System.currentTimeMillis() - repo.lastFeedTs() < 30_000) true else null))\n'''
+          new = '''        val feedNow = System.currentTimeMillis()\n        val lastFeed = repo.lastFeedTs()\n        val warmupUntil = repo.feedEntryResumeTs()\n        val feedAgeSec = if (lastFeed <= 0L) Long.MAX_VALUE else ((feedNow - lastFeed) / 1000L).coerceAtLeast(0L)\n        val feedLabel = when {\n            !exchangeOpen && lastFeed > 0L -> "SESSION CLOSED • final ${timeOnly(lastFeed)}"\n            repo.feedDegraded() -> "DEGRADED • ${repo.feedIssueKind().ifBlank { "NETWORK" }}"\n            feedNow < warmupUntil -> "RECOVERED • warm-up ${((warmupUntil - feedNow + 999L) / 1000L)}s"\n            lastFeed <= 0L -> "WAITING"\n            else -> "${feedAgeSec}s ago"\n        }\n        val feedOk: Boolean? = when {\n            repo.feedDegraded() -> false\n            !exchangeOpen -> null\n            feedNow < warmupUntil -> null\n            lastFeed > 0L && feedNow - lastFeed < 30_000L -> true\n            else -> null\n        }\n        s.addView(statusRow("Market data", feedLabel, feedOk))\n'''
+          if old not in s: raise SystemExit('MainActivity feed row hook not found')
+          s = s.replace(old, new, 1)
+
+          # Settings explanation for the connectivity guard.
+          hook = '        addCard(cadenceCard, bottom = 20)\n\n'
+          if hook not in s: raise SystemExit('MainActivity cadence card hook not found')
+          extra = '''        val resilienceCard = cardBox(16, purpleSoft)\n        resilienceCard.addView(t("FEED RESILIENCE — AUTO", 14f, purple, true))\n        resilienceCard.addView(t("DNS failures, timeouts, rate limits and other network failures are classified separately. After repeated failures the app marks FEED DEGRADED, pauses fresh entries, retries with backoff, and requires three fresh quotes plus a 30-second warm-up before new entries resume. Existing positions are still managed whenever fresh quotes arrive.", 13f, text).apply { setPadding(0, dp(6), 0, 0) })\n        addCard(resilienceCard, bottom = 20)\n\n'''
+          s = s.replace(hook, hook + extra, 1)
           p.write_text(s)
 
+          # Diagnostic version and feed-health evidence.
           p = src/'DiagnosticExporter.kt'
-          s = p.read_text().replace('V3.0.7 — FULL DAILY DIAGNOSTIC', 'V3.0.8 — FULL DAILY DIAGNOSTIC').replace('App version: 3.0.7', 'App version: 3.0.8')
-          needle = '            appendLine("Risk controls: DYNAMIC PER ENTRY — stop/trail/min-hold are not manually configured")\n'
-          if needle in s:
-              s = s.replace(needle, needle + '            appendLine("Groww quote polling: adaptive round-robin, max 4 requests/sec, max 240/min")\n            appendLine("Groww documented Live Data limit: 10 requests/sec, 300/min")\n', 1)
+          s = p.read_text().replace('V3.0.8 — FULL DAILY DIAGNOSTIC', 'V3.0.9 — FULL DAILY DIAGNOSTIC').replace('App version: 3.0.8', 'App version: 3.0.9')
+          hook = '            appendLine("Groww documented Live Data limit: 10 requests/sec, 300/min")\n'
+          if hook in s:
+              extra = ('            appendLine("Feed health: ${if (repo.feedDegraded()) "DEGRADED" else "HEALTHY/RECOVERING"}")\n'
+                       '            appendLine("Feed issue kind: ${repo.feedIssueKind().ifBlank { "NONE" }}")\n'
+                       '            appendLine("Feed issue detail: ${repo.feedIssueDetail().ifBlank { "NONE" }}")\n'
+                       '            appendLine("New-entry warm-up remaining seconds: ${((repo.feedEntryResumeTs() - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L)}")\n')
+              s = s.replace(hook, hook + extra, 1)
           p.write_text(s)
           PY
 
-          grep -q 'versionCode = 308' "$BASE/app/build.gradle.kts"
-          grep -q 'versionName = "3.0.8"' "$BASE/app/build.gradle.kts"
-          grep -q '250, TimeUnit.MILLISECONDS' "$SRC/MultyfiNotificationService.kt"
-          grep -q 'Maximum theoretical quote cadence: 4/sec = 240/min' "$SRC/MultyfiNotificationService.kt"
-          grep -q 'Current evidence: \$sessions / 6 replay sessions available' "$SRC/MainActivity.kt"
-          grep -q 'ADAPTIVE • 4 req/s MAX • 240/min MAX' "$SRC/MainActivity.kt"
-          grep -q 'MULTYFI INTRADAY MOBILE V3.0.8' "$SRC/DiagnosticExporter.kt"
+          grep -q 'versionCode = 309' "$BASE/app/build.gradle.kts"
+          grep -q 'versionName = "3.0.9"' "$BASE/app/build.gradle.kts"
+          grep -q 'minSdk = 26' "$BASE/app/build.gradle.kts"
+          grep -q 'FEED DEGRADED' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'FEED RECOVERED' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'feedFailureStreak >= 2' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'entryResumeAfterMs = now + 30_000L' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'SESSION CLOSED • final' "$SRC/MainActivity.kt"
+          grep -q 'FEED RESILIENCE — AUTO' "$SRC/MainActivity.kt"
+          grep -q 'MULTYFI INTRADAY MOBILE V3.0.9' "$SRC/DiagnosticExporter.kt"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -213,14 +318,14 @@ jobs:
             'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
             -d /tmp/multyfi-v3-signing
 
-      - name: Sign and verify V3.0.8 update
+      - name: Sign and verify V3.0.9 update
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
           UNSIGNED='Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk'
-          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.8-aligned.apk'
-          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_8_ADAPTIVE_POLLING_SIGNED_UPDATE.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.9-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk'
           KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
           PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
           OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
@@ -238,19 +343,20 @@ jobs:
           test -n "$OLD_CERT" && test "$OLD_CERT" = "$NEW_CERT"
           printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
           grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
-          grep -q "versionCode='308'" out/APK-BADGING.txt
-          grep -q "versionName='3.0.8'" out/APK-BADGING.txt
+          grep -q "versionCode='309'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.9'" out/APK-BADGING.txt
+          grep -q "sdkVersion:'26'" out/APK-BADGING.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
 
-      - name: Upload verified V3.0.8 APK
+      - name: Upload verified V3.0.9 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Multyfi-V3.0.8-ADAPTIVE-POLLING
+          name: Multyfi-V3.0.9-FEED-RESILIENCE
           path: |
-            out/Multyfi_Intraday_Mobile_V3_0_8_ADAPTIVE_POLLING_SIGNED_UPDATE.apk
+            out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk
             out/APK-SIGNATURE-VERIFY.txt
             out/APK-BADGING.txt
             out/ZIPALIGN-VERIFY.txt
