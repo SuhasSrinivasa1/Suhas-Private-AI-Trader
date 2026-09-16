@@ -1,4 +1,4 @@
-name: Build Multyfi V3.0.9 Feed Resilience
+name: Build Multyfi V3.0.10 Market Integrity
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   actions: read
 
 jobs:
-  build-v309-feed-resilience:
+  build-v310-market-integrity:
     if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -63,6 +63,18 @@ jobs:
           grep -q 'versionName = "3.0.9"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
           grep -q 'minSdk = 26' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
 
+      - name: Apply V3.0.10 market integrity and anti-churn
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/build-scripts/apply-v310-market-integrity.py
+          grep -q 'versionCode = 310' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'versionName = "3.0.10"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'minSdk = 26' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'MARKET DATA INTEGRITY — AUTO' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          grep -q 'ENTRY_CONFIRMATIONS = 3' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/PaperEngine.kt
+          grep -q 'VOLUME_REGRESSION' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MarketDataGuard.kt
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -108,14 +120,14 @@ jobs:
           test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
           test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
 
-      - name: Sign and verify V3.0.9 update
+      - name: Sign and verify V3.0.10 update
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
           UNSIGNED='Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk'
-          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.9-aligned.apk'
-          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.10-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_10_MARKET_INTEGRITY_SIGNED_UPDATE.apk'
           KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
           PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
           OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
@@ -135,20 +147,20 @@ jobs:
           test "$OLD_CERT" = "$NEW_CERT"
           printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
           grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
-          grep -q "versionCode='309'" out/APK-BADGING.txt
-          grep -q "versionName='3.0.9'" out/APK-BADGING.txt
+          grep -q "versionCode='310'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.10'" out/APK-BADGING.txt
           grep -q "sdkVersion:'26'" out/APK-BADGING.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
           grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
           sha256sum "$SIGNED" | tee out/SHA256.txt
 
-      - name: Upload verified V3.0.9 APK
+      - name: Upload verified V3.0.10 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Multyfi-V3.0.9-FEED-RESILIENCE
+          name: Multyfi-V3.0.10-MARKET-INTEGRITY
           path: |
-            out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk
+            out/Multyfi_Intraday_Mobile_V3_0_10_MARKET_INTEGRITY_SIGNED_UPDATE.apk
             out/APK-SIGNATURE-VERIFY.txt
             out/APK-BADGING.txt
             out/ZIPALIGN-VERIFY.txt
