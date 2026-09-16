@@ -1,0 +1,12 @@
+name: Private Actions Probe
+on:
+  push:
+    branches:
+      - build/private-actions-probe-20260916
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo PRIVATE_ACTIONS_OK
