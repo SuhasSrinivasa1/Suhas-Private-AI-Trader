@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
           mkdir -p output
           cp app/build/outputs/apk/release/app-release.apk output/Delivery-Trade-Hub-v1.4.8.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs output/Delivery-Trade-Hub-v1.4.8.apk | tee output/APK-SIGNATURE-VERIFY.txt
-          sha256sum output/Delivery-Trade-Hub-v1.4.8.apk | tee output/APK-SHA256.txt
+          shasum -a 256 output/Delivery-Trade-Hub-v1.4.8.apk | tee output/APK-SHA256.txt
           OLD_CERT="$(grep -m1 'Signer #1 certificate SHA-256 digest:' ../previous-v146/APK-SIGNATURE-VERIFY.txt | sed 's/.*digest: //')"
           NEW_CERT="$(grep -m1 'Signer #1 certificate SHA-256 digest:' output/APK-SIGNATURE-VERIFY.txt | sed 's/.*digest: //')"
           test -n "$OLD_CERT"
