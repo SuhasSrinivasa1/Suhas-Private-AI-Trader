@@ -121,7 +121,7 @@ jobs:
             grep -q "versionName='1.2.2'" out/APK-BADGING.txt
             sha256sum "$OUT" | tee out/SHA256.txt
           } 2>&1 | tee /tmp/global-edge-v122-build.log
-          rc=\${PIPESTATUS[0]}
+          rc=${PIPESTATUS[0]}
           echo "$rc" > /tmp/global-edge-v122-build.rc
           exit "$rc"
 
@@ -149,7 +149,7 @@ jobs:
             echo "run_id=$GITHUB_RUN_ID"
             echo "run_attempt=$GITHUB_RUN_ATTEMPT"
             echo "commit=$GITHUB_SHA"
-            echo "job_status=\${{ job.status }}"
+            echo "job_status=${{ job.status }}"
             echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "$DIR/latest-run.txt"
           tail -n 300 /tmp/global-edge-v122-build.log > "$DIR/latest-build.log" 2>/dev/null || true
