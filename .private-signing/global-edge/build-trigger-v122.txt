@@ -1,1 +1,2 @@
 Trigger stable signed Global Edge v1.2.2 build.
+Validated public v1.2.2 patch; trigger stable signed rebuild.
