@@ -1,0 +1,89 @@
+name: Build Delivery Trade Hub v1.6.0 source
+
+on:
+  push:
+    branches:
+      - build/delivery-trade-hub-v160
+    paths:
+      - 'dth-v160-b64.part.*'
+      - '.github/workflows/dth-v160-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat dth-v160-b64.part.* | base64 -d > /tmp/dth-v160-source.tar.xz
+          tar -xJf /tmp/dth-v160-source.tar.xz
+          test -f dth_src/app/build.gradle
+          grep -q "versionCode 160" dth_src/app/build.gradle
+          grep -q "versionName '1.6.0'" dth_src/app/build.gradle
+          grep -q 'EventLogStore' dth_src/app/src/main/java/com/suhas/multyfideliverybuy/MainActivity.java
+          grep -q 'BACK_IN_RANGE' dth_src/app/src/main/java/com/suhas/multyfideliverybuy/UnivestParser.java
+          grep -q 'handleBackInEntryRange' dth_src/app/src/main/java/com/suhas/multyfideliverybuy/UnivestManager.java
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Unit tests
+        working-directory: dth_src
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Lint release
+        working-directory: dth_src
+        run: gradle --no-daemon lintRelease
+
+      - name: Assemble release
+        working-directory: dth_src
+        run: gradle --no-daemon assembleRelease
+
+      - name: Validate unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dth_src/app/build/outputs/apk/release/app-release-unsigned.apk'
+          test -s "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK" | tee /tmp/APK-BADGING.txt
+          grep -q "package: name='com.suhas.multyfideliverybuy' versionCode='160' versionName='1.6.0'" /tmp/APK-BADGING.txt
+          sha256sum "$APK" | tee /tmp/SHA256-UNSIGNED.txt
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: Delivery-Trade-Hub-v1.6.0-UNSIGNED
+          path: |
+            dth_src/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/APK-BADGING.txt
+            /tmp/SHA256-UNSIGNED.txt
+            dth_src/app/build/reports/tests/testDebugUnitTest/
+            dth_src/app/build/reports/lint-results-release.html
+          if-no-files-found: error
+          retention-days: 7
