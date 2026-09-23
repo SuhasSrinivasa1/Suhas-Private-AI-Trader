@@ -1,0 +1,1 @@
+Trigger stable signed Global Edge v1.2.2 build.
