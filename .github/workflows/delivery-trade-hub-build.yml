@@ -1,0 +1,62 @@
+name: Delivery Trade Hub APK Build
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'delivery-trade-hub-build/**'
+      - '.github/workflows/delivery-trade-hub-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Reconstruct source
+        run: |
+          set -euo pipefail
+          cat delivery-trade-hub-build/lean10-source.b64.* | tr -d '\n\r' | base64 -d > /tmp/dth-source.zip
+          echo "Expected SHA256: 36e50019599560c2e8b497f387e40d5f6e583ae4e9360a1e39e0ec187cebd34a"
+          echo "Actual:"
+          sha256sum /tmp/dth-source.zip
+          test "$(sha256sum /tmp/dth-source.zip | awk '{print $1}')" = "36e50019599560c2e8b497f387e40d5f6e583ae4e9360a1e39e0ec187cebd34a"
+          rm -rf /tmp/dth
+          mkdir -p /tmp/dth
+          unzip -q /tmp/dth-source.zip -d /tmp/dth
+
+      - name: Compile release APK
+        working-directory: /tmp/dth
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          APK=/tmp/dth/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: delivery-trade-hub-v1.6.0-unsigned
+          path: /tmp/dth/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
