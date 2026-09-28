@@ -1,0 +1,36 @@
+name: Univest AutoTrade Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'UnivestAutoTrade/**'
+      - '.github/workflows/univest-autotrade-android-build.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: UnivestAutoTrade
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnivestAutoTrade-debug-apk
+          path: UnivestAutoTrade/app/build/outputs/apk/debug/*.apk
