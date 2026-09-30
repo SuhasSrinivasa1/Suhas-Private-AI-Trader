@@ -1,0 +1,131 @@
+name: Univest AutoTrade v2.2.0 Direct Private Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/univest-v220-direct-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build sign validate and stage private release
+        shell: bash
+        run: |
+          set +e
+          OUT="$GITHUB_WORKSPACE/.release/univest-v220-final"
+          VAULT="$GITHUB_WORKSPACE/.signing/univest-v220-persistent"
+          rm -rf "$OUT"
+          mkdir -p "$OUT" "$VAULT"
+          LOG="$OUT/ci-log.txt"
+          STATUS="$OUT/ci-status.txt"
+          exec > >(tee "$LOG") 2>&1
+
+          (
+            set -euo pipefail
+            rm -rf "$GITHUB_WORKSPACE/source_repo"
+            git clone --depth 1 --branch univest-v220-build https://github.com/SuhasSrinivasa1/AI-Trader.git "$GITHUB_WORKSPACE/source_repo"
+            SRC="$GITHUB_WORKSPACE/source_repo/.build-temp/univest-v220-work/source"
+
+            grep -q "versionCode 220" "$SRC/app/build.gradle"
+            grep -q "versionName '2.2.0'" "$SRC/app/build.gradle"
+            grep -R -q 'com.univest.capp' "$SRC/app/src/main/java"
+            ! grep -R -q 'ANDROID_NOTIFICATION_DUPLICATE_SUPPRESSED' "$SRC/app/src/main/java"
+            grep -R -q 'budgetForBackInRange' "$SRC/app/src/main/java"
+            grep -R -q 'MAX_AVERAGE_LEVELS = 3' "$SRC/app/src/main/java"
+
+            cd "$SRC"
+            gradle --no-daemon --console=plain clean testReleaseUnitTest assembleRelease | tee "$OUT/test-results.txt"
+            cd "$GITHUB_WORKSPACE"
+
+            KEYSTORE="$VAULT/univest-release.jks"
+            CREDS="$VAULT/credentials.env"
+            if [ ! -s "$KEYSTORE" ] || [ ! -s "$CREDS" ]; then
+              STORE_PASS="$(openssl rand -hex 24)"
+              KEY_PASS="$(openssl rand -hex 24)"
+              KEY_ALIAS="univest-autotrade-v220"
+              keytool -genkeypair -v                 -keystore "$KEYSTORE"                 -storepass "$STORE_PASS"                 -keypass "$KEY_PASS"                 -alias "$KEY_ALIAS"                 -keyalg RSA -keysize 4096 -validity 10000                 -dname 'CN=Univest AutoTrade, OU=Private Android Signing, O=Univest AutoTrade, L=Bengaluru, ST=Karnataka, C=IN'
+              umask 077
+              {
+                printf 'STORE_PASS=%q\n' "$STORE_PASS"
+                printf 'KEY_PASS=%q\n' "$KEY_PASS"
+                printf 'KEY_ALIAS=%q\n' "$KEY_ALIAS"
+              } > "$CREDS"
+            fi
+            chmod 600 "$KEYSTORE" "$CREDS"
+            source "$CREDS"
+
+            APK="$(find "$SRC/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*.apk' | head -1)"
+            test -n "$APK" && test -s "$APK"
+            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign               --ks "$KEYSTORE"               --ks-pass env:STORE_PASS               --ks-key-alias "$KEY_ALIAS"               --key-pass env:KEY_PASS               --v1-signing-enabled true               --v2-signing-enabled true               --v3-signing-enabled true               --out "$OUT/Univest-AutoTrade-v2.2.0-SIGNED.apk"               "$RUNNER_TEMP/aligned.apk"
+
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OUT/Univest-AutoTrade-v2.2.0-SIGNED.apk" | tee "$OUT/APK-SIGNATURE.txt"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT/Univest-AutoTrade-v2.2.0-SIGNED.apk" | tee "$OUT/APK-BADGING.txt"
+            grep -q "package: name='com.suhas.multyfideliverybuy'" "$OUT/APK-BADGING.txt"
+            grep -q "versionCode='220'" "$OUT/APK-BADGING.txt"
+            grep -q "versionName='2.2.0'" "$OUT/APK-BADGING.txt"
+            sha256sum "$OUT/Univest-AutoTrade-v2.2.0-SIGNED.apk" | tee "$OUT/APK-SHA256.txt"
+
+            (cd "$SRC" && zip -qr "$OUT/Univest-AutoTrade-v2.2.0-source.zip" . -x '*/build/*' '.gradle/*' '*.jks' '*.keystore' '*credentials.env')
+            unzip -t "$OUT/Univest-AutoTrade-v2.2.0-source.zip" >/dev/null
+
+            CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$OUT/APK-SIGNATURE.txt" | head -1)"
+            {
+              echo "Univest AutoTrade v2.2.0 build: SUCCESS"
+              echo "package=com.suhas.multyfideliverybuy"
+              echo "versionCode=220"
+              echo "versionName=2.2.0"
+              echo "sourcePackage=com.univest.capp"
+              echo "product=NSE CASH / CNC DELIVERY ONLY"
+              echo "notificationDuplicateExecutionGate=removed"
+              echo "backInRangeBrokerFlat=INR 20000 missed initial entry"
+              echo "backInRangeHoldingExists=INR 5000 add"
+              echo "averaging=INR 5000 at -2/-4/-6 percent, max 3, initial fill anchor"
+              echo "signingCertificateSHA256=$CERT"
+              echo "signingIdentityStorage=private repository"
+            } > "$OUT/Univest-AutoTrade-v2.2.0-build-report.txt"
+          )
+          RC=$?
+          if [ "$RC" -eq 0 ]; then
+            echo SUCCESS > "$STATUS"
+          else
+            echo "FAILURE rc=$RC" > "$STATUS"
+          fi
+
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add -f .release/univest-v220-final .signing/univest-v220-persistent
+          git commit -m "Store Univest v2.2 signed release and private signing identity" || true
+          git push origin HEAD:main
+          exit "$RC"
