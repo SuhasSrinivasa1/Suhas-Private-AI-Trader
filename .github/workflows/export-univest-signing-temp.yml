@@ -1,0 +1,27 @@
+name: Export Univest Signing Material Temporarily
+
+on:
+  push:
+    paths:
+      - '.github/workflows/export-univest-signing-temp.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e416b4488f27577d9463e86a6295cdccd89ca0b5
+      - name: Verify signing files
+        run: |
+          test -s .private-signing/univest-v200-final/univest-signing.p12
+          test -s .private-signing/univest-v200-final/password.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: univest-signing-temp
+          retention-days: 1
+          path: |
+            .private-signing/univest-v200-final/univest-signing.p12
+            .private-signing/univest-v200-final/password.txt
