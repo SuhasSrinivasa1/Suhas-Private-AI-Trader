@@ -3,20 +3,21 @@ Daemon will be stopped at the end of the build
 > Task :app:clean UP-TO-DATE
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:checkReleaseAarMetadata
 > Task :app:javaPreCompileRelease
+> Task :app:checkReleaseAarMetadata
 > Task :app:generateReleaseResValues
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources
 > Task :app:createReleaseCompatibleScreenManifests
 > Task :app:extractDeepLinksRelease
-> Task :app:processReleaseMainManifest
 > Task :app:mergeReleaseResources
-> Task :app:processReleaseManifest
+> Task :app:processReleaseMainManifest
 > Task :app:packageReleaseResources
-> Task :app:processReleaseManifestForPackage
+> Task :app:parseReleaseLocalResources
+> Task :app:processReleaseManifest
 > Task :app:preReleaseUnitTestBuild UP-TO-DATE
 > Task :app:javaPreCompileReleaseUnitTest
+> Task :app:processReleaseManifestForPackage
 > Task :app:processReleaseJavaRes NO-SOURCE
 > Task :app:processReleaseUnitTestJavaRes NO-SOURCE
 > Task :app:extractProguardFiles
@@ -26,7 +27,6 @@ Daemon will be stopped at the end of the build
 > Task :app:extractReleaseNativeSymbolTables NO-SOURCE
 > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
 > Task :app:checkReleaseDuplicateClasses
-> Task :app:parseReleaseLocalResources
 > Task :app:desugarReleaseFileDependencies
 > Task :app:mergeReleaseStartupProfile
 > Task :app:mergeExtDexRelease
@@ -35,15 +35,13 @@ Daemon will be stopped at the end of the build
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets
-> Task :app:compressReleaseAssets
-> Task :app:extractReleaseVersionControlInfo
 > Task :app:processReleaseResources
-> Task :app:mergeReleaseJavaResource
+> Task :app:compressReleaseAssets
 
 > Task :app:compileReleaseJavaWithJavac
 
-> Task :app:bundleReleaseClassesToCompileJar
 > Task :app:bundleReleaseClassesToRuntimeJar
+> Task :app:bundleReleaseClassesToCompileJar
 > Task :app:compileReleaseUnitTestJavaWithJavac
 > Task :app:testReleaseUnitTest
 > Task :app:generateReleaseLintVitalReportModel
@@ -51,6 +49,8 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeDexRelease
 > Task :app:mergeReleaseGlobalSynthetics
 > Task :app:compileReleaseArtProfile
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:mergeReleaseJavaResource
 > Task :app:optimizeReleaseResources
 > Task :app:collectReleaseDependencies
 > Task :app:sdkReleaseDependencyData
@@ -62,7 +62,7 @@ Daemon will be stopped at the end of the build
 > Task :app:lintVitalReportRelease
 > Task :app:lintVitalRelease
 > Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1790854549024.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1790868529590.json
 
-BUILD SUCCESSFUL in 43s
+BUILD SUCCESSFUL in 37s
 48 actionable tasks: 47 executed, 1 up-to-date

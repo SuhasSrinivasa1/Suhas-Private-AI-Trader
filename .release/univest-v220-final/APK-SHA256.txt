@@ -1,1 +1,1 @@
-cf606ed51b0c19ea2de7e16f8b8593e5fca6fd565ae2847fd3c2797dbda28cd7  /home/runner/work/Suhas-Private-AI-Trader/Suhas-Private-AI-Trader/.release/univest-v220-final/Univest-AutoTrade-v2.2.0-SIGNED.apk
+53459f428bfbc4443f55430da45c002f7ebfeb62c9a30a0fa5c52c6ddd07de2f  /home/runner/work/Suhas-Private-AI-Trader/Suhas-Private-AI-Trader/.release/univest-v220-final/Univest-AutoTrade-v2.2.0-SIGNED.apk
