@@ -1,0 +1,181 @@
+name: Build Multyfi V3.0.1 Groww Auth Update
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-v301-auth-update:
+    if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Apply V3.0.1 Groww authentication UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt')
+          s = p.read_text()
+
+          s = s.replace('        setTextColor(text)\n', '        setTextColor(this@MainActivity.text)\n', 1)
+          s = s.replace('        singleLine = true\n', '        setSingleLine(true)\n', 1)
+
+          s = s.replace(
+              '        s.addView(statusRow("Groww API", if (groww) "LIVE" else if (repo.accessToken().isBlank()) "NOT CONFIGURED" else "VALIDATION REQUIRED", if (groww) true else false))\n',
+              '''        s.addView(statusRow("Groww API", when {\n            groww -> "LIVE"\n            repo.accessToken().isNotBlank() -> "VALIDATION REQUIRED"\n            repo.growwCredentialsConfigured() -> "CONNECT REQUIRED"\n            else -> "NOT CONFIGURED"\n        }, if (groww) true else false))\n'''
+          )
+
+          start = s.index('        sectionTitle("Groww API",')
+          end = s.index('        sectionTitle("Static IP",', start)
+          new_settings = '''        sectionTitle(\n            "Groww API",\n            "Use the two Groww credentials you actually have. API Key + API Secret uses Groww's approval/checksum flow. TOTP users can instead use TOTP Token + TOTP Secret. The app creates the temporary access token itself."\n        )\n        val apiKey = editField(\n            if (repo.apiKey().isBlank()) "API Key / TOTP Token" else "Credential 1 configured — paste only to replace",\n            password = true\n        )\n        val apiSecret = editField(\n            if (repo.apiSecret().isBlank()) "API Secret / TOTP Secret" else "Credential 2 configured — paste only to replace",\n            password = true\n        )\n        addCard(apiKey, bottom = 8)\n        addCard(apiSecret, bottom = 10)\n\n        val authHint = cardBox(14, purpleSoft)\n        authHint.addView(t("Your setup: API Key + API Secret", 14f, purple, true))\n        authHint.addView(t("Enter those two values and tap Connect • Key + Secret. Groww may require the day's approval on its Cloud API Keys page before token generation succeeds.", 12f, text).apply { setPadding(0, dp(5), 0, 0) })\n        addCard(authHint, bottom = 10)\n\n        val growwButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }\n        growwButtons.addView(\n            secondaryButton("Connect • Key + Secret") {\n                connectGrowwAsync(apiKey.text.toString(), apiSecret.text.toString(), "APPROVAL")\n            },\n            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)\n        )\n        growwButtons.addView(\n            primaryButton("Connect • TOTP") {\n                connectGrowwAsync(apiKey.text.toString(), apiSecret.text.toString(), "TOTP")\n            },\n            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) }\n        )\n        content.addView(growwButtons)\n        content.addView(spacer(12))\n\n        val token = editField(\n            if (repo.accessToken().isBlank()) "Optional existing Access Token" else "Access Token configured — paste only to replace",\n            password = true\n        )\n        addCard(token, bottom = 8)\n        addCard(secondaryButton("Validate Existing Access Token") {\n            val entered = token.text.toString().trim()\n            if (entered.isNotBlank()) repo.saveAccessToken(entered)\n            validateGrowwAsync()\n        }, bottom = 20)\n\n'''
+          s = s[:start] + new_settings + s[end:]
+
+          s = s.replace(
+              '''            if (token.text.toString().trim().isNotBlank()) repo.saveAccessToken(token.text.toString())\n            if (apiKey.text.toString().trim().isNotBlank()) repo.saveApiKey(apiKey.text.toString())\n            repo.saveWhitelistIp(ip.text.toString())\n''',
+              '''            if (token.text.toString().trim().isNotBlank()) repo.saveAccessToken(token.text.toString())\n            if (apiKey.text.toString().trim().isNotBlank()) repo.saveApiKey(apiKey.text.toString())\n            if (apiSecret.text.toString().trim().isNotBlank()) repo.saveApiSecret(apiSecret.text.toString())\n            repo.saveWhitelistIp(ip.text.toString())\n'''
+          )
+
+          ms = s.index('    private fun generateTokenAsync(')
+          me = s.index('    private fun detectIpAsync()', ms)
+          connect_method = '''    private fun connectGrowwAsync(keyEntered: String, secretEntered: String, mode: String) {\n        if (keyEntered.isNotBlank()) repo.saveApiKey(keyEntered)\n        if (secretEntered.isNotBlank()) repo.saveApiSecret(secretEntered)\n\n        val key = repo.apiKey()\n        val secret = repo.apiSecret()\n        if (key.isBlank() || secret.isBlank()) {\n            toast("Enter both Groww credential values first")\n            return\n        }\n\n        val isTotp = mode.equals("TOTP", true)\n        toast(if (isTotp) "Generating Groww token with TOTP…" else "Generating Groww token with Key + Secret…")\n        worker.execute {\n            runCatching {\n                if (isTotp) GrowwClient.generateAccessTokenWithTotp(key, secret)\n                else GrowwClient.generateAccessTokenWithApproval(key, secret)\n            }.onSuccess { access ->\n                repo.saveAccessToken(access)\n                val ok = GrowwClient.validateAccessToken(access)\n                if (ok) {\n                    repo.markGrowwValidated()\n                    repo.logActivity(\n                        "SYSTEM",\n                        "Groww API connected",\n                        if (isTotp) "Access token generated from TOTP credentials and Groww user profile validation succeeded."\n                        else "Access token generated from API key + secret approval flow and Groww user profile validation succeeded."\n                    )\n                } else {\n                    repo.clearGrowwValidation()\n                }\n                runOnUiThread {\n                    toast(if (ok) "Groww connected and validated" else "Token generated; validation failed")\n                    showSettings()\n                }\n            }.onFailure { e ->\n                repo.clearGrowwValidation()\n                repo.logActivity("SYSTEM", "Groww authentication failed", e.message ?: "Groww authentication failed", "WARN")\n                runOnUiThread {\n                    val prefix = if (isTotp) "TOTP connection failed" else "Key + Secret connection failed"\n                    val suffix = if (isTotp) " — check the TOTP token and TOTP secret" else " — complete Groww's daily approval, then retry"\n                    toast("$prefix$suffix")\n                }\n            }\n        }\n    }\n\n'''
+          s = s[:ms] + connect_method + s[me:]
+          s = s.replace('repo.logActivity("SYSTEM", "Groww API validated", "Live quote authentication succeeded.")', 'repo.logActivity("SYSTEM", "Groww API validated", "Groww user profile authentication succeeded.")')
+          s = s.replace('repo.logActivity("SYSTEM", "Groww validation failed", "The access token could not fetch a live quote.", "WARN")', 'repo.logActivity("SYSTEM", "Groww validation failed", "The access token could not validate the Groww user profile.", "WARN")')
+          p.write_text(s)
+          PY
+
+          grep -q 'Connect • Key + Secret' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          grep -q 'API Secret / TOTP Secret' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+          ! grep -q 'Current 6-digit TOTP' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/MainActivity.kt
+
+      - name: Verify source version
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 301' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'versionName = "3.0.1"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'generateAccessTokenWithApproval' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/GrowwClient.kt
+          grep -q 'apiSecret' Multyfi_Intraday_Mobile_V3_0/app/src/main/java/com/multyfi/intraday/mobile/AppRepository.kt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        run: gradle --no-daemon --console=plain clean assembleRelease
+
+      - name: Restore original V3 update signing key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/multyfi-v3-signing
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10109117099/zip" \
+            -o /tmp/multyfi-v3-signing/previous.zip
+          unzip -j /tmp/multyfi-v3-signing/previous.zip \
+            'Multyfi-Intraday-V3-Update-Key.jks' \
+            'SIGNING-PASSWORD.txt' \
+            'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
+            -d /tmp/multyfi-v3-signing
+          test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
+          test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
+          test -s /tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk
+
+      - name: Sign and verify V3.0.1 update
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.1-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED_UPDATE.apk'
+          KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
+          PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
+          OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
+
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+
+          test -s "$UNSIGNED"
+          "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-pass pass:"$PASS" \
+            --key-pass pass:"$PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$SIGNED" "$ALIGNED"
+
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
+          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+
+          OLD_CERT="$("$APKSIGNER" verify --print-certs "$OLD_APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          NEW_CERT="$("$APKSIGNER" verify --print-certs "$SIGNED" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          test -n "$OLD_CERT"
+          test -n "$NEW_CERT"
+          test "$OLD_CERT" = "$NEW_CERT"
+          printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
+
+          grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
+          grep -q "versionCode='301'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.1'" out/APK-BADGING.txt
+          grep -q "application-label:'Multyfi Intraday'" out/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
+          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
+          sha256sum "$SIGNED" | tee out/SHA256.txt
+
+      - name: Upload verified V3.0.1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-Intraday-Mobile-V3.0.1-GROWW-AUTH-UPDATE
+          path: |
+            Multyfi_Intraday_Mobile_V3_0/out/Multyfi_Intraday_Mobile_V3_0_1_SIGNED_UPDATE.apk
+            Multyfi_Intraday_Mobile_V3_0/out/APK-SIGNATURE-VERIFY.txt
+            Multyfi_Intraday_Mobile_V3_0/out/APK-BADGING.txt
+            Multyfi_Intraday_Mobile_V3_0/out/ZIPALIGN-VERIFY.txt
+            Multyfi_Intraday_Mobile_V3_0/out/ZIP-INTEGRITY.txt
+            Multyfi_Intraday_Mobile_V3_0/out/UPDATE-SIGNER-MATCH.txt
+            Multyfi_Intraday_Mobile_V3_0/out/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
