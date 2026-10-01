@@ -1,0 +1,1760 @@
+{
+  "source": "Complete Trading System Master Handbook",
+  "date": "2026-09-24",
+  "strategies": [
+    {
+      "rank": 1,
+      "name": "Value + Momentum + Quality Multi-Factor",
+      "family": "Multi-factor equities",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Rank liquid stocks on valuation, intermediate-term momentum, and quality/profitability; buy the strongest combined scores and rebalance on a fixed schedule.",
+      "failure_modes": "Factor crowding, value traps, momentum reversals, turnover and unintended sector bets."
+    },
+    {
+      "rank": 2,
+      "name": "Diversified Time-Series Momentum / Managed Futures",
+      "family": "Trend following",
+      "horizon": "Weeks-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Go long assets with positive medium-term own-price trends and short assets with negative trends across equity indexes, bonds, FX and commodities; volatility-scale positions.",
+      "failure_modes": "Whipsaw in range-bound markets, sudden trend reversals, leverage and futures-roll costs."
+    },
+    {
+      "rank": 3,
+      "name": "Cross-Sectional Momentum",
+      "family": "Equity factor",
+      "horizon": "3-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Buy recent relative winners and underweight/short recent losers, usually skipping the most recent month to reduce reversal contamination.",
+      "failure_modes": "Momentum crashes after sharp rebounds; high turnover and crowding."
+    },
+    {
+      "rank": 4,
+      "name": "Quality + Value",
+      "family": "Multi-factor equities",
+      "horizon": "6-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Buy profitable, conservatively financed companies only when valuation is attractive relative to peers/history.",
+      "failure_modes": "Can lag expensive growth-led markets; accounting comparability and cyclicality matter."
+    },
+    {
+      "rank": 5,
+      "name": "Risk-Parity Core + Trend Overlay",
+      "family": "Portfolio",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Risk-balance major asset classes, then overlay trend signals to cut or reverse exposures when persistent downtrends appear.",
+      "failure_modes": "Model risk, leverage, bond-equity correlation shifts, whipsaw."
+    },
+    {
+      "rank": 6,
+      "name": "Carry + Trend",
+      "family": "Cross-asset",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Harvest positive carry only when price trend is not strongly adverse; size by volatility and diversify across FX, bonds, commodities and credit.",
+      "failure_modes": "Carry crashes during funding/liquidity stress; correlation spikes."
+    },
+    {
+      "rank": 7,
+      "name": "Low-Beta + Quality",
+      "family": "Defensive equity",
+      "horizon": "6-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Favor low-beta/low-volatility companies with robust profitability and balance sheets; diversify by sector.",
+      "failure_modes": "Can become rate-sensitive or valuation-expensive; leverage is sometimes needed for market-neutral BAB implementations."
+    },
+    {
+      "rank": 8,
+      "name": "Multi-Asset Value + Momentum",
+      "family": "Cross-asset factor",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Within asset classes, combine cheap-versus-expensive measures with relative/absolute momentum and diversify globally.",
+      "failure_modes": "Signal definition differs by asset class; implementation and financing costs matter."
+    },
+    {
+      "rank": 9,
+      "name": "Gross-Profitability / Quality Premium",
+      "family": "Equity factor",
+      "horizon": "6-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Rank firms by gross profits-to-assets and related profitability measures; favor highly profitable firms, ideally with valuation controls.",
+      "failure_modes": "Accounting distortions, sector biases, quality becoming overpriced."
+    },
+    {
+      "rank": 10,
+      "name": "Betting Against Beta (BAB)",
+      "family": "Market-neutral",
+      "horizon": "3-12 months",
+      "evidence": "A",
+      "scale": "Institutional",
+      "core_rule": "Go long lower-beta assets and short higher-beta assets, scaling each side toward comparable beta exposure.",
+      "failure_modes": "Leverage/funding risk, shorting costs, model instability, crowding."
+    },
+    {
+      "rank": 11,
+      "name": "Post-Earnings-Announcement Drift (PEAD)",
+      "family": "Event / earnings",
+      "horizon": "Days-3 months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "After large earnings surprises, trade in the direction of the surprise when price/volume confirmation and liquidity are strong.",
+      "failure_modes": "Gap risk, fast information incorporation, transaction costs, crowding."
+    },
+    {
+      "rank": 12,
+      "name": "Earnings-Revisions Momentum",
+      "family": "Fundamental",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Buy stocks with broad upward analyst estimate revisions and improving forward earnings; avoid deteriorating revisions.",
+      "failure_modes": "Consensus herding, stale estimates, sudden guidance reversals."
+    },
+    {
+      "rank": 13,
+      "name": "Dual Momentum",
+      "family": "Tactical allocation",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Use relative momentum to select the strongest risky asset and absolute momentum to move defensive/cash when the winner has a negative trend.",
+      "failure_modes": "Whipsaw, concentration, tax/turnover effects."
+    },
+    {
+      "rank": 14,
+      "name": "Crisis Trend / Defensive Managed Futures",
+      "family": "Crisis alpha",
+      "horizon": "Weeks-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Run diversified trend signals with strict volatility targeting and enough short capability to profit from sustained Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 7 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026 equity, rate, FX or commodity declines.",
+      "failure_modes": "No guarantee of crisis protection; abrupt V-shaped reversals can hurt."
+    },
+    {
+      "rank": 15,
+      "name": "Quality GARP",
+      "family": "Fundamental equity",
+      "horizon": "6-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Select high-ROIC, durable-growth firms only when growth- adjusted valuation is sensible; require positive earnings/price momentum.",
+      "failure_modes": "Growth disappointments, narrative bias, valuation multiple compression."
+    },
+    {
+      "rank": 16,
+      "name": "Short-Term Reversal with Liquidity Filter",
+      "family": "Mean reversion",
+      "horizon": "1-10 days",
+      "evidence": "A",
+      "scale": "Medium",
+      "core_rule": "Buy recent sharp losers and sell/avoid sharp winners only when the move appears liquidity-driven rather than information-driven.",
+      "failure_modes": "Catching genuine news-driven moves; adverse selection; high costs."
+    },
+    {
+      "rank": 17,
+      "name": "Pairs Trading / Relative-Value Mean Reversion",
+      "family": "Statistical arbitrage",
+      "horizon": "Days-months",
+      "evidence": "A",
+      "scale": "Medium",
+      "core_rule": "Match economically similar or historically co-moving securities; trade temporary spread divergence and exit on convergence or structural break.",
+      "failure_modes": "Relationship breakdown, short borrow, transaction costs, crowded signals. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 8 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026"
+    },
+    {
+      "rank": 18,
+      "name": "Merger Arbitrage Basket",
+      "family": "Event-driven",
+      "horizon": "Weeks-months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "After announced cash/stock deals, buy targets at a spread to consideration and hedge acquirer/market exposures where appropriate across a diversified basket.",
+      "failure_modes": "Large left-tail losses on broken deals, legal/regulatory uncertainty, crowded trades."
+    },
+    {
+      "rank": 19,
+      "name": "Cash-Secured Index PutWrite",
+      "family": "Options income",
+      "horizon": "1-2 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Hold cash/T-bills and systematically sell fully collateralized broad-index puts under strict exposure limits.",
+      "failure_modes": "Crash convexity, gap risk, volatility clustering; returns can resemble selling insurance."
+    },
+    {
+      "rank": 20,
+      "name": "Covered-Call / BuyWrite Overlay",
+      "family": "Options income",
+      "horizon": "1-2 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Own diversified equities and systematically sell calls on part of the exposure; use dynamic coverage when valuations/volatility are elevated.",
+      "failure_modes": "Strong bull-market underperformance, downside remains substantial, tax/roll costs."
+    },
+    {
+      "rank": 21,
+      "name": "12-Month Time-Series Momentum",
+      "family": "Trend",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Use trailing 12-month excess return sign as a directional signal with monthly rebalance and volatility scaling.",
+      "failure_modes": "Signal lag and reversal risk."
+    },
+    {
+      "rank": 22,
+      "name": "6-Month Time-Series Momentum",
+      "family": "Trend",
+      "horizon": "Weeks-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Use 6-month trend direction; combine with 12-month signal to reduce dependence on one lookback.",
+      "failure_modes": "More whipsaw and turnover than slower trend."
+    },
+    {
+      "rank": 23,
+      "name": "Donchian Channel Breakout",
+      "family": "Trend breakout",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Enter on N-day highs/lows; trail exits with opposite-channel or volatility stop.",
+      "failure_modes": "False breakouts and gap slippage."
+    },
+    {
+      "rank": 24,
+      "name": "Moving-Average Trend Filter",
+      "family": "Trend",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Hold long when price is above a slow moving average; reduce, hedge or reverse when below; use multiple horizons.",
+      "failure_modes": "Late exits/entries; sideways-market whipsaw. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 10 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026"
+    },
+    {
+      "rank": 25,
+      "name": "Volatility-Scaled Trend Following",
+      "family": "Trend / risk control",
+      "horizon": "Weeks-months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Apply trend signals but scale notional inversely to recent volatility; cap gross and single-market risk.",
+      "failure_modes": "Volatility can jump faster than the estimator adjusts."
+    },
+    {
+      "rank": 26,
+      "name": "Trend + Pullback Entry",
+      "family": "Tactical trend",
+      "horizon": "Days-weeks",
+      "evidence": "C",
+      "scale": "Medium",
+      "core_rule": "Trade only in the direction of a higher-timeframe trend, entering after controlled pullbacks to support/mean rather than chasing extensions.",
+      "failure_modes": "Pullback can become reversal; subjective support definitions if not systematized."
+    },
+    {
+      "rank": 27,
+      "name": "Volatility-Contraction Breakout",
+      "family": "Breakout",
+      "horizon": "Days-weeks",
+      "evidence": "C",
+      "scale": "Medium",
+      "core_rule": "Identify tight price ranges / declining realized volatility, then enter on range expansion with volume and trend confirmation.",
+      "failure_modes": "News gaps, fake breakouts, parameter sensitivity."
+    },
+    {
+      "rank": 28,
+      "name": "52-Week-High Momentum",
+      "family": "Momentum",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Favor stocks trading near their 52-week highs with strong breadth and liquidity; avoid parabolic/illiquid names.",
+      "failure_modes": "Crowding, crash exposure, valuation blindness."
+    },
+    {
+      "rank": 29,
+      "name": "Residual Momentum",
+      "family": "Momentum",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Rank momentum after removing broad market/sector- factor components; buy residual winners.",
+      "failure_modes": "Model instability, higher data/estimation burden."
+    },
+    {
+      "rank": 30,
+      "name": "Industry Momentum",
+      "family": "Momentum",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Overweight industries with strong medium-term relative returns; select quality leaders within winning industries.",
+      "failure_modes": "Sector rotation can reverse abruptly."
+    },
+    {
+      "rank": 31,
+      "name": "Sector Rotation by Relative Strength",
+      "family": "Tactical allocation",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Rank sectors on risk-adjusted momentum; allocate to leaders with a broad-market trend filter.",
+      "failure_modes": "Concentration and rapid regime shifts."
+    },
+    {
+      "rank": 32,
+      "name": "Commodity Trend Basket",
+      "family": "Managed futures",
+      "horizon": "Weeks-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Apply trend signals across energy, metals and agriculture with volatility targeting and position caps. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 12 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Limit moves, roll costs, geopolitical gaps."
+    },
+    {
+      "rank": 33,
+      "name": "FX Trend Basket",
+      "family": "Managed futures",
+      "horizon": "Weeks-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Trade liquid currency forwards/futures in direction of medium-term trends, diversified across pairs.",
+      "failure_modes": "Central-bank intervention, funding costs, crowded USD exposures."
+    },
+    {
+      "rank": 34,
+      "name": "Rates/Bond Trend Basket",
+      "family": "Managed futures",
+      "horizon": "Weeks-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Trade government bond futures using multi-horizon trend and volatility scaling.",
+      "failure_modes": "Policy shocks, convexity effects, liquidity differences across contracts."
+    },
+    {
+      "rank": 35,
+      "name": "Economic-Trend Confirmation",
+      "family": "Macro trend",
+      "horizon": "Months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Combine price trend with persistent macro fundamentals (inflation, growth, policy) to require aligned direction before taking large positions.",
+      "failure_modes": "Data revisions, lagging macro indicators, model complexity."
+    },
+    {
+      "rank": 36,
+      "name": "Classic Value (Book-to-Market)",
+      "family": "Value",
+      "horizon": "12-60 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Buy diversified high book-to-market stocks, ideally with quality and momentum safeguards.",
+      "failure_modes": "Intangible-heavy businesses weaken book value; value traps and long droughts."
+    },
+    {
+      "rank": 37,
+      "name": "Earnings-Yield Value",
+      "family": "Value",
+      "horizon": "12-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Rank by earnings/price or normalized earnings yield relative to sector/history; avoid highly cyclical peak earnings.",
+      "failure_modes": "Accounting quality and cyclicality."
+    },
+    {
+      "rank": 38,
+      "name": "Free-Cash-Flow Yield",
+      "family": "Value",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Favor firms with high sustainable FCF yield, strong conversion and manageable leverage.",
+      "failure_modes": "Capex cycles, one-off working-capital distortions."
+    },
+    {
+      "rank": 39,
+      "name": "EV/EBITDA Value",
+      "family": "Value",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Compare enterprise-value multiples within industries; favor cheaper firms with stable margins and balance sheets.",
+      "failure_modes": "Ignores capex intensity and working capital; sector Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 14 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026 comparability needed."
+    },
+    {
+      "rank": 40,
+      "name": "Shareholder Yield",
+      "family": "Value / capital",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Rank by dividends + net buybacks + net debt reduction, combined with quality filters.",
+      "failure_modes": "Buybacks can be poorly timed; leverage-financed repurchases."
+    },
+    {
+      "rank": 41,
+      "name": "Dividend Quality",
+      "family": "Defensive value",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Prefer sustainable dividend growers with high coverage, stable cash flow and prudent payout ratios.",
+      "failure_modes": "Rate sensitivity and dividend cuts."
+    },
+    {
+      "rank": 42,
+      "name": "Quality Minus Junk (Long-Biased)",
+      "family": "Quality",
+      "horizon": "12-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Overweight firms that are profitable, safe, growing and well managed; underweight weak-quality firms.",
+      "failure_modes": "Quality can become expensive and crowded."
+    },
+    {
+      "rank": 43,
+      "name": "ROIC / Economic-Profit Quality",
+      "family": "Quality",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Favor high and stable return-on-invested-capital firms with reinvestment runway and sensible valuation.",
+      "failure_modes": "ROIC normalization is industry-specific; acquisition accounting can distort."
+    },
+    {
+      "rank": 44,
+      "name": "Low Accruals",
+      "family": "Accounting quality",
+      "horizon": "6-24 months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Prefer earnings backed by cash flows; avoid firms with unusually high accruals relative to assets/sales.",
+      "failure_modes": "Data cleaning and industry norms matter."
+    },
+    {
+      "rank": 45,
+      "name": "Conservative Investment Factor",
+      "family": "Factor equity",
+      "horizon": "12-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Favor firms with restrained asset growth/investment relative to aggressive expanders, controlling for profitability.",
+      "failure_modes": "May miss genuinely high-return growth opportunities."
+    },
+    {
+      "rank": 46,
+      "name": "Minimum-Variance Equity",
+      "family": "Defensive factor",
+      "horizon": "12-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Optimize a diversified equity portfolio for lower forecast variance with constraints on sector and turnover.",
+      "failure_modes": "Optimizer instability, concentration, factor crowding."
+    },
+    {
+      "rank": 47,
+      "name": "Low-Volatility Screen",
+      "family": "Defensive factor",
+      "horizon": "6-24 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Select stocks with low realized volatility/beta and adequate liquidity; rebalance slowly. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 16 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Can become expensive and rate-sensitive."
+    },
+    {
+      "rank": 48,
+      "name": "Quality + Low Volatility",
+      "family": "Defensive quality",
+      "horizon": "12-36 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Select low-volatility stocks only if profitability, leverage and earnings stability also pass thresholds.",
+      "failure_modes": "Can underperform speculative rallies."
+    },
+    {
+      "rank": 49,
+      "name": "Value + Low Volatility",
+      "family": "Defensive value",
+      "horizon": "12-36 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Buy relatively cheap low-volatility firms with quality floors.",
+      "failure_modes": "May tilt heavily to mature sectors."
+    },
+    {
+      "rank": 50,
+      "name": "Quality + Momentum",
+      "family": "Growth-at-",
+      "horizon": "3-24 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Own high-quality firms only when price and/or earnings momentum confirms; exit on sustained deterioration.",
+      "failure_modes": "Can overpay for crowded winners; momentum crash risk."
+    },
+    {
+      "rank": 51,
+      "name": "FX Carry Basket",
+      "family": "Carry",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Long higher-yielding currencies and short lower-yielding currencies with diversification and volatility caps.",
+      "failure_modes": "Sharp deleveraging, funding crises and policy shifts."
+    },
+    {
+      "rank": 52,
+      "name": "FX Carry + Momentum Filter",
+      "family": "Carry + trend",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Take carry trades only when exchange-rate trend is not strongly against the position.",
+      "failure_modes": "May exit late and re-enter after reversals."
+    },
+    {
+      "rank": 53,
+      "name": "Commodity Carry / Curve Roll",
+      "family": "Carry",
+      "horizon": "1-6 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Prefer commodity futures with favorable term-structure carry (e.g., backwardation) and avoid adverse roll, with trend confirmation.",
+      "failure_modes": "Curve can change fast; storage/seasonality effects."
+    },
+    {
+      "rank": 54,
+      "name": "Bond Carry + Roll-Down",
+      "family": "Fixed income",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "Institutional",
+      "core_rule": "Hold positions where yield-curve shape provides positive carry and roll-down, while hedging major duration risks when possible.",
+      "failure_modes": "Rate shocks, curve regime change, leverage."
+    },
+    {
+      "rank": 55,
+      "name": "Credit Carry with Trend/Risk Filter",
+      "family": "Credit",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Own diversified credit spread exposure when carry is attractive and macro/trend conditions are not deteriorating.",
+      "failure_modes": "Gap/default risk, liquidity freezes, crowded exits."
+    },
+    {
+      "rank": 56,
+      "name": "Cross-Asset Carry",
+      "family": "Multi-asset",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Rank assets by carry within each class, long high-carry and short/underweight low-carry, risk-balanced across classes.",
+      "failure_modes": "Shared exposure to recession/liquidity/volatility shocks."
+    },
+    {
+      "rank": 57,
+      "name": "Value + Carry",
+      "family": "Cross-asset",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Prefer assets that are both cheap relative to fundamentals/peers and offer positive carry.",
+      "failure_modes": "Value can get cheaper; carry can mask tail risk."
+    },
+    {
+      "rank": 58,
+      "name": "Macro Regime Carry Allocation",
+      "family": "Macro",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Scale carry down when volatility, funding stress and recession risk indicators rise; restore exposure in calmer regimes. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 19 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Regime indicators can be late or overfit."
+    },
+    {
+      "rank": 59,
+      "name": "Yield-Curve Steepener/Flattener with Macro Confirmation",
+      "family": "Rates macro",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade relative changes between short and long rates based on policy, inflation and growth divergence, with bounded DV01.",
+      "failure_modes": "Policy surprises, convexity and leverage."
+    },
+    {
+      "rank": 60,
+      "name": "Global Macro Multi-Signal",
+      "family": "",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Combine trend, carry, valuation and macro surprise signals across liquid futures; allocate by risk budget rather than conviction alone.",
+      "failure_modes": "Model conflict, over-complexity, hidden common exposures."
+    },
+    {
+      "rank": 61,
+      "name": "Cointegration Statistical Arbitrage",
+      "family": "Stat arb",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade stationary residuals of cointegrated security baskets rather than simple price correlations.",
+      "failure_modes": "Cointegration can break structurally; estimation error."
+    },
+    {
+      "rank": 62,
+      "name": "Sector-Neutral Mean Reversion",
+      "family": "Stat arb",
+      "horizon": "1-10 days",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Within each sector, buy abnormal short-term losers and short/underweight winners, keeping market and sector beta near neutral.",
+      "failure_modes": "Adverse selection from real news; borrow/turnover costs."
+    },
+    {
+      "rank": 63,
+      "name": "Index Futures Cash-and-Carry Basis",
+      "family": "Arbitrage",
+      "horizon": "Intraday-months",
+      "evidence": "A",
+      "scale": "Institutional",
+      "core_rule": "Trade deviations between index futures and fair value while hedging cash/index exposure.",
+      "failure_modes": "Financing, dividends, execution latency, capital and shorting constraints."
+    },
+    {
+      "rank": 64,
+      "name": "Futures Calendar-Spread Relative Value",
+      "family": "Relative value",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade unusually wide/narrow spreads between contract maturities based on storage, financing and seasonal structure.",
+      "failure_modes": "Delivery mechanics, liquidity and regime shifts."
+    },
+    {
+      "rank": 65,
+      "name": "ETF vs NAV / Basket Arbitrage",
+      "family": "Arbitrage",
+      "horizon": "Intraday",
+      "evidence": "A",
+      "scale": "Institutional",
+      "core_rule": "Exploit discrepancies between ETF price and replicating basket/NAV using creations/redemptions where authorized.",
+      "failure_modes": "Requires institutional access, inventory and fast execution."
+    },
+    {
+      "rank": 66,
+      "name": "ADR / Local-Share Relative Value",
+      "family": "Relative value",
+      "horizon": "Days-weeks",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Hedge equivalent listings across countries after adjusting FX, fees, taxes and fungibility.",
+      "failure_modes": "Capital controls, settlement mismatch, borrow, corporate actions."
+    },
+    {
+      "rank": 67,
+      "name": "Dual-Class Share Spread",
+      "family": "Relative value",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Trade abnormal pricing gaps between share classes with similar economics after accounting for voting rights and liquidity.",
+      "failure_modes": "Voting/control premiums may be persistent; borrow risk."
+    },
+    {
+      "rank": 68,
+      "name": "Closed-End Fund Discount Mean Reversion",
+      "family": "Relative value",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Buy unusually wide discounts and hedge broad asset exposure when discount mean reversion catalyst exists.",
+      "failure_modes": "Discounts can persist for years; leverage and asset opacity."
+    },
+    {
+      "rank": 69,
+      "name": "Yield-Curve Butterfly Relative Value",
+      "family": "Rates relative value",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade a middle maturity against weighted short/long maturities to isolate curvature rather than outright duration.",
+      "failure_modes": "Model/hedge errors and leverage."
+    },
+    {
+      "rank": 70,
+      "name": "Cross-Sectional Bond Relative Value",
+      "family": "Fixed income stat",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Compare bonds from same issuer/sector after adjusting duration, liquidity and optionality; long cheap/short rich.",
+      "failure_modes": "Hard-to-borrow bonds, liquidity shocks, model risk."
+    },
+    {
+      "rank": 71,
+      "name": "Short-Horizon Index Reversal",
+      "family": "Mean reversion",
+      "horizon": "Intraday-days",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Fade extreme broad-index moves only when breadth/flow indicators suggest temporary liquidity pressure rather than macro news.",
+      "failure_modes": "Catastrophic if fading a genuine regime break."
+    },
+    {
+      "rank": 72,
+      "name": "VWAP/Anchored-Mean Reversion with Trend Filter",
+      "family": "Intraday tactical",
+      "horizon": "Minutes-days",
+      "evidence": "C",
+      "scale": "Retail/Pro",
+      "core_rule": "Fade deviations from VWAP/anchored VWAP only when Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 23 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026 higher-timeframe trend is flat or supportive; avoid strong news days.",
+      "failure_modes": "Execution costs, data snooping, strong-trend losses."
+    },
+    {
+      "rank": 73,
+      "name": "Merger Arbitrage with Deal-Quality Scoring",
+      "family": "Event-driven",
+      "horizon": "Weeks-months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Score deals on financing, regulatory risk, shareholder votes, antitrust, strategic logic and spread; size by break- loss severity.",
+      "failure_modes": "Binary legal/regulatory risk and correlated deal breaks."
+    },
+    {
+      "rank": 74,
+      "name": "Spin-Off Special Situations",
+      "family": "Event-driven value",
+      "horizon": "3-24 months",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "Analyze parent/spin valuation, forced selling and management incentives; buy only when post-spin fundamentals and balance sheet are strong.",
+      "failure_modes": "Poor disclosure, leverage dumped into spin, small-cap liquidity."
+    },
+    {
+      "rank": 75,
+      "name": "Index-Reconstitution Flow Trading",
+      "family": "Event / flows",
+      "horizon": "Days-weeks",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Anticipate mechanical index additions/deletions and rebalance flows, but demand sufficient spread after costs.",
+      "failure_modes": "Crowding has reduced edge; timing rules change."
+    },
+    {
+      "rank": 76,
+      "name": "Buyback Announcement + Quality Filter",
+      "family": "Corporate event",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Favor meaningful repurchase authorizations from undervalued, cash-generative firms without leverage deterioration.",
+      "failure_modes": "Announcements may not be executed; debt-funded buybacks."
+    },
+    {
+      "rank": 77,
+      "name": "Insider-Buying Confirmation",
+      "family": "Public-information",
+      "horizon": "1-12 months",
+      "evidence": "C",
+      "scale": "Medium",
+      "core_rule": "Use legally disclosed open-market insider purchases as a secondary signal alongside valuation and quality—not as a standalone trigger.",
+      "failure_modes": "10b5-1/compensation complexity, small purchases, delayed filings."
+    },
+    {
+      "rank": 78,
+      "name": "Earnings Gap Continuation",
+      "family": "Event momentum",
+      "horizon": "Days-weeks",
+      "evidence": "B",
+      "scale": "Medium",
+      "core_rule": "After a large earnings gap, continue in gap direction only with strong volume, positive revisions and no immediate reversal.",
+      "failure_modes": "Gap exhaustion, already-priced news, overnight risk."
+    },
+    {
+      "rank": 79,
+      "name": "Guidance / Revision Acceleration",
+      "family": "Fundamental",
+      "horizon": "1-6 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Rank companies by acceleration in forward estimates, margins and guidance rather than absolute growth alone. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 25 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Analyst herding and late-cycle extrapolation."
+    },
+    {
+      "rank": 80,
+      "name": "Special-Situations Basket",
+      "family": "Event-driven",
+      "horizon": "3-18 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Diversify across tender offers, restructurings, spin-offs, asset sales and recapitalizations with explicit catalyst dates.",
+      "failure_modes": "Legal/document complexity and idiosyncratic tail events."
+    },
+    {
+      "rank": 81,
+      "name": "Distressed-to-Recovery Trend",
+      "family": "Credit/equity special",
+      "horizon": "1-12 months",
+      "evidence": "C",
+      "scale": "Institutional",
+      "core_rule": "Only enter distressed recoveries after balance-sheet catalyst plus improving price trend/liquidity, rather than bottom-fishing purely on price.",
+      "failure_modes": "Permanent impairment, dilution, bankruptcy priority issues."
+    },
+    {
+      "rank": 82,
+      "name": "Catalyst Value + Momentum",
+      "family": "Event/factor combo",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Buy undervalued quality companies with an identifiable catalyst and positive price/earnings momentum.",
+      "failure_modes": "Too restrictive can create concentration; catalyst failure."
+    },
+    {
+      "rank": 83,
+      "name": "Dynamic Covered Calls",
+      "family": "Options",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Vary call overwrite percentage/strike by implied volatility, trend and valuation instead of selling 100% ATM calls every month.",
+      "failure_modes": "Complexity and timing risk; still exposed to equity downside."
+    },
+    {
+      "rank": 84,
+      "name": "Cash-Secured PutWrite with Trend Filter",
+      "family": "Options",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Sell index puts only when collateral is sufficient and trend/stress filters permit; reduce size when volatility/funding stress spikes.",
+      "failure_modes": "Crash gaps can overwhelm filters; vol can jump overnight."
+    },
+    {
+      "rank": 85,
+      "name": "Put-Spread Premium Harvesting",
+      "family": "Options",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Sell a put and buy a farther OTM put to cap tail loss; size by maximum loss rather than premium received.",
+      "failure_modes": "Frequent small gains can mask occasional full-spread losses."
+    },
+    {
+      "rank": 86,
+      "name": "Delta-Hedged Volatility Risk Premium",
+      "family": "Options / volatility",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Sell options where implied volatility materially exceeds forecast realized volatility and dynamically hedge delta. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 27 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Gamma gaps, transaction costs, vol-of-vol and model error."
+    },
+    {
+      "rank": 87,
+      "name": "Index Dispersion Trading",
+      "family": "Options relative",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade index implied correlation versus single-stock volatility, hedging directional exposure.",
+      "failure_modes": "Complex hedging, event concentration, transaction costs."
+    },
+    {
+      "rank": 88,
+      "name": "Volatility Term-Structure Relative Value",
+      "family": "Options",
+      "horizon": "Days-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade unusually steep/inverted implied-volatility term structures while limiting event exposure.",
+      "failure_modes": "Term structure can remain dislocated; gap and vol-of-vol risk."
+    },
+    {
+      "rank": 89,
+      "name": "Skew Risk-Premium Spread",
+      "family": "Options",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "Institutional",
+      "core_rule": "Trade relative richness of downside skew using defined- risk spreads rather than naked short puts.",
+      "failure_modes": "Tail events and structural shifts in skew demand."
+    },
+    {
+      "rank": 90,
+      "name": "Collar Overlay",
+      "family": "Options risk",
+      "horizon": "1-6 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Own equities, buy downside puts and finance part of the cost by selling upside calls.",
+      "failure_modes": "Hedging cost and capped upside; not necessarily alpha- generating."
+    },
+    {
+      "rank": 91,
+      "name": "Tail Hedge + Carry Portfolio",
+      "family": "Barbell",
+      "horizon": "1-12 months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Allocate most risk to diversified carry/value/quality strategies and a small explicit budget to convex crash hedges.",
+      "failure_modes": "Tail hedges usually bleed; hedge sizing/timing is difficult."
+    },
+    {
+      "rank": 92,
+      "name": "Long-Gamma Around Known Catalysts",
+      "family": "Event volatility",
+      "horizon": "Hours-days",
+      "evidence": "C",
+      "scale": "Medium",
+      "core_rule": "Buy options only when expected realized move is plausibly underpriced relative to implied volatility and catalyst distribution.",
+      "failure_modes": "Implied volatility is often expensive; theta decay; difficult forecasting."
+    },
+    {
+      "rank": 93,
+      "name": "Passive Market Making / Liquidity Provision",
+      "family": "Microstructure",
+      "horizon": "Seconds-days",
+      "evidence": "A",
+      "scale": "Institutional",
+      "core_rule": "Quote two-sided markets around fair value, earn spread/rebates and rapidly control inventory/adverse selection.",
+      "failure_modes": "Requires infrastructure, latency, inventory models and can suffer badly in informed flow."
+    },
+    {
+      "rank": 94,
+      "name": "Order-Book Imbalance Scalping",
+      "family": "Microstructure",
+      "horizon": "Seconds-minutes",
+      "evidence": "C",
+      "scale": "Institutional",
+      "core_rule": "Use depth, queue and trade-imbalance signals to forecast very short-horizon price moves, with strict cost/latency models.",
+      "failure_modes": "Edge decays quickly; data/latency costs; spoofing/noise."
+    },
+    {
+      "rank": 95,
+      "name": "Opening-Range Breakout + Regime Filters",
+      "family": "Intraday",
+      "horizon": "Minutes-hours",
+      "evidence": "C",
+      "scale": "Retail/Pro",
+      "core_rule": "Trade break of a defined opening range only when gap, volume, breadth and higher-timeframe trend agree.",
+      "failure_modes": "False breakouts, opening slippage, news reversals."
+    },
+    {
+      "rank": 96,
+      "name": "Intraday Mean Reversion After Exhaustion",
+      "family": "Intraday",
+      "horizon": "Minutes-hours",
+      "evidence": "C",
+      "scale": "Retail/Pro",
+      "core_rule": "Fade extreme extensions only after exhaustion signals, declining momentum and defined invalidation; never average down blindly. Educational research only • No strategy guarantees profit or billionaire-level wealth • Page 30 Top 100 Trading Strategies | Research Handbook | 24 Sep 2026",
+      "failure_modes": "Strong trend days can create repeated losses."
+    },
+    {
+      "rank": 97,
+      "name": "News-Momentum with Liquidity Gate",
+      "family": "Intraday/event",
+      "horizon": "Minutes-days",
+      "evidence": "C",
+      "scale": "Institutional/Pro",
+      "core_rule": "Trade only material, machine-readable or clearly quantified news in direction of initial reaction, requiring liquidity and continuation.",
+      "failure_modes": "Headline interpretation errors, latency disadvantage, reversals."
+    },
+    {
+      "rank": 98,
+      "name": "Ensemble of Trend + Value + Carry + Quality",
+      "family": "Meta-strategy",
+      "horizon": "1-12 months",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Run independent sleeves for trend, value, carry and quality; risk-balance them and cap shared exposures.",
+      "failure_modes": "Correlations can rise in crises; governance and monitoring complexity."
+    },
+    {
+      "rank": 99,
+      "name": "Regime-Aware Multi-Strategy Allocation",
+      "family": "Meta-strategy",
+      "horizon": "Weeks-months",
+      "evidence": "B",
+      "scale": "High",
+      "core_rule": "Allocate among trend, momentum, mean reversion and carry based on market volatility, dispersion, trend strength and liquidity—using simple, pre-registered rules.",
+      "failure_modes": "High overfitting risk; regime labels can be unstable."
+    },
+    {
+      "rank": 100,
+      "name": "Risk-First Adaptive Ensemble",
+      "family": "Portfolio operating",
+      "horizon": "All horizons",
+      "evidence": "A",
+      "scale": "High",
+      "core_rule": "Combine multiple validated strategies; volatility-target each; use max-drawdown, exposure, liquidity and correlation limits; deactivate signals that fail live validation thresholds.",
+      "failure_modes": "Governance failure, hidden leverage, correlation spikes, strategy-selection bias."
+    }
+  ],
+  "candlesticks": [
+    {
+      "rank": 1,
+      "name": "Bullish Engulfing",
+      "bias": "Bullish reversal",
+      "pattern_type": "Two-candle",
+      "structure": "A bullish real body fully engulfs the prior bearish real body.",
+      "best_context": "After a decline, ideally at support or after a liquidity sweep. Close above the engulfing high, rising volume, or next-",
+      "confirmation": "candle follow-through. Weak inside ranges; can fail when the higher-timeframe",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 2,
+      "name": "Bearish Engulfing",
+      "bias": "Bearish reversal",
+      "pattern_type": "Two-candle",
+      "structure": "A bearish real body fully engulfs the prior bullish real body. After an advance, especially near resistance or an",
+      "best_context": "exhausted breakout. Close below the engulfing low, higher sell volume, or next-",
+      "confirmation": "candle continuation.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 3,
+      "name": "Hammer",
+      "bias": "Bullish reversal",
+      "pattern_type": "Single candle Small body near the high with a long lower shadow,",
+      "structure": "commonly >=2x the body.",
+      "best_context": "After a selloff or at a well-defined demand/support zone. Recovery above the hammer high and/or strong volume on",
+      "confirmation": "the rejection. A hammer in the middle of a range has little information",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 4,
+      "name": "Hanging Man",
+      "bias": "Bearish warning",
+      "pattern_type": "Single candle Hammer-shaped candle after an advance: small body high",
+      "structure": "in the range, long lower wick. After an extended rally near resistance or after a failed",
+      "best_context": "breakout. Break below its low or bearish follow-through on the next",
+      "confirmation": "candle. Requires confirmation; by itself it can also be normal",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 5,
+      "name": "Inverted Hammer",
+      "bias": "Bullish reversal",
+      "pattern_type": "Single candle Small body near the low with a long upper shadow",
+      "structure": "following a decline. After a downtrend where buyers begin probing higher",
+      "best_context": "prices. Next candle closes above its high or price reclaims nearby",
+      "confirmation": "resistance. Upper wick also shows rejection; without follow-through",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 6,
+      "name": "Shooting Star",
+      "bias": "Bearish reversal",
+      "pattern_type": "Single candle Small body near the low with a long upper shadow after a",
+      "structure": "rise. At resistance, prior swing high, gap fill, or overextended",
+      "best_context": "trend. Break below the low, bearish close, or expanding sell",
+      "confirmation": "volume.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 7,
+      "name": "Morning Star",
+      "bias": "Bullish reversal",
+      "pattern_type": "Three-candle Large bearish candle, small indecision candle, then a strong",
+      "structure": "bullish candle recovering deeply into candle one.",
+      "best_context": "After a meaningful decline near support. Third candle closes strongly; added confidence from",
+      "confirmation": "volume expansion or structure break.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 8,
+      "name": "Evening Star",
+      "bias": "Bearish reversal",
+      "pattern_type": "Three-candle Large bullish candle, small indecision candle, then strong",
+      "structure": "bearish candle closing deeply into candle one.",
+      "best_context": "After an extended advance near resistance.",
+      "confirmation": "Third candle closes weakly and breaks local support. Can fail when broader trend and flows remain strongly",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 9,
+      "name": "Morning Doji Star",
+      "bias": "Bullish reversal",
+      "pattern_type": "Three-candle Morning Star where the middle candle is a Doji,",
+      "structure": "emphasizing indecision. After a decline, particularly at strong support or an",
+      "best_context": "oversold exhaustion area.",
+      "confirmation": "Bullish third candle plus reclaim of the Doji/high. Gap conventions differ across 24-hour markets; context",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 10,
+      "name": "Evening Doji Star",
+      "bias": "Bearish reversal",
+      "pattern_type": "Three-candle",
+      "structure": "Evening Star with a Doji as the middle candle.",
+      "best_context": "After a rise near resistance or an overextended move.",
+      "confirmation": "Strong bearish third candle and loss of nearby support.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 11,
+      "name": "Piercing Line",
+      "bias": "Bullish reversal",
+      "pattern_type": "Two-candle A bearish candle is followed by a bullish candle that closes",
+      "structure": "more than halfway into the prior real body.",
+      "best_context": "Following a decline and preferably from support. Follow-through above candle-two high or a bullish",
+      "confirmation": "structure shift. Weaker if candle two barely clears the midpoint or volume",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 12,
+      "name": "Dark Cloud Cover",
+      "bias": "Bearish reversal",
+      "pattern_type": "Two-candle A bullish candle is followed by a bearish candle closing",
+      "structure": "more than halfway into the prior real body.",
+      "best_context": "After an advance near resistance.",
+      "confirmation": "Follow-through below candle-two low or loss of support.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 13,
+      "name": "Three White Soldiers",
+      "bias": "Bullish reversal / momentum",
+      "pattern_type": "Three-candle Three consecutive strong bullish candles, typically closing",
+      "structure": "near their highs with progressive advances.",
+      "best_context": "After a base, washout, or early trend reversal. Healthy volume and limited upper wicks; ideally a",
+      "confirmation": "resistance breakout. After an already extended rally it may signal late chasing",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 14,
+      "name": "Three Black Crows",
+      "bias": "Bearish reversal / momentum",
+      "pattern_type": "Three-candle Three consecutive strong bearish candles with",
+      "structure": "progressively lower closes.",
+      "best_context": "After topping action or a failed rally.",
+      "confirmation": "Breakdown of support with persistent volume. After a deep decline it may be too late and vulnerable to",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 15,
+      "name": "Bullish Harami",
+      "bias": "Bullish reversal warning",
+      "pattern_type": "Two-candle Small bullish body sits inside the prior large bearish real",
+      "structure": "body.",
+      "best_context": "After a decline where selling momentum is fading.",
+      "confirmation": "Break above the mother candle / local structure.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 16,
+      "name": "Bearish Harami",
+      "bias": "Bearish reversal warning",
+      "pattern_type": "Two-candle Small bearish body sits inside the prior large bullish real",
+      "structure": "body.",
+      "best_context": "After an advance with waning momentum.",
+      "confirmation": "Break below the mother candle or nearby support.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 17,
+      "name": "Bullish Harami Cross",
+      "bias": "Bullish reversal warning",
+      "pattern_type": "Two-candle Large bearish body followed by a Doji contained within the",
+      "structure": "prior real body.",
+      "best_context": "After a selloff at support.",
+      "confirmation": "Bullish break of the Doji/mother-candle high.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 18,
+      "name": "Bearish Harami Cross",
+      "bias": "Bearish reversal warning",
+      "pattern_type": "Two-candle",
+      "structure": "Large bullish body followed by an inside Doji.",
+      "best_context": "After a rally at resistance.",
+      "confirmation": "Bearish break of the Doji/mother-candle low.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 19,
+      "name": "Doji",
+      "bias": "Indecision",
+      "pattern_type": "Single candle Open and close are equal or nearly equal; shadows can",
+      "structure": "vary. At a key level after directional expansion, not randomly",
+      "best_context": "inside noise.",
+      "confirmation": "Direction comes from the subsequent break and context.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 20,
+      "name": "Dragonfly Doji",
+      "bias": "Potential bullish rejection",
+      "pattern_type": "Single candle Open/close near the high with a long lower shadow and",
+      "structure": "little/no upper shadow. After a decline, at support or during a downside liquidity",
+      "best_context": "sweep.",
+      "confirmation": "Break above its high and supportive volume.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 21,
+      "name": "Gravestone Doji",
+      "bias": "Potential bearish rejection",
+      "pattern_type": "Single candle",
+      "structure": "Open/close near the low with a long upper shadow. After an advance, at resistance or after an upside liquidity",
+      "best_context": "sweep.",
+      "confirmation": "Break below its low or bearish follow-through.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 22,
+      "name": "Long-Legged Doji",
+      "bias": "High indecision",
+      "pattern_type": "Single candle Doji with long upper and lower shadows, showing two-",
+      "structure": "sided rejection. Around major levels, news reactions, or volatility",
+      "best_context": "expansion. Trade the confirmed range break rather than guessing",
+      "confirmation": "direction.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 23,
+      "name": "Four-Price Doji",
+      "bias": "Extreme inactivity",
+      "pattern_type": "Single candle",
+      "structure": "Open, high, low and close are nearly the same.",
+      "best_context": "Rare; usually extremely illiquid or inactive markets. Generally no trade unless liquidity normalizes and price",
+      "confirmation": "exits the micro-range. Often reflects poor tradability rather than useful",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 24,
+      "name": "Spinning Top",
+      "bias": "Indecision / momentum loss",
+      "pattern_type": "Single candle",
+      "structure": "Small real body with meaningful upper and lower shadows.",
+      "best_context": "After an extended move or at a key decision level.",
+      "confirmation": "Next candle range break plus trend/location confirmation.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 25,
+      "name": "Bullish Marubozu",
+      "bias": "Bullish momentum",
+      "pattern_type": "Single candle",
+      "structure": "Large bullish candle with little or no wick. Breakouts, fresh trends, or strong continuation after",
+      "best_context": "consolidation. Close near high with volume expansion and room to next",
+      "confirmation": "resistance.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 26,
+      "name": "Bearish Marubozu",
+      "bias": "Bearish momentum",
+      "pattern_type": "Single candle",
+      "structure": "Large bearish candle with little or no wick.",
+      "best_context": "Breakdowns or strong continuation after consolidation.",
+      "confirmation": "Close near low with volume and clean support break.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 27,
+      "name": "Three Inside Up",
+      "bias": "Bullish reversal",
+      "pattern_type": "Three-candle Bullish Harami followed by a third bullish candle that",
+      "structure": "confirms higher.",
+      "best_context": "After a downtrend at support.",
+      "confirmation": "Third candle breaks/reclaims local resistance. Confirmation can arrive too late if reward/risk is already",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 28,
+      "name": "Three Inside Down",
+      "bias": "Bearish reversal",
+      "pattern_type": "Three-candle",
+      "structure": "Bearish Harami followed by bearish confirmation.",
+      "best_context": "After an uptrend near resistance.",
+      "confirmation": "Third candle breaks local support.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 29,
+      "name": "Three Outside Up",
+      "bias": "Bullish reversal",
+      "pattern_type": "Three-candle Bullish Engulfing followed by another bullish candle",
+      "structure": "confirming the reversal.",
+      "best_context": "After a decline or false breakdown.",
+      "confirmation": "Third candle holds above the engulfing structure.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 30,
+      "name": "Three Outside Down",
+      "bias": "Bearish reversal",
+      "pattern_type": "Three-candle Bearish Engulfing followed by another bearish",
+      "structure": "confirmation candle.",
+      "best_context": "After a rally or false upside breakout.",
+      "confirmation": "Third candle holds below the engulfing structure. Vulnerable to reversal if selling is exhausted into major",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 31,
+      "name": "Bullish Tweezer Bottom",
+      "bias": "Bullish reversal",
+      "pattern_type": "Two-candle",
+      "structure": "Two candles reject approximately the same low. At support after a decline; strongest when the second",
+      "best_context": "rejection is forceful.",
+      "confirmation": "Break above the pair high / local swing high. Approximate equal lows occur frequently; location and",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 32,
+      "name": "Bearish Tweezer Top",
+      "bias": "Bearish reversal",
+      "pattern_type": "Two-candle",
+      "structure": "Two candles reject approximately the same high.",
+      "best_context": "At resistance after an advance.",
+      "confirmation": "Break below the pair low / local swing low. Repeated highs can also become breakout pressure rather",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 33,
+      "name": "Rising Three Methods",
+      "bias": "Bullish continuation",
+      "pattern_type": "Multi-candle Strong bullish candle, several small contained pullback",
+      "structure": "candles, then another strong bullish breakout.",
+      "best_context": "Established uptrend with orderly consolidation.",
+      "confirmation": "Final candle closes above the first candle high with volume. Fails when the pullback loses the first candle low or market",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 34,
+      "name": "Falling Three Methods",
+      "bias": "Bearish continuation",
+      "pattern_type": "Multi-candle Strong bearish candle, several small contained rebound",
+      "structure": "candles, then a strong bearish continuation candle.",
+      "best_context": "Established downtrend.",
+      "confirmation": "Final candle closes below the first candle low.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 35,
+      "name": "Bullish Separating Lines",
+      "bias": "Bullish continuation",
+      "pattern_type": "Two-candle Bearish candle followed by a bullish candle opening around",
+      "structure": "the same level and pushing higher. Within an established uptrend after a brief countertrend",
+      "best_context": "candle. Strong bullish close and continuation through nearby",
+      "confirmation": "resistance.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 36,
+      "name": "Bearish Separating Lines",
+      "bias": "Bearish continuation",
+      "pattern_type": "Two-candle Bullish candle followed by a bearish candle opening around",
+      "structure": "the same level and driving lower.",
+      "best_context": "Within an established downtrend.",
+      "confirmation": "Strong bearish close and continuation through support. Less useful in continuous markets where exact opens are",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 37,
+      "name": "Bullish Belt Hold",
+      "bias": "Bullish reversal / momentum",
+      "pattern_type": "Single candle Long bullish candle that opens near its low and closes",
+      "structure": "strongly. After weakness, particularly from support or a downside",
+      "best_context": "gap rejection.",
+      "confirmation": "Hold above midpoint/high and follow-through volume.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 38,
+      "name": "Bearish Belt Hold",
+      "bias": "Bearish reversal / momentum",
+      "pattern_type": "Single candle Long bearish candle opening near its high and closing",
+      "structure": "strongly lower.",
+      "best_context": "After strength near resistance or a failed gap-up.",
+      "confirmation": "Hold below midpoint/low and follow-through selling.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 39,
+      "name": "Bullish Kicker",
+      "bias": "Sharp bullish reversal",
+      "pattern_type": "Two-candle Bearish candle followed by a dramatic bullish repricing/gap",
+      "structure": "with little overlap.",
+      "best_context": "Major catalyst or abrupt sentiment reversal. Price holds the repricing zone and continues on strong",
+      "confirmation": "volume. Event gaps can reverse violently; slippage and gap risk are",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 40,
+      "name": "Bearish Kicker",
+      "bias": "Sharp bearish reversal",
+      "pattern_type": "Two-candle",
+      "structure": "Bullish candle followed by dramatic bearish repricing/gap.",
+      "best_context": "Negative catalyst or abrupt sentiment reversal.",
+      "confirmation": "Price remains below the repricing zone and selling persists.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 41,
+      "name": "Bullish Abandoned Baby",
+      "bias": "Bullish reversal",
+      "pattern_type": "Three-candle Bearish candle, isolated Doji/gap, then strong bullish candle",
+      "structure": "leaving the Doji separated. After a pronounced decline; more textbook in markets with",
+      "best_context": "discrete sessions.",
+      "confirmation": "Strong third candle and gap/structure recovery. Rare in continuous markets; forced textbook definitions can",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 42,
+      "name": "Bearish Abandoned Baby",
+      "bias": "Bearish reversal",
+      "pattern_type": "Three-candle Bullish candle, isolated Doji/gap, then strong bearish",
+      "structure": "candle.",
+      "best_context": "After a pronounced advance.",
+      "confirmation": "Strong third candle and failure back below resistance. Rare; do not loosen definitions merely to find more",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 43,
+      "name": "Upside Tasuki Gap",
+      "bias": "Bullish continuation",
+      "pattern_type": "Three-candle Bullish gap and advance followed by a bearish candle that",
+      "structure": "partially fills but does not close the gap.",
+      "best_context": "Strong uptrend with an unfilled bullish gap.",
+      "confirmation": "Renewed move above the pullback candle high.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 44,
+      "name": "Downside Tasuki Gap",
+      "bias": "Bearish continuation",
+      "pattern_type": "Three-candle Bearish gap lower followed by a bullish candle that",
+      "structure": "partially fills but does not close the gap.",
+      "best_context": "Strong downtrend.",
+      "confirmation": "Renewed break below the rebound candle low.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 45,
+      "name": "Mat Hold",
+      "bias": "Bullish continuation",
+      "pattern_type": "Multi-candle Strong bullish expansion, controlled multi-candle pullback",
+      "structure": "that stays structurally high, then breakout to new highs.",
+      "best_context": "Strong trend where buyers absorb a shallow retracement.",
+      "confirmation": "Breakout above the initial expansion high with volume.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 46,
+      "name": "Bullish Counterattack Line",
+      "bias": "Bullish reversal",
+      "pattern_type": "Two-candle Strong bearish candle followed by bullish candle closing",
+      "structure": "near the prior close after opening weak.",
+      "best_context": "After a decline where sellers fail to extend lower.",
+      "confirmation": "Break above the bullish candle high and local resistance. Similar closes alone are not enough without",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 47,
+      "name": "Bearish Counterattack Line",
+      "bias": "Bearish reversal",
+      "pattern_type": "Two-candle Strong bullish candle followed by bearish candle closing",
+      "structure": "near the prior close after opening strong.",
+      "best_context": "After an advance where buyers fail to extend higher.",
+      "confirmation": "Break below the bearish candle low and local support. Can be a one-candle pause if trend momentum remains",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 48,
+      "name": "Bullish Pin Bar / Rejection Candle",
+      "bias": "Bullish rejection",
+      "pattern_type": "Single candle Small body with a pronounced lower wick rejecting lower",
+      "structure": "prices. At support, VWAP/EMA confluence, prior low, or false",
+      "best_context": "breakdown.",
+      "confirmation": "Close back above level and break of the pin-bar high. Repeated pin bars without structure change often mean",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 49,
+      "name": "Bearish Pin Bar / Rejection Candle",
+      "bias": "Bearish rejection",
+      "pattern_type": "Single candle Small body with a pronounced upper wick rejecting higher",
+      "structure": "prices. At resistance, prior high, VWAP/EMA confluence, or false",
+      "best_context": "breakout.",
+      "confirmation": "Close back below level and break of the pin-bar low.",
+      "false_signal_risk": ""
+    },
+    {
+      "rank": 50,
+      "name": "Inside Bar Breakout",
+      "bias": "Neutral compression -> directional breakout",
+      "pattern_type": "Two-candle The entire second candle range is contained within the",
+      "structure": "prior candle range. After impulse moves, at key levels, or during volatility",
+      "best_context": "contraction. Trade the confirmed range break in the direction supported",
+      "confirmation": "by trend/volume. False breaks are common; mother-bar range and liquidity",
+      "false_signal_risk": ""
+    }
+  ],
+  "filters": [
+    {
+      "rank": 1,
+      "name": "Primary market regime",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 2,
+      "name": "Benchmark direction",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 3,
+      "name": "Market breadth",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 4,
+      "name": "Volatility regime",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 5,
+      "name": "Opening gap condition",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 6,
+      "name": "Global cue alignment",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 7,
+      "name": "Macro/event calendar",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 8,
+      "name": "Rates, liquidity and FX context",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 9,
+      "name": "Risk-on / risk-off confirmation",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 10,
+      "name": "Time-of-day regime",
+      "group": "Market regime and cross-market context"
+    },
+    {
+      "rank": 11,
+      "name": "Sector trend",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 12,
+      "name": "Sector breadth",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 13,
+      "name": "Stock vs benchmark relative strength",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 14,
+      "name": "Stock vs sector relative strength",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 15,
+      "name": "Leadership persistence",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 16,
+      "name": "Peer confirmation",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 17,
+      "name": "Index/ETF participation",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 18,
+      "name": "Institutional-flow context",
+      "group": "Sector strength and stock leadership"
+    },
+    {
+      "rank": 19,
+      "name": "Revenue growth",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 20,
+      "name": "EPS and earnings quality",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 21,
+      "name": "Margin trend",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 22,
+      "name": "ROE / ROCE quality",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 23,
+      "name": "Free cash flow",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 24,
+      "name": "Leverage and interest coverage",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 25,
+      "name": "Promoter holding, pledging and governance",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 26,
+      "name": "Institutional ownership and revisions",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 27,
+      "name": "Valuation vs history and peers",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 28,
+      "name": "Earnings guidance and revisions",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 29,
+      "name": "Company catalyst quality",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 30,
+      "name": "Corporate-action and event risk",
+      "group": "Fundamental quality and catalysts"
+    },
+    {
+      "rank": 31,
+      "name": "Market structure",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 32,
+      "name": "Support and resistance location",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 33,
+      "name": "VWAP / anchored VWAP",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 34,
+      "name": "EMA / trend alignment",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 35,
+      "name": "Volume and relative volume",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 36,
+      "name": "ATR and range context",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 37,
+      "name": "Breakout / retest quality",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 38,
+      "name": "Gap analysis",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 39,
+      "name": "Opening range",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 40,
+      "name": "Multi-timeframe and momentum alignment",
+      "group": "Technical context and confirmation"
+    },
+    {
+      "rank": 41,
+      "name": "Liquidity and turnover gate",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 42,
+      "name": "Bid-ask spread, depth and impact cost",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 43,
+      "name": "Order type and price protection",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 44,
+      "name": "Expected slippage and total transaction cost",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 45,
+      "name": "Reward/risk and room to obstacle",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 46,
+      "name": "Position sizing from risk",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 47,
+      "name": "Stop, invalidation and exit logic",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 48,
+      "name": "Portfolio correlation and concentration",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 49,
+      "name": "Daily/weekly kill switches and drawdown throttle",
+      "group": "Execution, portfolio and risk intelligence"
+    },
+    {
+      "rank": 50,
+      "name": "No-trade and strategy-decay gate",
+      "group": "Execution, portfolio and risk intelligence"
+    }
+  ]
+}
