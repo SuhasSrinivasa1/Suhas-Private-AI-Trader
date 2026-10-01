@@ -1,3 +1,16 @@
+# PS Scanner Quant v6.7.2 — Bounded Runtime Sanity & Deep DB Verification
+
+v6.7.2 fixes the remaining post-install timeout discovered after v6.7.1. The runtime sanity endpoint is now explicitly bounded, while deep SQLite integrity remains verified through an isolated backup restore.
+
+- `/api/sanity` no longer runs `PRAGMA quick_check` inline against the live production database.
+- Runtime integrity queries use a SQLite progress handler with a 1.5-second wall-clock budget and short lock timeouts.
+- Deep database verification is still required: backup → isolated restore → `PRAGMA quick_check` → required-table verification.
+- The validator reuses a verified same-day backup when available; otherwise it explicitly calls `/api/maintenance/backup-now` with a 120-second maintenance budget.
+- Backup-status telemetry is itself bounded and fails soft if the live state DB is temporarily busy.
+- No scanner, strategy, target/stop, risk, execution, lifecycle or learning gate is loosened.
+
+See `RELEASE_v6.7.2.md` and `ARCHITECTURE_AUDIT_v6.7.2.md`.
+
 # PS Scanner Quant v6.7.1 — Nonblocking Health & Validation Reliability
 
 v6.7.1 is a narrow reliability update over v6.7.0. It preserves all scanner, execution, risk, lifecycle and learning behavior while fixing the production observability defect found on the Mac install.
@@ -154,10 +167,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.7.1.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.7.1
-unzip -q PS_Scanner_Quant_v6.7.1.zip
-cd PS_Scanner_Quant_v6.7.1
+unzip -t PS_Scanner_Quant_v6.7.2.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.7.2
+unzip -q PS_Scanner_Quant_v6.7.2.zip
+cd PS_Scanner_Quant_v6.7.2
 chmod +x install.sh
 ./install.sh
 ```

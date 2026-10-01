@@ -51,7 +51,9 @@ class V651SanityRecoveryTests(unittest.TestCase):
 
     def test_sanity_endpoint_checks_database_and_collisions(self):
         src=inspect.getsource(main.sanity)
-        self.assertIn("PRAGMA quick_check", src)
+        self.assertNotIn("PRAGMA quick_check", src)
+        self.assertIn("SQLITE_BACKUP_RESTORE_QUICK_CHECK", src)
+        self.assertIn("set_progress_handler", src)
         self.assertIn("weekly_monthly_collisions", src)
         self.assertIn("old_intraday_live_rows", src)
         self.assertIn("last_daily_strategy_validation", src)

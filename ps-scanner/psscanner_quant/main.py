@@ -164,7 +164,7 @@ def health():
         "nse_universe":_cached_universe_health(state),
     }
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.7.1","name":"NONBLOCKING_HEALTH_AND_VALIDATION_RELIABILITY",
+        "architecture_patch":{"version":"6.7.2","name":"BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
             "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True,
             "dynamic_mis_permission":True,"broker_position_reconciliation":True,"decision_to_fill_attribution":True,
@@ -174,6 +174,8 @@ def health():
             "worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
         "health_reliability_patch":{"version":"6.7.1","name":"NONBLOCKING_HEALTH_AND_VALIDATION","health_network_calls":False,
             "health_waits_for_history_pacer":False,"bounded_health_db_reads":True},
+        "sanity_reliability_patch":{"version":"6.7.2","name":"BOUNDED_RUNTIME_SANITY_AND_BACKUP_RESTORE_DEEP_CHECK",
+            "inline_quick_check":False,"runtime_query_budget_seconds":1.5,"deep_verification":"SQLITE_BACKUP_RESTORE_QUICK_CHECK"},
         "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
         "workers":workers,"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
         "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
@@ -190,16 +192,19 @@ def health():
 
 @app.get("/api/sanity")
 def sanity():
-    """Bounded cross-page integrity check; no provider/network calls."""
-    now=datetime.now(IST);today=now.date().isoformat()
-    collisions=[];counts=[];db_check="ERROR";old_intraday=old_circuit=0;missing_levels=0;duplicates=[]
-    stale_session_live=0
+    """Fast bounded runtime integrity check; deep SQLite verification is backup-based."""
+    started=time.monotonic();now=datetime.now(IST);today=now.date().isoformat()
+    collisions=[];counts=[];old_intraday=old_circuit=0;missing_levels=0;duplicates=[];stale_session_live=0
+    runtime_db="ERROR";runtime_complete=False;runtime_error=None
     try:
-        with db(timeout_seconds=1.0) as con:
+        with db(timeout_seconds=.25) as con:
+            deadline=time.monotonic()+1.5
+            con.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0,1000)
+            con.execute("SELECT 1").fetchone()
             collisions=[dict(r) for r in con.execute(
-                "SELECT UPPER(w.symbol) symbol,w.period_key weekly_period,w.state weekly_state,"
+                "SELECT w.symbol symbol,w.period_key weekly_period,w.state weekly_state,"
                 "m.period_key monthly_period,m.state monthly_state "
-                "FROM recommendations w JOIN recommendations m ON UPPER(w.symbol)=UPPER(m.symbol) "
+                "FROM recommendations w JOIN recommendations m ON w.symbol=m.symbol "
                 "WHERE w.book='WEEKLY' AND m.book='MONTHLY' "
                 "AND COALESCE(w.result,'')<>'VOID' AND COALESCE(m.result,'')<>'VOID' "
                 "AND date(w.period_key)<=date(m.period_key||'-01','+1 month','-1 day') "
@@ -212,21 +217,22 @@ def sanity():
             old_circuit=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='CIRCUIT' AND state='LIVE' AND period_key<>?",(today,)).fetchone()[0])
             missing_levels=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE state='LIVE' AND (target_price IS NULL OR stop_price IS NULL OR entry_price<=0)").fetchone()[0])
             duplicates=[dict(r) for r in con.execute(
-                "SELECT book,period_key,UPPER(symbol) symbol,side,COUNT(*) n FROM recommendations "
-                "WHERE state='LIVE' GROUP BY book,period_key,UPPER(symbol),side HAVING COUNT(*)>1"
+                "SELECT book,period_key,symbol,side,COUNT(*) n FROM recommendations "
+                "WHERE state='LIVE' GROUP BY book,period_key,symbol,side HAVING COUNT(*)>1"
             ).fetchall()]
             if is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE:
-                cutoff=now.timestamp()-20*60
-                # ISO timestamps sort chronologically because runtime writes one timezone.
-                cutoff_iso=datetime.fromtimestamp(cutoff,tz=IST).isoformat(timespec="seconds")
+                cutoff_iso=datetime.fromtimestamp(now.timestamp()-20*60,tz=IST).isoformat(timespec="seconds")
                 stale_session_live=int(con.execute(
                     "SELECT COUNT(*) FROM recommendations WHERE state='LIVE' AND exchange='NSE' "
                     "AND book IN ('INTRADAY','CIRCUIT') AND period_key=? AND updated_at<?",(today,cutoff_iso)
                 ).fetchone()[0])
-            db_check=str(con.execute("PRAGMA quick_check").fetchone()[0])
-            counts=[dict(r) for r in con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state ORDER BY book,state").fetchall()]
+            counts=[dict(r) for r in con.execute(
+                "SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state ORDER BY book,state"
+            ).fetchall()]
+            runtime_complete=True;runtime_db="ok"
     except Exception as exc:
-        db_check="ERROR: "+str(exc)[:160]
+        runtime_error=str(exc)[:180]
+        runtime_db="TIME_BOUNDED" if "interrupted" in str(exc).lower() else "DEGRADED"
     workers=engine.worker_status()
     dead=[name for name,x in workers.items() if not x.get("alive")]
     hung=[name for name,x in workers.items() if x.get("hung")]
@@ -235,6 +241,8 @@ def sanity():
                          ["scan_status_"+b for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")],.25)
     learning=state.get("last_daily_strategy_validation",{}) or {}
     evidence=state.get("last_recommendation_learning_evidence",{}) or {}
+    backup=state.get("last_verified_backup",{}) or {}
+    deep_ok=bool(backup.get("restore_verified") is True and str(backup.get("quick_check") or "").lower()=="ok")
     overdue=bool(is_regular_trading_day(now.date()) and now.hour>=20 and str(learning.get("day") or "")!=today)
     books={b:state.get("scan_status_"+b,{}) or {} for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")}
     shortages={}
@@ -243,18 +251,25 @@ def sanity():
         if int(contract.get("shortage") or 0)>0:
             shortages[b]={"shortage":int(contract.get("shortage") or 0),"status":(books.get(b) or {}).get("status"),
                           "recovery_required":bool(contract.get("recovery_required",True))}
-    ok=(db_check=="ok" and not collisions and old_intraday==0 and old_circuit==0 and missing_levels==0 and
-        not duplicates and stale_session_live==0 and not dead and not hung and not overdue)
+    integrity_clear=(not collisions and old_intraday==0 and old_circuit==0 and missing_levels==0 and not duplicates and stale_session_live==0)
+    ok=bool(runtime_complete and integrity_clear and not dead and not hung and not overdue)
     return {
-        "at":now_iso(),"version":VERSION,"ok":ok,"database_quick_check":db_check,
+        "at":now_iso(),"version":VERSION,"ok":ok,
+        "database_runtime_check":runtime_db,"database_runtime_checks_complete":runtime_complete,"database_runtime_error":runtime_error,
+        "database_quick_check":"ok" if deep_ok else "DEFERRED_TO_VERIFIED_BACKUP",
+        "deep_database_integrity":{"verified":deep_ok,"source":"SQLITE_BACKUP_RESTORE_QUICK_CHECK",
+                                   "last_verified_backup":backup,
+                                   "note":"Deep PRAGMA quick_check is intentionally excluded from the request path."},
         "weekly_monthly_collisions":collisions,"old_intraday_live_rows":old_intraday,"old_circuit_live_rows":old_circuit,
         "stale_session_live_rows":stale_session_live,"live_rows_missing_entry_target_stop":missing_levels,
         "duplicate_live_identities":duplicates,"dead_workers":dead,"hung_workers":hung,"persistent_worker_restarts":persistent,
         "learning":{"last_daily_validation":learning,"last_ledger_evidence":evidence,
                     "strategy_worker_alive":bool(workers.get("strategy",{}).get("alive")),"validation_overdue":overdue},
         "frozen_book_shortages":shortages,"books":books,"recommendation_counts":counts,
-        "execution_integrity":{"position_reconciliation":state.get("position_reconciliation") or {},"last_verified_backup":state.get("last_verified_backup") or {}},
-        "policy":"V670_PRODUCTION_INTEGRITY_SANITY",
+        "execution_integrity":{"position_reconciliation":state.get("position_reconciliation") or {},"last_verified_backup":backup},
+        "sanity_contract":{"passive":True,"network_calls":False,"deep_quick_check_inline":False,
+                           "runtime_sql_budget_seconds":1.5,"elapsed_ms":round((time.monotonic()-started)*1000.0,1)},
+        "policy":"V672_BOUNDED_RUNTIME_SANITY_AND_VERIFIED_BACKUP_DEEP_CHECK",
     }
 
 

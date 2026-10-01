@@ -40,8 +40,8 @@ class V670ProductionIntegrityTests(unittest.TestCase):
             )
 
     def test_version_and_lifecycle(self):
-        self.assertEqual(VERSION,"6.7.1")
-        self.assertEqual(lifecycle_payload()["policy_version"],"V671_NONBLOCKING_HEALTH_AND_VALIDATION")
+        self.assertEqual(VERSION,"6.7.2")
+        self.assertEqual(lifecycle_payload()["policy_version"],"V672_BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION")
 
     def test_schema_additive_integrity_tables_and_columns_exist(self):
         with dbmod.db() as con:
@@ -58,7 +58,7 @@ class V670ProductionIntegrityTests(unittest.TestCase):
         env=pi.make_audit_envelope("INTRADAY","2026-10-01","ABC","LONG",
                                    {"close":100,"asof":"2026-10-01T10:00:00+05:30"},
                                    {"data_confidence":.9},[])
-        self.assertEqual(env["software_version"],"6.7.1")
+        self.assertEqual(env["software_version"],"6.7.2")
         self.assertEqual(env["audit_policy"],"V670_POINT_IN_TIME_PRODUCTION_ENVELOPE")
         self.assertTrue(env["settings_hash"])
         raw=json.dumps(env).lower()
@@ -81,7 +81,7 @@ class V670ProductionIntegrityTests(unittest.TestCase):
         payload={"symbol":"ABC","side":"LONG","strategies":["S1"],
                  "trade_intelligence":{"decision":"ELIGIBLE","hard_fail_count":0},
                  "pipeline_verdict":"PUBLICATION_READY","pipeline_stage":"FINAL_GATES"}
-        env={"audit_policy":"V670_POINT_IN_TIME_PRODUCTION_ENVELOPE","software_version":"6.7.1"}
+        env={"audit_policy":"V670_POINT_IN_TIME_PRODUCTION_ENVELOPE","software_version":"6.7.2"}
         with dbmod.db() as con:
             con.execute(
                 "INSERT INTO trade_decisions(decision_id,ts,book,period_key,symbol,side,decision,ensemble_score,intelligence_score,hard_fail_count,"

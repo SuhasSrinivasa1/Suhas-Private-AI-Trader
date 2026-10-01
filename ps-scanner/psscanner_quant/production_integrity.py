@@ -347,7 +347,14 @@ BACKUP_DIR=DATA/"backups"
 def backup_database(force: bool = False, retention: int = 14) -> Dict[str,Any]:
     BACKUP_DIR.mkdir(parents=True,exist_ok=True)
     today=datetime.now(IST).date().isoformat()
-    last=get_state("last_verified_backup",{}) or {}
+    last={}
+    if not force:
+        try:
+            with db(timeout_seconds=.25) as con:
+                row=con.execute("SELECT value_json FROM system_state WHERE key='last_verified_backup'").fetchone()
+            if row:last=_json(row[0],{}) or {}
+        except Exception:
+            last={}
     if not force and str(last.get("day") or "")==today and last.get("restore_verified") is True:
         return last
     stamp=datetime.now(IST).strftime("%Y%m%d-%H%M%S")
@@ -391,15 +398,22 @@ def backup_database(force: bool = False, retention: int = 14) -> Dict[str,Any]:
     return status
 
 
-def backup_status() -> Dict[str,Any]:
-    status=get_state("last_verified_backup",{}) or {}
+def backup_status(timeout_seconds:float=.25) -> Dict[str,Any]:
+    status={}
+    try:
+        with db(timeout_seconds=timeout_seconds) as con:
+            row=con.execute("SELECT value_json FROM system_state WHERE key='last_verified_backup'").fetchone()
+        if row:
+            status=_json(row[0],{}) or {}
+    except Exception as exc:
+        status={"status":"CACHE_UNAVAILABLE_BOUNDED","error":str(exc)[:160],"restore_verified":False}
     files=[]
     try:
         for p in sorted(BACKUP_DIR.glob("psscanner_quant-*.db"),key=lambda x:x.stat().st_mtime,reverse=True)[:10]:
             files.append({"name":p.name,"bytes":p.stat().st_size,"mtime":datetime.fromtimestamp(p.stat().st_mtime,tz=IST).isoformat(timespec="seconds")})
     except Exception:
         pass
-    return {"last":status,"backups":files,"policy":BACKUP_POLICY}
+    return {"last":status,"backups":files,"policy":BACKUP_POLICY,"bounded":True}
 
 
 def maybe_daily_backup() -> Dict[str,Any]:

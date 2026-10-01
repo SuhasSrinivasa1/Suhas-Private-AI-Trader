@@ -37,9 +37,9 @@ class V660ArchitectureTests(unittest.TestCase):
             )
 
     def test_version_and_central_lifecycle_contract(self):
-        self.assertEqual(VERSION,"6.7.1")
+        self.assertEqual(VERSION,"6.7.2")
         payload=lifecycle.lifecycle_payload()
-        self.assertEqual(payload["policy_version"],"V671_NONBLOCKING_HEALTH_AND_VALIDATION")
+        self.assertEqual(payload["policy_version"],"V672_BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION")
         self.assertIn("PERFORMANCE",payload["pages"])
         self.assertEqual(payload["books"]["INTRADAY"]["default_ui"],"current session LIVE + CLOSED only")
 

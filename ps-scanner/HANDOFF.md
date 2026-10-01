@@ -1,8 +1,12 @@
 # PS Scanner handoff
 
-Current source version: **6.7.1**.
+Current source version: **6.7.2**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
+
+## v6.7.2 bounded sanity / deep database verification
+
+v6.7.2 is a narrow follow-up to v6.7.1. Runtime `/api/sanity` no longer performs an inline `PRAGMA quick_check` on the live production ledger. Runtime sanity uses a wall-clock-bounded SQLite progress handler and short connection timeouts. Deep database integrity remains mandatory during post-install validation through SQLite backup → isolated restore → `PRAGMA quick_check`, with an explicit long-running maintenance budget.
 
 ## v6.7.1 health/validation reliability
 
@@ -48,4 +52,4 @@ python -m unittest discover -s tests -v
 python3 tools/post_install_validate.py
 ```
 
-The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.1.zip` only after tests pass.
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.2.zip` only after tests pass.

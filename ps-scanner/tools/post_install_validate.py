@@ -14,21 +14,26 @@ def fail(message):
     raise SystemExit(1)
 
 
-def get(path, *, timeout=6.0, attempts=4):
+def request_json(path, *, method="GET", timeout=6.0, attempts=4):
     last=None
     for attempt in range(max(1,int(attempts))):
         try:
-            with urllib.request.urlopen(BASE+path,timeout=float(timeout)) as r:
+            req=urllib.request.Request(BASE+path,method=method)
+            with urllib.request.urlopen(req,timeout=float(timeout)) as r:
                 return json.load(r)
         except Exception as exc:
             last=exc
             if attempt+1 < attempts:
                 time.sleep(0.5*(attempt+1))
-    fail(f"GET {path} failed after {attempts} attempts: {last}")
+    fail(f"{method} {path} failed after {attempts} attempts: {last}")
+
+
+def get(path, *, timeout=6.0, attempts=4):
+    return request_json(path,timeout=timeout,attempts=attempts)
 
 
 ping=get("/api/ping",timeout=2,attempts=3)
-if ping.get("version")!="6.7.1":fail("runtime version is not 6.7.1")
+if ping.get("version")!="6.7.2":fail("runtime version is not 6.7.2")
 
 health_started=time.monotonic()
 health=get("/api/health",timeout=3,attempts=4)
@@ -40,15 +45,30 @@ if contract.get("history_pacer_nonblocking") is not True:fail("health endpoint m
 if health_elapsed>12:fail(f"health endpoint retries exceeded bounded validation budget: {health_elapsed:.1f}s")
 
 life=get("/api/lifecycle",timeout=4)
-if life.get("policy_version")!="V671_NONBLOCKING_HEALTH_AND_VALIDATION":fail("lifecycle contract is not v6.7.1")
+if life.get("policy_version")!="V672_BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION":fail("lifecycle contract is not v6.7.2")
 
-sanity=get("/api/sanity",timeout=6)
-if sanity.get("database_quick_check")!="ok":fail("SQLite quick_check failed")
+sanity_started=time.monotonic()
+sanity=get("/api/sanity",timeout=4,attempts=4)
+sanity_elapsed=time.monotonic()-sanity_started
+sanity_contract=sanity.get("sanity_contract") or {}
+if sanity_contract.get("deep_quick_check_inline") is not False:fail("sanity endpoint still performs deep quick_check inline")
+if sanity_elapsed>16:fail(f"sanity endpoint retries exceeded bounded validation budget: {sanity_elapsed:.1f}s")
+if sanity.get("database_runtime_checks_complete") is not True:
+    fail("bounded runtime database sanity checks did not complete: "+str(sanity.get("database_runtime_error") or sanity.get("database_runtime_check")))
 if sanity.get("weekly_monthly_collisions"):fail("Weekly/Monthly overlapping frozen-period identity collision detected")
 if sanity.get("old_intraday_live_rows"):fail("old Intraday LIVE rows remain")
 if sanity.get("old_circuit_live_rows"):fail("old Circuit LIVE rows remain")
 if sanity.get("dead_workers"):fail("dead workers: "+",".join(sanity["dead_workers"]))
 if sanity.get("hung_workers"):fail("hung workers: "+",".join(sanity["hung_workers"]))
+
+# Deep SQLite integrity is deliberately not part of /api/sanity. Reuse a verified
+# backup if one exists; otherwise create + restore-verify one with an explicit long budget.
+backups=get("/api/maintenance/backups",timeout=4)
+deep=backups.get("last") or {}
+if deep.get("restore_verified") is not True or str(deep.get("quick_check") or "").lower()!="ok":
+    deep=request_json("/api/maintenance/backup-now",method="POST",timeout=120,attempts=1)
+if deep.get("restore_verified") is not True:fail("SQLite backup restore verification failed")
+if str(deep.get("quick_check") or "").lower()!="ok":fail("SQLite backup quick_check failed")
 
 for book in ("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","CIRCUIT_NEXTDAY","INTERNATIONAL"):
     data=get("/api/book/"+book,timeout=6)
@@ -62,16 +82,19 @@ if "excluded" not in str(policy.get("voids") or "").lower():fail("performance VO
 
 diag=get("/api/diagnostics/no-trade?limit=4",timeout=6)
 execution=get("/api/execution/analytics?limit=20",timeout=6)
-backups=get("/api/maintenance/backups",timeout=6)
 
 print(json.dumps({
     "ok":True,
     "version":ping.get("version"),
     "lifecycle":life.get("policy_version"),
-    "database":sanity.get("database_quick_check"),
+    "database_runtime":sanity.get("database_runtime_check"),
+    "database_deep_quick_check":deep.get("quick_check"),
+    "database_restore_verified":deep.get("restore_verified"),
     "workers":len(health.get("workers") or {}),
     "health_elapsed_seconds":round(health_elapsed,3),
+    "sanity_elapsed_seconds":round(sanity_elapsed,3),
     "health_contract":contract,
+    "sanity_contract":sanity_contract,
     "performance_rows_scanned":perf.get("rows_scanned"),
     "diagnostic_books":len(diag.get("books") or {}),
     "execution_orders_scanned":execution.get("orders_scanned"),
