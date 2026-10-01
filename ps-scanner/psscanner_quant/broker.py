@@ -56,6 +56,8 @@ class GrowwBroker:
         self._last_status_at = 0.0
         self._last_ip: Optional[str] = None
         self._last_ip_at = 0.0
+        self._last_ip_provider: Optional[str] = None
+        self._last_ip_error: Optional[str] = None
         self._last_ltp_status: Dict[str, Any] = {}
 
     def _read_credentials(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -374,7 +376,15 @@ class GrowwBroker:
             try:ipaddress.ip_address(expected);valid=True
             except Exception:pass
         detected=self._last_ip
-        return {"expected":expected,"detected":detected,"configured":bool(valid),"matches":bool(valid and detected and expected==detected),"cached":True}
+        age=round(max(0.0,time.time()-self._last_ip_at),1) if self._last_ip_at else None
+        if not valid:state="NOT_CONFIGURED"
+        elif not detected:state="UNAVAILABLE"
+        elif expected==detected:state="VERIFIED"
+        else:state="MISMATCH"
+        return {"expected":expected,"detected":detected,"configured":bool(valid),
+                "matches":bool(valid and detected and expected==detected),"cached":True,
+                "state":state,"cache_age_seconds":age,"provider":self._last_ip_provider,
+                "last_error":self._last_ip_error}
 
     def status(self) -> Dict[str, Any]:
         if self._last_status and time.time()-self._last_status_at < 20:
@@ -406,19 +416,27 @@ class GrowwBroker:
         self._last_status_at = time.time()
         return data
 
-    def detected_public_ip(self) -> Optional[str]:
-        if self._last_ip_at and time.time()-self._last_ip_at < 60:
+    def detected_public_ip(self, force_refresh: bool=False) -> Optional[str]:
+        if not force_refresh and self._last_ip_at and time.time()-self._last_ip_at < 60:
             return self._last_ip
-        try:
-            r = self._session.get(PUBLIC_IP_URL, timeout=1.5)
-            r.raise_for_status()
-            ip = str(r.json().get("ip") or "").strip()
-            ipaddress.ip_address(ip)
-            self._last_ip=ip; self._last_ip_at=time.time()
-            return ip
-        except Exception:
-            self._last_ip_at=time.time()
-            return self._last_ip
+        providers=[
+            ("ipify_json",PUBLIC_IP_URL,"json"),
+            ("aws_checkip","https://checkip.amazonaws.com","text"),
+        ]
+        errors=[]
+        for name,url,kind in providers:
+            try:
+                r=self._session.get(url,timeout=1.5)
+                r.raise_for_status()
+                ip=str((r.json().get("ip") if kind=="json" else r.text) or "").strip()
+                ipaddress.ip_address(ip)
+                self._last_ip=ip;self._last_ip_at=time.time();self._last_ip_provider=name;self._last_ip_error=None
+                return ip
+            except Exception as exc:
+                errors.append(f"{name}:{str(exc)[:100]}")
+        self._last_ip_at=time.time()
+        self._last_ip_error="; ".join(errors)[:220] if errors else "public_ip_unavailable"
+        return self._last_ip
 
     def static_ip_status(self) -> Dict[str, Any]:
         expected = str(load_settings().get("expected_static_ip") or "").strip()
@@ -430,11 +448,16 @@ class GrowwBroker:
                 valid_expected = True
             except Exception:
                 pass
+        if not valid_expected:state="NOT_CONFIGURED"
+        elif not detected:state="UNAVAILABLE"
+        elif expected==detected:state="VERIFIED"
+        else:state="MISMATCH"
         return {
             "expected": expected,
             "detected": detected,
             "configured": bool(valid_expected),
             "matches": bool(valid_expected and detected and expected == detected),
+            "state":state,"provider":self._last_ip_provider,"last_error":self._last_ip_error,
         }
 
 

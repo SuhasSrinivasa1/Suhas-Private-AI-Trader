@@ -1497,6 +1497,7 @@ class Engine:
         # Populate the cached broker status without coupling research to execution readiness.
         # This is a read-only Groww profile/authentication probe.
         broker.status()
+        broker.static_ip_status()
 
     def _live_update(self):
         update_live_books()

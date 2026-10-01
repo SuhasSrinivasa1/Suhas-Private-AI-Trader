@@ -15,7 +15,7 @@ from .db import db, get_state, init_db, now_iso
 from .engine import engine, recommendations, period_key
 from .analytics import history_rows as recommendation_history_rows, performance as performance_stats
 from .lifecycle import lifecycle_payload
-from .orders import create_preview, execute_preview, execution_readiness, recent_orders, reconcile_orders, recent_fills
+from .orders import create_preview, execute_preview, execution_readiness, execution_readiness_cached_snapshot, recent_orders, reconcile_orders, recent_fills
 from .paths import STATIC
 from .regime import classify
 from .strategy_library import seed_library
@@ -137,23 +137,44 @@ def groww_status(refresh: bool=False):
 
 @app.get("/api/health")
 def health():
-    started=time.monotonic();now=datetime.now(IST)
+    started=time.monotonic();now=datetime.now(IST);today=now.date().isoformat()
     market=is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE
-    recent=[];recs=[];decisions=[]
-    try:
-        with db(timeout_seconds=.25) as con:
-            recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
-            recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
-            decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
-    except Exception as exc:
-        recent=[{"ts":now_iso(),"component":"health","level":"WARN","message":"bounded DB snapshot unavailable: "+str(exc)[:160]}]
+    recent=[];recs=[];decisions=[];state={};order_count=None;db_error=None
+    fundamentals={"status":"BOUNDED_SNAPSHOT_UNAVAILABLE","mode":"PROSPECTIVE_POINT_IN_TIME_CAPTURE"}
+    events={"status":"BOUNDED_SNAPSHOT_UNAVAILABLE","policy":"Only persisted timestamped events are used. Missing macro data remains UNKNOWN rather than assumed safe."}
     state_keys=["last_regime","global_context","last_research_cycle","universe_status","full_breadth_discovery",
                 "daily_history_warm_status","last_intraday_history_warm","live_price_cache_status",
                 "position_reconciliation","last_verified_backup"]+["scan_status_"+b for b in BOOKS]
-    state=_cached_states(state_keys,.25)
-    fundamentals,events=_bounded_evidence_db(.25)
+    try:
+        with db(timeout_seconds=.20) as con:
+            deadline=time.monotonic()+1.0
+            con.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0,1000)
+            recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
+            recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
+            decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
+            order_count=int(con.execute(
+                "SELECT COUNT(*) FROM orders WHERE substr(created_at,1,10)=? AND state NOT IN ('FAILED','CANCELLED')",(today,)
+            ).fetchone()[0])
+            marks=",".join("?" for _ in state_keys)
+            for row in con.execute(f"SELECT key,value_json FROM system_state WHERE key IN ({marks})",tuple(state_keys)).fetchall():
+                try:state[str(row[0])]=json.loads(row[1] or "{}")
+                except Exception:state[str(row[0])]={}
+            f=con.execute("SELECT COUNT(*),COUNT(DISTINCT symbol),MIN(asof),MAX(asof) FROM fundamental_snapshots").fetchone()
+            e=con.execute("SELECT COUNT(*),SUM(CASE WHEN starts_at>=? THEN 1 ELSE 0 END) FROM market_events",(now_iso(),)).fetchone()
+            fundamentals={
+                "snapshots":int(f[0] or 0),"symbols":int(f[1] or 0),"first_asof":f[2],"last_asof":f[3],
+                "mode":"PROSPECTIVE_POINT_IN_TIME_CAPTURE","bounded":True,
+                "historical_backtest_policy":"Only snapshots captured by the decision timestamp are eligible; current fundamentals are never backfilled into the past.",
+            }
+            events={
+                "total_events":int(e[0] or 0),"future_events":int(e[1] or 0),"bounded":True,
+                "policy":"Only persisted timestamped events are used. Missing macro data remains UNKNOWN rather than assumed safe.",
+            }
+    except Exception as exc:
+        db_error=str(exc)[:160]
+        if not recent:recent=[{"ts":now_iso(),"component":"health","level":"WARN","message":"bounded DB snapshot unavailable: "+db_error}]
     history_cached=history_control_status_cached()
-    execution_cached=execution_readiness(use_cached=True)
+    execution_cached=execution_readiness_cached_snapshot(order_count,state.get("position_reconciliation") or {})
     workers=engine.worker_status()
     evidence={
         "fundamentals":fundamentals,
@@ -164,7 +185,7 @@ def health():
         "nse_universe":_cached_universe_health(state),
     }
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.7.2","name":"BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION",
+        "architecture_patch":{"version":"6.7.3","name":"EXECUTION_CACHE_AND_HEALTH_LATENCY_HARDENING",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
             "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True,
             "dynamic_mis_permission":True,"broker_position_reconciliation":True,"decision_to_fill_attribution":True,
@@ -176,6 +197,8 @@ def health():
             "health_waits_for_history_pacer":False,"bounded_health_db_reads":True},
         "sanity_reliability_patch":{"version":"6.7.2","name":"BOUNDED_RUNTIME_SANITY_AND_BACKUP_RESTORE_DEEP_CHECK",
             "inline_quick_check":False,"runtime_query_budget_seconds":1.5,"deep_verification":"SQLITE_BACKUP_RESTORE_QUICK_CHECK"},
+        "execution_cache_patch":{"version":"6.7.3","background_static_ip_probe":True,"public_ip_fallback":True,
+            "health_single_db_snapshot":True,"position_mismatch_fail_closed":True},
         "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
         "workers":workers,"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
         "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
@@ -187,7 +210,8 @@ def health():
         "recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},
         "recent_health_events":recent,
         "health_contract":{"passive":True,"network_calls":False,"history_pacer_nonblocking":True,
-            "bounded_db_timeout_seconds":.5,"elapsed_ms":round((time.monotonic()-started)*1000.0,1)}}
+            "db_connections":1,"db_snapshot_error":db_error,"db_wall_clock_budget_seconds":1.0,
+            "elapsed_ms":round((time.monotonic()-started)*1000.0,1)}}
 
 
 @app.get("/api/sanity")

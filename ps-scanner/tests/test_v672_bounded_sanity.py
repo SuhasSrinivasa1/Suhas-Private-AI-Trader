@@ -30,9 +30,9 @@ class V672BoundedSanityTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_version_and_policy(self):
-        self.assertEqual(VERSION,"6.7.2")
+        self.assertEqual(VERSION,"6.7.3")
         self.assertEqual(lifecycle_payload()["policy_version"],
-                         "V672_BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION")
+                         "V673_EXECUTION_CACHE_AND_HEALTH_LATENCY")
 
     def test_runtime_sanity_does_not_run_inline_quick_check(self):
         src=inspect.getsource(main.sanity)

@@ -1,8 +1,12 @@
 # PS Scanner handoff
 
-Current source version: **6.7.2**.
+Current source version: **6.7.3**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
+
+## v6.7.3 execution-cache / health-latency hardening
+
+v6.7.3 is the final reliability pass after the successful v6.7.2 production validation. The background broker probe now refreshes Static-IP state, public-IP detection has an independent fallback provider, the health route derives execution readiness from a single bounded SQLite snapshot plus in-memory caches, and broker-position mismatch telemetry explicitly records Groww's quantity-minus-carry-forward semantics. Position mismatches remain fail-closed.
 
 ## v6.7.2 bounded sanity / deep database verification
 
@@ -52,4 +56,4 @@ python -m unittest discover -s tests -v
 python3 tools/post_install_validate.py
 ```
 
-The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.2.zip` only after tests pass.
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.3.zip` only after tests pass.

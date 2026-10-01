@@ -33,7 +33,7 @@ def get(path, *, timeout=6.0, attempts=4):
 
 
 ping=get("/api/ping",timeout=2,attempts=3)
-if ping.get("version")!="6.7.2":fail("runtime version is not 6.7.2")
+if ping.get("version")!="6.7.3":fail("runtime version is not 6.7.3")
 
 health_started=time.monotonic()
 health=get("/api/health",timeout=3,attempts=4)
@@ -42,10 +42,10 @@ if health.get("engine_alive") is not True:fail("engine supervisor is not alive")
 contract=health.get("health_contract") or {}
 if contract.get("network_calls") is not False:fail("health endpoint is not passive/network-free")
 if contract.get("history_pacer_nonblocking") is not True:fail("health endpoint may wait behind history pacer")
-if health_elapsed>12:fail(f"health endpoint retries exceeded bounded validation budget: {health_elapsed:.1f}s")
+if health_elapsed>8:fail(f"health endpoint retries exceeded bounded validation budget: {health_elapsed:.1f}s")
 
 life=get("/api/lifecycle",timeout=4)
-if life.get("policy_version")!="V672_BOUNDED_SANITY_AND_DEEP_DB_VERIFICATION":fail("lifecycle contract is not v6.7.2")
+if life.get("policy_version")!="V673_EXECUTION_CACHE_AND_HEALTH_LATENCY":fail("lifecycle contract is not v6.7.3")
 
 sanity_started=time.monotonic()
 sanity=get("/api/sanity",timeout=4,attempts=4)

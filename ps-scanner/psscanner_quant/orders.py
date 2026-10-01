@@ -29,17 +29,19 @@ def _today_order_count(timeout_seconds:float=10.0)->Optional[int]:
         return None
 
 
-def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)->Dict[str,Any]:
-    settings=load_settings();ip=broker.static_ip_status_cached() if use_cached else broker.static_ip_status();bs=broker.status_cached() if use_cached else broker.status();now=datetime.now(IST);blockers=[]
+def _execution_readiness_from_snapshot(*, settings:Dict[str,Any], ip:Dict[str,Any], bs:Dict[str,Any],
+                                      order_count:Optional[int], position_state:Dict[str,Any],
+                                      rec:Optional[Dict[str,Any]]=None, now:Optional[datetime]=None)->Dict[str,Any]:
+    now=now or datetime.now(IST);blockers=[]
     if not settings.get("manual_execution_enabled",True):blockers.append("manual_execution_disabled")
     if not bs.get("connected"):blockers.append("groww_not_connected")
     if not ip.get("configured"):blockers.append("static_ip_not_set")
-    elif not ip.get("matches"):blockers.append("current_ip_does_not_match_configured_static_ip")
-    if (not is_regular_trading_day(now.date())) or not (MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE):blockers.append("market_closed_or_nse_holiday")
-    order_count=_today_order_count(.25 if use_cached else 2.0)
+    elif not ip.get("matches"):
+        blockers.append("static_ip_unavailable" if not ip.get("detected") else "current_ip_does_not_match_configured_static_ip")
+    if (not is_regular_trading_day(now.date())) or not (MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE):
+        blockers.append("market_closed_or_nse_holiday")
     if order_count is None:blockers.append("daily_order_count_unavailable")
-    elif order_count>=int(settings.get('max_open_manual_orders',8) or 8):blockers.append('daily_manual_order_limit_reached')
-    position_state=cached_position_reconciliation(.25 if use_cached else 2.0)
+    elif order_count>=int(settings.get("max_open_manual_orders",8) or 8):blockers.append("daily_manual_order_limit_reached")
     if position_state.get("hard_block") and position_state.get("verified"):
         blockers.append("broker_position_mismatch")
     portfolio=None
@@ -49,12 +51,31 @@ def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)
         if rec.get("side")=="SHORT" and str(rec.get("book") or "").upper() in ("WEEKLY","MONTHLY","ETF"):
             blockers.append("horizon_short_research_only")
         if rec.get("side")=="SHORT" and now.time().replace(tzinfo=None)>=SHORT_HARD_EXIT:blockers.append("short_entry_cutoff_1500")
-        portfolio=recommendation_cluster(str(rec.get('symbol') or ''),str(rec.get('side') or ''),str(rec.get('recommendation_id') or ''))
-        if portfolio.get('hard_block'):blockers.append('portfolio_correlation_cluster_limit')
+        portfolio=recommendation_cluster(str(rec.get("symbol") or ""),str(rec.get("side") or ""),str(rec.get("recommendation_id") or ""))
+        if portfolio.get("hard_block"):blockers.append("portfolio_correlation_cluster_limit")
     return {"ready":not blockers,"blockers":list(dict.fromkeys(blockers)),"groww":bs,"static_ip":ip,
             "max_notional":TRADE_NOTIONAL_RUPEES,"max_rupee_risk_to_stop":MAX_RUPEE_RISK_PER_TRADE,
             "today_manual_orders":order_count,"portfolio_fit":portfolio,
             "position_reconciliation":position_state}
+
+
+def execution_readiness_cached_snapshot(order_count:Optional[int], position_state:Dict[str,Any])->Dict[str,Any]:
+    """Pure cached readiness projection for health/UI; performs no DB or network I/O."""
+    return _execution_readiness_from_snapshot(
+        settings=load_settings(),ip=broker.static_ip_status_cached(),bs=broker.status_cached(),
+        order_count=order_count,position_state=dict(position_state or {}),rec=None,now=datetime.now(IST),
+    )
+
+
+def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)->Dict[str,Any]:
+    settings=load_settings()
+    ip=broker.static_ip_status_cached() if use_cached else broker.static_ip_status()
+    bs=broker.status_cached() if use_cached else broker.status()
+    order_count=_today_order_count(.25 if use_cached else 2.0)
+    position_state=cached_position_reconciliation(.25 if use_cached else 2.0)
+    return _execution_readiness_from_snapshot(
+        settings=settings,ip=ip,bs=bs,order_count=order_count,position_state=position_state,rec=rec,now=datetime.now(IST),
+    )
 
 
 def _quote_execution_quality(symbol:str, side:str, fallback_px:float)->Dict[str,Any]:

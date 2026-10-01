@@ -86,6 +86,11 @@ def reconcile_positions() -> Dict[str,Any]:
             raw.append({"symbol":sym,"product":product,"session_quantity":sq,
                         "broker_quantity":_int(r.get("quantity")),
                         "carry_forward_quantity":_int(r.get("net_carry_forward_quantity")),
+                        "credit_quantity":_int(r.get("credit_quantity")),
+                        "debit_quantity":_int(r.get("debit_quantity")),
+                        "carry_forward_credit_quantity":_int(r.get("carry_forward_credit_quantity")),
+                        "carry_forward_debit_quantity":_int(r.get("carry_forward_debit_quantity")),
+                        "session_quantity_formula":"quantity - net_carry_forward_quantity",
                         "realised_pnl":_float(r.get("realised_pnl"),0.0)})
         expected=_local_expected_session_positions()
         keys=set(expected)|{k for k,v in broker_map.items() if v!=0}
@@ -93,7 +98,12 @@ def reconcile_positions() -> Dict[str,Any]:
         for key in sorted(keys):
             exp=int(expected.get(key,0));actual=int(broker_map.get(key,0))
             if exp!=actual:
-                item={"symbol":key[0],"product":key[1],"expected_session_quantity":exp,"broker_session_quantity":actual,"delta":actual-exp}
+                classification=("EXTERNAL_"+key[1]+"_SESSION_POSITION" if exp==0 and actual!=0
+                                else "BROKER_LOCAL_SESSION_QUANTITY_MISMATCH")
+                item={"symbol":key[0],"product":key[1],"expected_session_quantity":exp,
+                      "broker_session_quantity":actual,"delta":actual-exp,
+                      "classification":classification,
+                      "broker_session_quantity_formula":"quantity - net_carry_forward_quantity"}
                 mismatches.append(item)
                 if exp==0 and actual!=0:external.append(item)
         out={
@@ -103,6 +113,7 @@ def reconcile_positions() -> Dict[str,Any]:
             "broker":{"%s|%s"%k:v for k,v in broker_map.items()},
             "broker_realised_pnl":realized,"positions":raw,
             "policy":POSITION_POLICY,
+            "position_semantics":"Groww quantity minus net_carry_forward_quantity; mismatches remain fail-closed.",
         }
         set_state("position_reconciliation",out)
         if mismatches:

@@ -1,3 +1,16 @@
+# PS Scanner Quant v6.7.3 — Execution Cache & Health Latency Hardening
+
+v6.7.3 closes the remaining operational gaps observed after v6.7.2 passed production validation.
+
+- The background broker probe now refreshes both Groww auth status and the cached public IP, so the UI does not remain falsely Static-IP locked after a restart.
+- Public-IP detection has a second independent read-only provider if the primary lookup is temporarily unavailable.
+- `/api/health` now uses one bounded SQLite snapshot and a pure cached execution-readiness projection; it no longer opens separate DB connections for order count and position reconciliation.
+- Broker-position telemetry records credit/debit/carry-forward fields and explicitly labels external CNC/MIS session positions.
+- Position mismatches remain fail-closed; v6.7.3 does not waive broker-vs-local reconciliation.
+- No recommendation, strategy, target/stop, risk, short, execution-permission, lifecycle, or learning gate is loosened.
+
+See `RELEASE_v6.7.3.md`.
+
 # PS Scanner Quant v6.7.2 — Bounded Runtime Sanity & Deep DB Verification
 
 v6.7.2 fixes the remaining post-install timeout discovered after v6.7.1. The runtime sanity endpoint is now explicitly bounded, while deep SQLite integrity remains verified through an isolated backup restore.
@@ -167,10 +180,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.7.2.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.7.2
-unzip -q PS_Scanner_Quant_v6.7.2.zip
-cd PS_Scanner_Quant_v6.7.2
+unzip -t PS_Scanner_Quant_v6.7.3.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.7.3
+unzip -q PS_Scanner_Quant_v6.7.3.zip
+cd PS_Scanner_Quant_v6.7.3
 chmod +x install.sh
 ./install.sh
 ```
