@@ -259,7 +259,7 @@ def sanity():
         "database_quick_check":"ok" if deep_ok else "DEFERRED_TO_VERIFIED_BACKUP",
         "deep_database_integrity":{"verified":deep_ok,"source":"SQLITE_BACKUP_RESTORE_QUICK_CHECK",
                                    "last_verified_backup":backup,
-                                   "note":"Deep PRAGMA quick_check is intentionally excluded from the request path."},
+                                   "note":"Deep SQLite integrity verification is intentionally excluded from the request path."},
         "weekly_monthly_collisions":collisions,"old_intraday_live_rows":old_intraday,"old_circuit_live_rows":old_circuit,
         "stale_session_live_rows":stale_session_live,"live_rows_missing_entry_target_stop":missing_levels,
         "duplicate_live_identities":duplicates,"dead_workers":dead,"hung_workers":hung,"persistent_worker_restarts":persistent,
