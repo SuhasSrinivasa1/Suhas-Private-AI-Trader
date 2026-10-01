@@ -1,12 +1,14 @@
 # PS Scanner handoff
 
-Current source version: **6.6.0**.
+Current source version: **6.6.1**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
 
-## v6.6.0 architecture
+## v6.6.1 architecture
 
-Start with `ARCHITECTURE_AUDIT_v6.6.0.md` and `RELEASE_v6.6.0.md`. The central runtime lifecycle definition is `psscanner_quant/lifecycle.py`; historical analytics are in `psscanner_quant/analytics.py`.
+Start with `ARCHITECTURE_AUDIT_v6.6.1.md` and `RELEASE_v6.6.1.md`; `ARCHITECTURE_AUDIT_v6.6.0.md` remains the prior structural baseline. The central runtime lifecycle definition is `psscanner_quant/lifecycle.py`; historical analytics are in `psscanner_quant/analytics.py`.
+
+v6.6.1 is a first-principles follow-up to the v6.6.0 restructure. It fixes four integrity gaps found by re-reading the implementation rather than trusting the prior handoff: Weekly/Monthly exclusion now follows overlapping frozen-period identity even after early closure; zero-live Intraday recovery accumulates complete-pass funnel evidence before it may claim no qualified opportunity; ETF missed-freeze recovery is bounded to the live NSE session; and every short-lived SQLite connection explicitly reasserts synchronous=NORMAL.
 
 Active pages are now current-period views, not history views:
 - Intraday: current NSE session only.
@@ -40,4 +42,4 @@ python -m unittest discover -s tests -v
 python3 tools/post_install_validate.py
 ```
 
-The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.6.0.zip` only after tests pass.
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.6.1.zip` only after tests pass.

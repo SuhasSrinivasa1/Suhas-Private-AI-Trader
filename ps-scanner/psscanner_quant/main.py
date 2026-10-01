@@ -97,7 +97,7 @@ def health():
     state_keys=["last_regime","global_context","last_research_cycle"]+["scan_status_"+b for b in BOOKS]
     state=_cached_states(state_keys)
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.6.0","name":"CURRENT_PERIOD_LIFECYCLE_AND_STATISTICAL_AUDIT",
+        "architecture_patch":{"version":"6.6.1","name":"CURRENT_PERIOD_LIFECYCLE_AND_STATISTICAL_AUDIT",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
             "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True},
         "reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],"worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
@@ -120,9 +120,16 @@ def sanity():
     try:
         with db(timeout_seconds=1.0) as con:
             collisions=[dict(r) for r in con.execute(
-                "SELECT UPPER(symbol) symbol,GROUP_CONCAT(DISTINCT book) books,COUNT(*) n "
-                "FROM recommendations WHERE book IN ('WEEKLY','MONTHLY') AND state='LIVE' "
-                "AND COALESCE(result,'')<>'VOID' GROUP BY UPPER(symbol) HAVING COUNT(DISTINCT book)>1"
+                "SELECT UPPER(w.symbol) symbol,w.period_key weekly_period,w.state weekly_state,"
+                "m.period_key monthly_period,m.state monthly_state "
+                "FROM recommendations w JOIN recommendations m ON UPPER(w.symbol)=UPPER(m.symbol) "
+                "WHERE w.book='WEEKLY' AND m.book='MONTHLY' "
+                "AND COALESCE(w.result,'')<>'VOID' AND COALESCE(m.result,'')<>'VOID' "
+                "AND date(w.period_key)<=date(m.period_key||'-01','+1 month','-1 day') "
+                "AND date(m.period_key||'-01')<=date(w.period_key,'+6 day') "
+                "AND date(w.period_key,'+6 day')>=date(?) "
+                "AND date(m.period_key||'-01','+1 month','-1 day')>=date(?) "
+                "ORDER BY symbol,w.period_key,m.period_key",(today,today)
             ).fetchall()]
             old_intraday=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='INTRADAY' AND state='LIVE' AND period_key<>?",(today,)).fetchone()[0])
             old_circuit=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='CIRCUIT' AND state='LIVE' AND period_key<>?",(today,)).fetchone()[0])
@@ -169,7 +176,7 @@ def sanity():
         "learning":{"last_daily_validation":learning,"last_ledger_evidence":evidence,
                     "strategy_worker_alive":bool(workers.get("strategy",{}).get("alive")),"validation_overdue":overdue},
         "frozen_book_shortages":shortages,"books":books,"recommendation_counts":counts,
-        "policy":"V660_BOUNDED_CURRENT_PERIOD_SANITY",
+        "policy":"V661_FROZEN_IDENTITY_SEARCH_EXHAUSTION_SANITY",
     }
 
 
@@ -188,7 +195,7 @@ def recommendation_history(book:Optional[str]=None,period_key:Optional[str]=None
 
 @app.get("/api/performance")
 def performance(book:Optional[str]=None,group_by:str="book",limit:int=10000):
-    allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","day","week","month"}
+    allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","result","close_reason","day","week","month"}
     if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
     if group_by.lower() not in allowed:raise HTTPException(400,"Unsupported group_by")
     return performance_stats(book,group_by,limit)

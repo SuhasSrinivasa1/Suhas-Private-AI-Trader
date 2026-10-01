@@ -79,91 +79,97 @@ def period_key(book: str, now: Optional[datetime] = None) -> str:
 
 
 
-def _weekly_monthly_conflicts(exclude_book: Optional[str] = None) -> set[str]:
-    """Return symbols that are already live in the opposite frozen horizon.
+def _frozen_period_bounds(book: str, pk: str):
+    """Return inclusive calendar bounds for frozen Weekly/Monthly identity periods."""
+    b=str(book).upper();raw=str(pk)
+    if b=="WEEKLY":
+        start=datetime.fromisoformat(raw).date();return start,start+timedelta(days=6)
+    if b=="MONTHLY":
+        start=datetime.strptime(raw+"-01","%Y-%m-%d").date()
+        nxt=start.replace(year=start.year+1,month=1) if start.month==12 else start.replace(month=start.month+1)
+        return start,nxt-timedelta(days=1)
+    raise ValueError(f"unsupported frozen identity book: {book}")
 
-    Weekly and Monthly are deliberately identity-separated. The rule is symbol-level
-    (not side-level): one stock cannot be an executable recommendation in both books at
-    the same time.
+
+def _weekly_monthly_conflicts(exclude_book: Optional[str] = None, period_key_override: Optional[str] = None) -> set[str]:
+    """Block opposite-book identities for every overlapping frozen calendar period.
+
+    Early WIN/LOSS/MISS closure does not release a frozen identity. VOID is the only
+    result that removes an invalid publication from this exclusivity invariant.
     """
     b=(exclude_book or "").upper()
-    other = "MONTHLY" if b == "WEEKLY" else ("WEEKLY" if b == "MONTHLY" else None)
+    if b not in ("WEEKLY","MONTHLY"):return set()
+    other="MONTHLY" if b=="WEEKLY" else "WEEKLY";pk=str(period_key_override or period_key(b))
+    target_start,target_end=_frozen_period_bounds(b,pk)
     with db() as con:
-        if other:
-            rs=con.execute(
-                "SELECT DISTINCT UPPER(symbol) FROM recommendations "
-                "WHERE book=? AND state='LIVE' AND COALESCE(result,'')<>'VOID'",
-                (other,),
-            ).fetchall()
-        else:
-            rs=con.execute(
-                "SELECT UPPER(symbol),COUNT(DISTINCT book) FROM recommendations "
-                "WHERE book IN ('WEEKLY','MONTHLY') AND state='LIVE' "
-                "AND COALESCE(result,'')<>'VOID' GROUP BY UPPER(symbol) "
-                "HAVING COUNT(DISTINCT book)>1"
-            ).fetchall()
-    return {str(r[0]).upper() for r in rs}
+        rs=con.execute("SELECT period_key,UPPER(symbol) symbol FROM recommendations WHERE book=? AND COALESCE(result,'')<>'VOID'",(other,)).fetchall()
+    blocked=set()
+    for row in rs:
+        try:other_start,other_end=_frozen_period_bounds(other,str(row["period_key"]))
+        except Exception:continue
+        if target_start<=other_end and other_start<=target_end:blocked.add(str(row["symbol"]).upper())
+    return blocked
 
 
 def _repair_weekly_monthly_collisions(now: Optional[datetime] = None) -> List[Dict[str, str]]:
-    """Repair legacy Weekly/Monthly duplicates without fabricating a replacement.
-
-    Current-period identities outrank future pre-period identities, because the current
-    book is already in force. Otherwise the earlier publication wins deterministically.
-    The losing row is VOIDed; its worker then sees a genuine contract shortage and may
-    refill only through the normal unchanged evidence/risk gates.
-    """
-    now=now or datetime.now(IST)
+    """Repair current/future frozen-period Weekly/Monthly identity collisions."""
+    now=now or datetime.now(IST);today=now.date()
     current={"WEEKLY":period_key("WEEKLY",now),"MONTHLY":period_key("MONTHLY",now)}
     with db() as con:
-        rs=[dict(r) for r in con.execute(
-            "SELECT recommendation_id,book,period_key,symbol,side,created_at "
-            "FROM recommendations WHERE book IN ('WEEKLY','MONTHLY') "
-            "AND state='LIVE' AND COALESCE(result,'')<>'VOID' ORDER BY created_at"
+        rows=[dict(r) for r in con.execute(
+            "SELECT recommendation_id,book,period_key,symbol,side,state,result,created_at FROM recommendations "
+            "WHERE book IN ('WEEKLY','MONTHLY') AND COALESCE(result,'')<>'VOID' ORDER BY created_at"
         ).fetchall()]
     by_symbol={}
-    for r in rs:
-        by_symbol.setdefault(str(r["symbol"]).upper(),[]).append(r)
-    repairs=[]
-    ts=now_iso()
-    for symbol,rows_ in by_symbol.items():
-        books={str(r["book"]).upper() for r in rows_}
-        if len(books)<2:
-            continue
-        def priority(r):
-            book=str(r["book"]).upper();pk=str(r["period_key"]);cur=str(current[book])
-            relation=0 if pk==cur else (1 if pk>cur else 2)
-            return (relation,str(r.get("created_at") or ""),book,str(r.get("recommendation_id") or ""))
-        ordered=sorted(rows_,key=priority)
-        keep=ordered[0]
-        for loser in ordered[1:]:
-            if str(loser["book"]).upper()==str(keep["book"]).upper():
-                continue
-            repairs.append({
-                "symbol":symbol,
-                "kept_book":str(keep["book"]).upper(),
-                "voided_book":str(loser["book"]).upper(),
-                "voided_id":str(loser["recommendation_id"]),
-            })
+    for r in rows:
+        try:start,end=_frozen_period_bounds(str(r["book"]),str(r["period_key"]))
+        except Exception:continue
+        if end<today:continue
+        r["_start"]=start;r["_end"]=end;by_symbol.setdefault(str(r["symbol"]).upper(),[]).append(r)
+    repairs=[];ts=now_iso()
+    for symbol,items in by_symbol.items():
+        n=len(items)
+        if n<2:continue
+        adjacency={i:set() for i in range(n)}
+        for i in range(n):
+            for j in range(i+1,n):
+                if str(items[i]["book"]).upper()==str(items[j]["book"]).upper():continue
+                if items[i]["_start"]<=items[j]["_end"] and items[j]["_start"]<=items[i]["_end"]:
+                    adjacency[i].add(j);adjacency[j].add(i)
+        seen=set()
+        for root in range(n):
+            if root in seen or not adjacency[root]:continue
+            stack=[root];component=[]
+            while stack:
+                i=stack.pop()
+                if i in seen:continue
+                seen.add(i);component.append(i);stack.extend(adjacency[i]-seen)
+            def priority(i):
+                r=items[i];book=str(r["book"]).upper();pk=str(r["period_key"]);cur=str(current[book])
+                relation=0 if pk==cur else (1 if pk>cur else 2)
+                return (relation,str(r.get("created_at") or ""),book,str(r.get("recommendation_id") or ""))
+            winner=items[min(component,key=priority)];winning_book=str(winner["book"]).upper()
+            for i in component:
+                loser=items[i]
+                if str(loser["book"]).upper()==winning_book:continue
+                repairs.append({"symbol":symbol,"kept_book":winning_book,"voided_book":str(loser["book"]).upper(),"voided_id":str(loser["recommendation_id"])})
+    repairs=list({r["voided_id"]:r for r in repairs}.values())
     if repairs:
         with db() as con:
             con.execute("BEGIN IMMEDIATE")
             try:
                 for r in repairs:
                     con.execute(
-                        "UPDATE recommendations SET state='CLOSED',result='VOID',"
-                        "close_reason='HORIZON_COLLISION_REPAIR_V651',closed_at=?,updated_at=? "
-                        "WHERE recommendation_id=? AND state='LIVE'",
+                        "UPDATE recommendations SET state='CLOSED',result='VOID',close_reason='HORIZON_IDENTITY_COLLISION_REPAIR_V661',"
+                        "closed_at=COALESCE(closed_at,?),updated_at=? WHERE recommendation_id=? AND COALESCE(result,'')<>'VOID'",
                         (ts,ts,r["voided_id"]),
                     )
                 con.execute("COMMIT")
             except Exception:
-                con.execute("ROLLBACK")
-                raise
-        health("horizon_collision","WARN","Weekly/Monthly duplicate identities repaired",
-               {"count":len(repairs),"repairs":repairs[:12],"policy":"V651_SYMBOL_LEVEL_HORIZON_ISOLATION"})
+                con.execute("ROLLBACK");raise
+        health("horizon_collision","WARN","Weekly/Monthly frozen-period identity collisions repaired",
+               {"count":len(repairs),"repairs":repairs[:12],"policy":"V661_OVERLAPPING_PERIOD_IDENTITY_ISOLATION"})
     return repairs
-
 
 def _pct_target(book: str, f: Dict[str, Any]) -> float:
     settings = load_settings()
@@ -478,44 +484,57 @@ def _horizon_target_context(book: str, now: Optional[datetime] = None) -> Dict[s
 
 
 def _recovery_symbol_batch(book: str, interval: str, pk: str, batch_size: int) -> Dict[str, Any]:
-    """Return a rotating, deterministic cached-data batch for fast recovery.
-
-    Liquidity only controls processing order; it never relaxes a gate or permanently
-    excludes the rest of the NSE universe. Repeated worker cycles expand through every
-    cached-ready symbol until the contract is fulfilled.
-    """
-    metas = universe()
-    all_syms = [str(x.get("symbol") or "").upper() for x in metas if x.get("symbol")]
-    ranked = liquidity_rank(limit=max(1, len(all_syms)))
-    seen = set(); ordered = []
-    for sym in list(ranked) + all_syms:
-        sym = str(sym or "").upper()
-        if not sym or sym in seen:
-            continue
-        if not _history_path(sym, interval).exists():
-            continue
-        seen.add(sym); ordered.append(sym)
+    """Return a rotating deterministic cached-data batch and explicit pass evidence."""
+    metas=universe();all_syms=[str(x.get("symbol") or "").upper() for x in metas if x.get("symbol")]
+    ranked=liquidity_rank(limit=max(1,len(all_syms)));seen=set();ordered=[]
+    for sym in list(ranked)+all_syms:
+        sym=str(sym or "").upper()
+        if not sym or sym in seen or not _history_path(sym,interval).exists():continue
+        seen.add(sym);ordered.append(sym)
     if not ordered:
-        return {"symbols": [], "cursor": 0, "next_cursor": 0, "ready": 0, "batch_size": 0, "pass": 0}
-    size = max(1, min(int(batch_size), len(ordered)))
-    key = f"recovery_cursor_{str(book).upper()}_{pk}_{interval}"
-    state = get_state(key, {}) or {}
-    if isinstance(state, dict):
-        cursor = int(state.get("cursor") or 0) % len(ordered)
-        pass_no = int(state.get("pass") or 0)
-    else:
-        cursor = int(state or 0) % len(ordered); pass_no = 0
-    chosen = ordered[cursor:cursor + size]
-    next_cursor = cursor + len(chosen)
-    if next_cursor >= len(ordered):
-        next_cursor = 0; pass_no += 1
-    new_state = {"cursor": next_cursor, "pass": pass_no, "ready": len(ordered),
-                 "last_batch": len(chosen), "at": now_iso(),
-                 "policy": "LIQUIDITY_ORDER_ONLY_ROTATING_FULL_CACHED_BREADTH"}
-    set_state(key, new_state)
-    return {"symbols": chosen, "cursor": cursor, "next_cursor": next_cursor,
-            "ready": len(ordered), "batch_size": len(chosen), "pass": pass_no}
+        return {"symbols":[],"cursor":0,"next_cursor":0,"ready":0,"batch_size":0,"pass_started":0,"pass":0,"completed_pass":False}
+    size=max(1,min(int(batch_size),len(ordered)));key=f"recovery_cursor_{str(book).upper()}_{pk}_{interval}"
+    state=get_state(key,{}) or {}
+    if isinstance(state,dict):cursor=int(state.get("cursor") or 0)%len(ordered);pass_no=int(state.get("pass") or 0)
+    else:cursor=int(state or 0)%len(ordered);pass_no=0
+    pass_started=pass_no;chosen=ordered[cursor:cursor+size];raw_next=cursor+len(chosen)
+    completed_pass=bool(chosen and raw_next>=len(ordered));next_cursor=0 if completed_pass else raw_next
+    if completed_pass:pass_no+=1
+    set_state(key,{"cursor":next_cursor,"pass":pass_no,"ready":len(ordered),"last_batch":len(chosen),
+                   "last_pass_started":pass_started,"completed_pass":completed_pass,"at":now_iso(),
+                   "policy":"LIQUIDITY_ORDER_ONLY_ROTATING_FULL_CACHED_BREADTH"})
+    return {"symbols":chosen,"cursor":cursor,"next_cursor":next_cursor,"ready":len(ordered),"batch_size":len(chosen),
+            "pass_started":pass_started,"pass":pass_no,"completed_pass":completed_pass}
 
+
+def _merge_intraday_bootstrap_pass(pk: str, batch: Dict[str, Any], detail: Dict[str, Any], published: int = 0) -> Dict[str, Any]:
+    """Accumulate zero-live Intraday evidence until one cached-ready pass is actually exhaustive."""
+    key=f"intraday_bootstrap_pass_{pk}";pass_started=int(batch.get("pass_started") or 0);previous=get_state(key,{}) or {}
+    if int(previous.get("pass_started",-1))!=pass_started:
+        previous={"period_key":pk,"pass_started":pass_started,"started_at":now_iso(),"scanned":0,"counters":{},"near_misses":[]}
+    funnel=dict(detail.get("funnel") or {});counters=dict(previous.get("counters") or {})
+    additive=("history_ready","history_reject","liquidity_reject","freshness_reject","strategy_evidence_reject",
+              "strategy_diversity_advisory","score_reject","target_feasibility_reject","risk_reject",
+              "trade_intelligence_reject","data_error","raw_eligible","publication_ready")
+    for name in additive:counters[name]=int(counters.get(name) or 0)+int(funnel.get(name) or 0)
+    counters["published"]=int(counters.get("published") or 0)+int(published or 0)
+    scanned=int(previous.get("scanned") or 0)+int(detail.get("processed") or 0);ready=int(batch.get("ready") or 0)
+    cursor_completed=bool(batch.get("completed_pass"));exhaustive=bool(cursor_completed and ready>0 and scanned>=ready)
+    near=list(previous.get("near_misses") or [])+list(detail.get("near_misses") or [])
+    near.sort(key=lambda x:(float(x.get("score") or 0),-abs(float(x.get("distance_to_threshold") or 999999))),reverse=True);near=near[:12]
+    if counters["published"]>0:classification="OPPORTUNITY_PUBLISHED"
+    elif not exhaustive:classification="SEARCH_INCOMPLETE"
+    elif counters.get("history_ready",0)<=0:classification="DATA_NOT_READY"
+    elif counters.get("publication_ready",0)<=0:classification="NO_QUALIFIED_OPPORTUNITY_IN_CACHED_READY_UNIVERSE"
+    else:classification="QUALIFIED_CANDIDATE_NOT_PUBLISHED"
+    out={"period_key":pk,"pass_started":pass_started,"ready_cached":ready,
+         "full_universe_total":int(detail.get("full_nse_universe") or funnel.get("universe_total") or 0),
+         "scanned":scanned,"coverage_pct":round(min(1.0,scanned/max(1,ready)),4) if ready else 0.0,
+         "cursor_completed":cursor_completed,"exhaustive_cached_ready_pass":exhaustive,"classification":classification,
+         "counters":counters,"near_misses":near,"updated_at":now_iso(),"started_at":previous.get("started_at") or now_iso()}
+    set_state(key,out)
+    if exhaustive:set_state(f"intraday_bootstrap_last_complete_{pk}",out)
+    return out
 
 def _period_has_valid_frozen_book(book: str, pk: Optional[str] = None) -> bool:
     """Return True only when the period's freeze contract is actually complete.
@@ -605,7 +624,7 @@ def _publish_frozen(book: str, min_obs: int = 3, per_side: int = 5, publication_
 
     made=0
     contract_min=_freeze_contract_min(b)
-    horizon_blocked=_weekly_monthly_conflicts(b) if b in ("WEEKLY","MONTHLY") else set()
+    horizon_blocked=_weekly_monthly_conflicts(b,pk) if b in ("WEEKLY","MONTHLY") else set()
     target_per_side=max(int(per_side),contract_min if contract_min and len(allowed_sides)==1 else int(per_side))
     for side in allowed_sides:
         already=existing_by_side.get(side,set())
@@ -897,7 +916,9 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
         _journal_decisions(book,list(decision_buffer),period_key_override=period_key_override);decision_buffer.clear()
     stats["history_coverage"].update({"ready":stats["history_ready"],"files":stats["history_ready"]+stats["history_missing"],"scanned_on_the_fly":True})
     stats["funnel"]={
-        "universe_total":len(syms),"history_ready":stats["history_ready"],"history_reject":stats["history_missing"],
+        "universe_total":len(all_syms),"scan_scope_total":len(syms),"scan_scope_processed":stats["processed"],
+        "full_universe_scan":bool(symbols_override is None and stats["processed"]>=len(all_syms)),
+        "history_ready":stats["history_ready"],"history_reject":stats["history_missing"],
         "liquidity_reject":stats["liquidity_reject"],"freshness_reject":stats["freshness_reject"],
         "strategy_evidence_reject":stats["strategy_evidence_reject"],"strategy_diversity_advisory":stats["family_vote_advisory"],
         "score_reject":stats["ensemble_score_reject"],"target_feasibility_reject":stats["target_feasibility_reject"],
@@ -984,7 +1005,7 @@ def run_intraday_cycle():
     live_window=is_regular_trading_day(now.date()) and MARKET_OPEN <= now.time().replace(tzinfo=None) <= INTRADAY_ENTRY_CUTOFF
     status={"book":"INTRADAY","started_at":now_iso(),"running":True,"live_window":live_window}
     set_state("scan_status_INTRADAY",status)
-    made=0;freshness_holds=0;cands=[];pk=period_key("INTRADAY",now)
+    made=0;freshness_holds=0;cands=[];bootstrap_batch=None;pass_summary=None;pk=period_key("INTRADAY",now)
     with db() as con:
         live_count=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='INTRADAY' AND period_key=? AND state='LIVE'",(pk,)).fetchone()[0])
     if live_window:
@@ -993,9 +1014,11 @@ def run_intraday_cycle():
             # liquidity order.  It does not relax any strategy, freshness, intelligence,
             # target, portfolio or execution gate; the next cycle returns to full breadth
             # as soon as one valid live recommendation exists.
-            batch=_recovery_symbol_batch("INTRADAY","5minute",pk,int(settings.get("intraday_bootstrap_batch",100)))
+            batch=_recovery_symbol_batch("INTRADAY","5minute",pk,int(settings.get("intraday_bootstrap_batch",100)));bootstrap_batch=batch
             status["bootstrap_recovery"]={"active":True,"batch_size":batch.get("batch_size",0),
-                "ready_cached":batch.get("ready",0),"cursor":batch.get("cursor",0),"pass":batch.get("pass",0),
+                "ready_cached":batch.get("ready",0),"cursor":batch.get("cursor",0),
+                "pass_started":batch.get("pass_started",0),"pass":batch.get("pass",0),
+                "completed_pass":bool(batch.get("completed_pass")),
                 "policy":"PRIORITY_BOOTSTRAP_THEN_FULL_BREADTH_NO_GATE_RELAXATION"}
             cands=scan_equities("INTRADAY",symbols_override=batch.get("symbols") or [],
                 period_key_override=pk,scan_policy="PRIORITY_BOOTSTRAP_ZERO_LIVE_NO_GATE_RELAXATION")
@@ -1026,17 +1049,26 @@ def run_intraday_cycle():
         detail["freshness_holds_at_publication"]=freshness_holds
         detail["published"]=made
         set_state("scan_detail_INTRADAY",detail)
+    if bootstrap_batch is not None:
+        pass_summary=_merge_intraday_bootstrap_pass(pk,bootstrap_batch,detail,made)
+        status.setdefault("bootstrap_recovery",{})["pass_summary"]=pass_summary
+        status["search_evidence"]=pass_summary
     if live_window and made==0:
-        history_ready=int(detail.get("history_ready") or 0)
-        processed=int(detail.get("processed") or 0)
-        if processed<=1 and history_ready==0:
-            availability_reason="SCAN_INTERRUPTED_OR_NOT_PROGRESSING"
-        elif history_ready<5:
-            availability_reason="INSUFFICIENT_INTRADAY_HISTORY"
+        history_ready=int(detail.get("history_ready") or 0);processed=int(detail.get("processed") or 0)
+        if pass_summary is not None:
+            availability_class=str(pass_summary.get("classification") or "SEARCH_INCOMPLETE")
+            if availability_class=="SEARCH_INCOMPLETE":availability_reason="DETERMINISTIC_CACHED_READY_UNIVERSE_PASS_INCOMPLETE"
+            elif availability_class=="DATA_NOT_READY":availability_reason="NO_HISTORY_READY_SYMBOLS_AFTER_EXHAUSTIVE_CACHED_PASS"
+            elif availability_class=="NO_QUALIFIED_OPPORTUNITY_IN_CACHED_READY_UNIVERSE":availability_reason="NO_QUALIFIED_OPPORTUNITY_AFTER_EXHAUSTIVE_CACHED_READY_PASS"
+            elif availability_class=="QUALIFIED_CANDIDATE_NOT_PUBLISHED":availability_reason="QUALIFIED_CANDIDATE_BLOCKED_AT_PUBLICATION_OR_IDENTITY_GATE"
+            else:availability_reason=availability_class
+            status["availability_class"]=availability_class
+        elif processed<=1 and history_ready==0:
+            availability_reason="SCAN_INTERRUPTED_OR_NOT_PROGRESSING";status["availability_class"]="SOFTWARE_OR_DATA_BOTTLENECK"
         elif not cands:
-            availability_reason="NO_DATA_VALID_CANDIDATES_AFTER_QUALITY_RISK_GATES"
+            availability_reason="NO_DATA_VALID_CANDIDATES_AFTER_FULL_BREADTH_QUALITY_RISK_GATES";status["availability_class"]="NO_QUALIFIED_OPPORTUNITY"
         else:
-            availability_reason="ELIGIBLE_CANDIDATES_ALREADY_EXIST_OR_ENTRY_GATE_REJECTED"
+            availability_reason="ELIGIBLE_CANDIDATES_ALREADY_EXIST_OR_ENTRY_GATE_REJECTED";status["availability_class"]="PUBLICATION_OR_IDENTITY_GATE"
         status["status"]="NO_RECOMMENDATIONS"
         status["availability_reason"]=availability_reason
     else:

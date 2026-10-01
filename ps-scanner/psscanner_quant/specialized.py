@@ -105,6 +105,13 @@ def scan_etfs(sides: Optional[tuple]=None, target_now: Optional[datetime]=None)-
     return out
 
 
+def _etf_missed_freeze_recovery_allowed(now: datetime, existing: int, required: int, preperiod: bool) -> bool:
+    """Allow current-week ETF recovery only while the NSE can supply fresh evidence."""
+    t=now.time().replace(tzinfo=None)
+    return bool(not preperiod and existing<required and is_regular_trading_day(now.date())
+                and HORIZON_RECOVERY_END<t<=MARKET_CLOSE)
+
+
 def run_etf_cycle():
     """Enforce the ETF five-pick contract from cached data first.
 
@@ -122,9 +129,7 @@ def run_etf_cycle():
         return 0
 
     normal_research=is_regular_trading_day(now.date()) and HORIZON_RESEARCH_START<=t<=HORIZON_RECOVERY_END
-    missed_freeze_recovery=bool(
-        not preperiod and existing<required and is_regular_trading_day(now.date()) and t>HORIZON_RECOVERY_END
-    )
+    missed_freeze_recovery=_etf_missed_freeze_recovery_allowed(now,existing,required,preperiod)
     research_window=preperiod or normal_research or missed_freeze_recovery
     publication_allowed=preperiod or bool(_horizon_freeze_window('ETF',now).get('open')) or missed_freeze_recovery
     if not research_window:

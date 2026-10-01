@@ -49,40 +49,39 @@ CREATE TABLE IF NOT EXISTS recommendations (
 CREATE INDEX IF NOT EXISTS idx_recs_book_state ON recommendations(book,state,score DESC);
 CREATE INDEX IF NOT EXISTS idx_recs_period ON recommendations(book,period_key,state);
 
--- Defense-in-depth database publication interlock. Application code already performs
--- a BEGIN IMMEDIATE check+insert, but these triggers make the WEEKLY/MONTHLY symbol
--- exclusivity invariant survive future publication paths as well.
-CREATE TRIGGER IF NOT EXISTS trg_weekly_monthly_symbol_exclusive_insert
+-- Defense-in-depth frozen-identity interlock. Early close does not release a frozen
+-- Weekly/Monthly symbol while the two calendar periods overlap.
+DROP TRIGGER IF EXISTS trg_weekly_monthly_symbol_exclusive_insert;
+DROP TRIGGER IF EXISTS trg_weekly_monthly_symbol_exclusive_update;
+CREATE TRIGGER trg_weekly_monthly_symbol_exclusive_insert
 BEFORE INSERT ON recommendations
-WHEN NEW.state='LIVE'
-  AND NEW.book IN ('WEEKLY','MONTHLY')
-  AND COALESCE(NEW.result,'')<>'VOID'
+WHEN NEW.book IN ('WEEKLY','MONTHLY') AND COALESCE(NEW.result,'')<>'VOID'
 BEGIN
   SELECT CASE WHEN EXISTS (
     SELECT 1 FROM recommendations r
-    WHERE r.state='LIVE'
-      AND r.book IN ('WEEKLY','MONTHLY')
-      AND r.book<>NEW.book
-      AND UPPER(r.symbol)=UPPER(NEW.symbol)
-      AND COALESCE(r.result,'')<>'VOID'
-  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_SYMBOL_COLLISION') END;
+    WHERE r.book IN ('WEEKLY','MONTHLY') AND r.book<>NEW.book
+      AND UPPER(r.symbol)=UPPER(NEW.symbol) AND COALESCE(r.result,'')<>'VOID'
+      AND (CASE WHEN NEW.book='WEEKLY' THEN date(NEW.period_key) ELSE date(NEW.period_key||'-01') END)
+          <= (CASE WHEN r.book='WEEKLY' THEN date(r.period_key,'+6 day') ELSE date(r.period_key||'-01','+1 month','-1 day') END)
+      AND (CASE WHEN r.book='WEEKLY' THEN date(r.period_key) ELSE date(r.period_key||'-01') END)
+          <= (CASE WHEN NEW.book='WEEKLY' THEN date(NEW.period_key,'+6 day') ELSE date(NEW.period_key||'-01','+1 month','-1 day') END)
+  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_PERIOD_IDENTITY_COLLISION') END;
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_weekly_monthly_symbol_exclusive_update
-BEFORE UPDATE OF book,state,symbol,result ON recommendations
-WHEN NEW.state='LIVE'
-  AND NEW.book IN ('WEEKLY','MONTHLY')
-  AND COALESCE(NEW.result,'')<>'VOID'
+CREATE TRIGGER trg_weekly_monthly_symbol_exclusive_update
+BEFORE UPDATE OF book,period_key,symbol ON recommendations
+WHEN NEW.book IN ('WEEKLY','MONTHLY') AND COALESCE(NEW.result,'')<>'VOID'
 BEGIN
   SELECT CASE WHEN EXISTS (
     SELECT 1 FROM recommendations r
     WHERE r.recommendation_id<>NEW.recommendation_id
-      AND r.state='LIVE'
-      AND r.book IN ('WEEKLY','MONTHLY')
-      AND r.book<>NEW.book
-      AND UPPER(r.symbol)=UPPER(NEW.symbol)
-      AND COALESCE(r.result,'')<>'VOID'
-  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_SYMBOL_COLLISION') END;
+      AND r.book IN ('WEEKLY','MONTHLY') AND r.book<>NEW.book
+      AND UPPER(r.symbol)=UPPER(NEW.symbol) AND COALESCE(r.result,'')<>'VOID'
+      AND (CASE WHEN NEW.book='WEEKLY' THEN date(NEW.period_key) ELSE date(NEW.period_key||'-01') END)
+          <= (CASE WHEN r.book='WEEKLY' THEN date(r.period_key,'+6 day') ELSE date(r.period_key||'-01','+1 month','-1 day') END)
+      AND (CASE WHEN r.book='WEEKLY' THEN date(r.period_key) ELSE date(r.period_key||'-01') END)
+          <= (CASE WHEN NEW.book='WEEKLY' THEN date(NEW.period_key,'+6 day') ELSE date(NEW.period_key||'-01','+1 month','-1 day') END)
+  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_PERIOD_IDENTITY_COLLISION') END;
 END;
 
 CREATE TABLE IF NOT EXISTS strategies (
@@ -324,6 +323,7 @@ def _connect(timeout_seconds: float = 10.0) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute(f"PRAGMA busy_timeout={int(timeout*1000)}")
     con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA synchronous=NORMAL")
     return con
 
 

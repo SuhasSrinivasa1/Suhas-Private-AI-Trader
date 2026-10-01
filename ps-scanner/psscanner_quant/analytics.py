@@ -149,7 +149,7 @@ def _group_keys(row: Dict[str, Any], group_by: str, family_map: Dict[str, str]) 
             if fam not in vals:
                 vals.append(fam)
         return vals or ["UNATTRIBUTED"]
-    if g in {"book", "symbol", "side", "regime", "horizon", "period_key"}:
+    if g in {"book", "symbol", "side", "regime", "horizon", "period_key", "result", "close_reason"}:
         return [str(row.get(g) or "UNKNOWN")]
     dt = _closed_dt(row)
     if g == "day":
@@ -213,6 +213,8 @@ def _group_stats(key: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "voids": voids,
         "other_closed": other,
         "win_rate": round(wins / trading_n, 4) if trading_n else None,
+        "loss_rate": round(losses / trading_n, 4) if trading_n else None,
+        "miss_rate": round(misses / trading_n, 4) if trading_n else None,
         "win_rate_wilson_95": {
             "low": round(ci_lo, 4) if ci_lo is not None else None,
             "high": round(ci_hi, 4) if ci_hi is not None else None,

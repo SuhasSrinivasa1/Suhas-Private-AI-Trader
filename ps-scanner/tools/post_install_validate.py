@@ -19,14 +19,14 @@ def fail(message):
 
 
 ping=get("/api/ping")
-if ping.get("version")!="6.6.0":fail("runtime version is not 6.6.0")
+if ping.get("version")!="6.6.1":fail("runtime version is not 6.6.1")
 health=get("/api/health")
 if health.get("engine_alive") is not True:fail("engine supervisor is not alive")
 life=get("/api/lifecycle")
-if life.get("policy_version")!="V660_CURRENT_PERIOD_LIFECYCLE":fail("lifecycle contract is not v6.6.0")
+if life.get("policy_version")!="V661_FROZEN_IDENTITY_AND_SEARCH_EXHAUSTION":fail("lifecycle contract is not v6.6.1")
 sanity=get("/api/sanity")
 if sanity.get("database_quick_check")!="ok":fail("SQLite quick_check failed")
-if sanity.get("weekly_monthly_collisions"):fail("Weekly/Monthly live symbol collision detected")
+if sanity.get("weekly_monthly_collisions"):fail("Weekly/Monthly overlapping frozen-period identity collision detected")
 if sanity.get("old_intraday_live_rows"):fail("old Intraday LIVE rows remain")
 if sanity.get("old_circuit_live_rows"):fail("old Circuit LIVE rows remain")
 if sanity.get("dead_workers"):fail("dead workers: "+",".join(sanity["dead_workers"]))

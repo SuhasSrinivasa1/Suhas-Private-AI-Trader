@@ -1,3 +1,9 @@
+# PS Scanner Quant v6.6.1 — Frozen Identity & Search Exhaustion Integrity
+
+v6.6.1 is a structural follow-up to the v6.6.0 lifecycle audit. It does not loosen any trading threshold or hard safety gate. It strengthens frozen-book identity integrity, makes zero-live Intraday shortage claims depend on an actually completed cached-ready universe pass, bounds ETF missed-freeze recovery to market hours, reasserts SQLite durability policy per connection, and adds loss/miss rates plus result/close-reason performance grouping.
+
+See `ARCHITECTURE_AUDIT_v6.6.1.md` and `RELEASE_v6.6.1.md` for the current page/domain matrix, findings, invariants and tests.
+
 # PS Scanner Quant v6.6.0 — Current-Period Lifecycle & Statistical Audit
 
 v6.6.0 restructures PS Scanner around explicit page/book lifecycle contracts. Active pages show the current actionable period only; historical outcomes remain in SQLite for learning and are available in the dedicated Performance & History surface. The release adds `/api/lifecycle`, `/api/performance`, `/api/history/recommendations`, a broader bounded `/api/sanity`, rejection-funnel telemetry, numerical uncertainty metrics and richer worker health.
@@ -118,10 +124,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.6.0.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.6.0
-unzip -q PS_Scanner_Quant_v6.6.0.zip
-cd PS_Scanner_Quant_v6.6.0
+unzip -t PS_Scanner_Quant_v6.6.1.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.6.1
+unzip -q PS_Scanner_Quant_v6.6.1.zip
+cd PS_Scanner_Quant_v6.6.1
 chmod +x install.sh
 ./install.sh
 ```

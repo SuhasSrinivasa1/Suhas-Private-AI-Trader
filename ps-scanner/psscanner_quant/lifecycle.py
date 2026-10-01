@@ -10,7 +10,7 @@ expiry, recovery and learning semantics from one source instead of stale page co
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-POLICY_VERSION = "V660_CURRENT_PERIOD_LIFECYCLE"
+POLICY_VERSION = "V661_FROZEN_IDENTITY_AND_SEARCH_EXHAUSTION"
 
 BOOK_CONTRACTS: Dict[str, Dict[str, Any]] = {
     "INTRADAY": {
@@ -63,7 +63,7 @@ BOOK_CONTRACTS: Dict[str, Dict[str, Any]] = {
         "default_ui": "active period only",
         "history_ui": "older months only through History/Performance",
         "target_count": 5,
-        "cross_book_constraint": "symbol-level mutually exclusive with WEEKLY while LIVE",
+        "cross_book_constraint": "symbol-level mutually exclusive with WEEKLY for overlapping frozen periods, even after early close",
     },
     "ETF": {
         "page": "ETF",
