@@ -1,0 +1,12 @@
+Univest AutoTrade v2.2.0 build: SUCCESS
+package=com.suhas.multyfideliverybuy
+versionCode=220
+versionName=2.2.0
+sourcePackage=com.univest.capp
+product=NSE CASH / CNC DELIVERY ONLY
+notificationDuplicateExecutionGate=removed
+backInRangeBrokerFlat=INR 20000 missed initial entry
+backInRangeHoldingExists=INR 5000 add
+averaging=INR 5000 at -2/-4/-6 percent, max 3
+signingCertificateSHA256=a26f7cdc81822398320d640aab83eaf9e6efcb742647dd9b4d19eae23b658f8e
+signingIdentity=ephemeral new identity
