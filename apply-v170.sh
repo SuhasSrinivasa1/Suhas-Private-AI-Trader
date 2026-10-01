@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd nse-delivery-v160
+python3 - <<'PY'
+from pathlib import Path
+p=Path('app/build.gradle');s=p.read_text();s=s.replace("versionCode 160","versionCode 170").replace("versionName '1.6.0'","versionName '1.7.0'");p.write_text(s)
+PY
+cat > app/src/main/java/com/suhas/nsedeliverymomentum/Housekeeping.java <<'JAVA'
+package com.suhas.nsedeliverymomentum;
+
+import android.content.*;
+import java.io.File;
+import java.time.*;
+import java.time.format.DateTimeParseException;
+import java.util.*;
+
+/** Keeps detailed per-day metadata bounded while preserving compact lifetime learning. */
+final class Housekeeping {
+    private static final ZoneId IST=ZoneId.of("Asia/Kolkata");
+    static final int RETAIN_WEEKDAY_SESSIONS=60;
+    private static final String[] DAILY_PREFIXES={"rec_","short_rec_","bought_"};
+    static final class Result {final int removed;final long bytes;final String when;Result(int r,long b,String w){removed=r;bytes=b;when=w;}}
+    static Result runDaily(Context c,SecretStore store){String day=GrowwClient.sessionDay();if(day.equals(store.get("housekeeping_day","")))return snapshot(c,store);return run(c,store,false);}
+    static Result run(Context c,SecretStore store,boolean force){String day=GrowwClient.sessionDay();if(!force&&day.equals(store.get("housekeeping_day","")))return snapshot(c,store);int removed=pruneFlags(store.prefs(),LocalDate.now(IST));String when=ZonedDateTime.now(IST).withNano(0).toString();store.put("housekeeping_day",day);store.put("housekeeping_last_run",when);store.putInt("housekeeping_removed",removed);long bytes=learningStorageBytes(c);store.put("housekeeping_storage_bytes",Long.toString(bytes));return new Result(removed,bytes,when);}
+    static int pruneFlags(SharedPreferences p,LocalDate now){SharedPreferences.Editor e=p.edit();int removed=0;for(String key:new ArrayList<>(p.getAll().keySet())){LocalDate d=extractDate(key);if(d==null)continue;if(tradingWeekdaysBetween(d,now)>RETAIN_WEEKDAY_SESSIONS){e.remove(key);removed++;}}if(removed>0)e.commit();return removed;}
+    static LocalDate extractDate(String key){if(key==null)return null;String prefix=null;for(String p:DAILY_PREFIXES)if(key.startsWith(p)){prefix=p;break;}if(prefix==null||key.length()<prefix.length()+10)return null;String raw=key.substring(prefix.length(),prefix.length()+10);try{return LocalDate.parse(raw);}catch(DateTimeParseException ex){return null;}}
+    static int tradingWeekdaysBetween(LocalDate from,LocalDate to){if(from==null||to==null||!from.isBefore(to))return 0;int n=0;LocalDate d=from.plusDays(1);while(!d.isAfter(to)){DayOfWeek w=d.getDayOfWeek();if(w!=DayOfWeek.SATURDAY&&w!=DayOfWeek.SUNDAY)n++;d=d.plusDays(1);}return n;}
+    static long learningStorageBytes(Context c){try{File dir=new File(c.getApplicationInfo().dataDir,"shared_prefs");long n=0;File[] fs=dir.listFiles();if(fs!=null)for(File f:fs){String x=f.getName();if(x.equals("delivery_momentum.xml")||x.equals("delivery_learning.xml"))n+=Math.max(0,f.length());}return n;}catch(Exception e){return 0;}}
+    static Result snapshot(Context c,SecretStore s){long bytes=learningStorageBytes(c);String when=s.get("housekeeping_last_run","Not run yet");return new Result(s.getInt("housekeeping_removed",0),bytes,when);}
+    static String summary(Context c,SecretStore s){Result r=snapshot(c,s);return "LEARNING STORAGE • "+human(r.bytes)+" • bounded metadata\nLast cleanup: "+shortWhen(r.when)+" • removed "+r.removed+" stale flags • lifetime score buckets retained";}
+    private static String human(long bytes){if(bytes<1024)return bytes+" B";double kb=bytes/1024.0;if(kb<1024)return String.format(Locale.US,"%.1f KB",kb);return String.format(Locale.US,"%.2f MB",kb/1024.0);}
+    private static String shortWhen(String x){if(x==null||x.isEmpty())return "Not run yet";int t=x.indexOf('T');if(t>0&&x.length()>=Math.min(x.length(),t+9))return x.substring(0,Math.min(x.length(),t+9)).replace('T',' ');return x;}
+    private Housekeeping(){}
+}
+JAVA
+python3 - <<'PY'
+from pathlib import Path
+p=Path('app/src/main/java/com/suhas/nsedeliverymomentum/SignalConfirmation.java');s=p.read_text();needle='    synchronized void retain(Set<String> activeKeys){\n        streaks.keySet().retainAll(activeKeys);scores.keySet().retainAll(activeKeys);\n    }\n';assert needle in s;s=s.replace(needle,needle+'\n    synchronized void clear(){streaks.clear();scores.clear();}\n');p.write_text(s)
+p=Path('app/src/main/java/com/suhas/nsedeliverymomentum/LearningStore.java');s=p.read_text();s=s.replace('    LearningStore(Context c){p=c.getSharedPreferences("delivery_learning",Context.MODE_PRIVATE);load();}','    LearningStore(Context c){p=c.getSharedPreferences("delivery_learning",Context.MODE_PRIVATE);load();pruneStaleActive();}');marker='    synchronized List<Call> active(){return new ArrayList<>(active.values());}\n';assert marker in s;s=s.replace(marker,marker+'\n    synchronized void pruneStaleActive(){\n        long cutoff=System.currentTimeMillis()-72L*60L*60L*1000L;boolean changed=false;\n        for(Call c:new ArrayList<>(active.values()))if(c.time<cutoff){active.remove(c.key());changed=true;}\n        if(active.size()>200){List<Call> xs=new ArrayList<>(active.values());xs.sort((a,b)->Long.compare(a.time,b.time));for(int i=0;i<xs.size()-200;i++)active.remove(xs.get(i).key());changed=true;}\n        if(changed)save();\n    }\n');p.write_text(s)
+p=Path('app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java');s=p.read_text();s=s.replace('    private long lastDeep=0; private volatile boolean forceNightLab=false;','    private long lastDeep=0; private volatile boolean forceNightLab=false; private String ramDay="";');s=s.replace('        super.onCreate();store=new SecretStore(this);api=new GrowwClient(store);learning=new LearningStore(this);','        super.onCreate();store=new SecretStore(this);api=new GrowwClient(store);learning=new LearningStore(this);Housekeeping.runDaily(this,store);');s=s.replace('    private void scan(){\n        ZonedDateTime now=ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));LocalTime t=now.toLocalTime();','    private void scan(){\n        ZonedDateTime now=ZonedDateTime.now(ZoneId.of("Asia/Kolkata"));rotateDailyMemory();Housekeeping.runDaily(this,store);LocalTime t=now.toLocalTime();');s=s.replace('        if(universe==null)universe=new UniverseStore().load();if(nightLab==null)nightLab=new NightLab(api,universe,store);store.put("night_lab_attempt_day",day);lastStatus="NIGHT LAB RUNNING • replaying historical sessions";broadcast();NightLab.Report r=nightLab.run();forceNightLab=false;lastStatus=r.summary();','        if(universe==null)universe=new UniverseStore().load();if(nightLab==null)nightLab=new NightLab(api,universe,store);store.put("night_lab_attempt_day",day);lastStatus="NIGHT LAB RUNNING • replaying historical sessions";broadcast();NightLab.Report r=nightLab.run();Housekeeping.run(this,store,true);forceNightLab=false;lastStatus=r.summary();');marker='    private double computeBaseline(String s,ZonedDateTime now)';assert marker in s;s=s.replace(marker,'    private void rotateDailyMemory(){String d=GrowwClient.sessionDay();if(d.equals(ramDay))return;ramDay=d;baselineVol.clear();lastFlow.clear();trajectoryFlow.clear();breakdownFlow.clear();longGate.clear();shortGate.clear();lastDeep=0;if(learning!=null)learning.pruneStaleActive();store.put("ram_cache_day",d);store.put("ram_cache_last_reset",ZonedDateTime.now(ZoneId.of("Asia/Kolkata")).withNano(0).toString());}\n\n'+marker);s=s.replace('i.putExtra("night_report",NightLab.storedReport(store));sendBroadcast(i);','i.putExtra("night_report",NightLab.storedReport(store));i.putExtra("storage_report",Housekeeping.summary(this,store));sendBroadcast(i);');p.write_text(s)
+p=Path('app/src/main/java/com/suhas/nsedeliverymomentum/MainActivity.java');s=p.read_text();s=s.replace('liveState,liveSub,nightReport;','liveState,liveSub,nightReport,storageReport;');s=s.replace('        store=new SecretStore(this);','        store=new SecretStore(this);Housekeeping.runDaily(this,store);');s=s.replace('titles.addView(label("3-engine ALL-NSE scanner + NIGHT LAB",12,muted,false));','titles.addView(label("3-engine ALL-NSE scanner + NIGHT LAB + AUTO CLEANUP",12,muted,false));');s=s.replace('TextView intro=label("Three independent ALL-NSE engines plus off-market walk-forward learning. NIGHT LAB can tighten promotion gates only after chronological holdout validation.",13,muted,false);','TextView intro=label("Three independent ALL-NSE engines plus off-market walk-forward learning. NIGHT LAB adapts validated score/persistence gates; housekeeping keeps detailed metadata bounded while lifetime learning survives.",13,muted,false);');needle='        TextView nightSub=label("Replays recent historical 5-minute sessions, grades BUY/SHORT analogues, learns from missed/failed patterns, and retains the current champion unless holdout improvement is real. It never auto-enables live execution.",10,muted,false);nightSub.setPadding(0,dp(7),0,0);night.addView(nightSub);\n';assert needle in s;s=s.replace(needle,needle+'        storageReport=label(Housekeeping.summary(this,store),10,green,false);storageReport.setPadding(0,dp(8),0,0);night.addView(storageReport);\n');s=s.replace('String nr=i.getStringExtra("night_report");if(nightReport!=null&&nr!=null&&!nr.isEmpty())nightReport.setText(nr);updateHeaderState();','String nr=i.getStringExtra("night_report");if(nightReport!=null&&nr!=null&&!nr.isEmpty())nightReport.setText(nr);String sr=i.getStringExtra("storage_report");if(storageReport!=null&&sr!=null&&!sr.isEmpty())storageReport.setText(sr);updateHeaderState();');old='        section(box,"NIGHT LAB","Runs automatically after 3:40 PM IST with a valid Groww token. Manual run is useful after installing or refreshing credentials.");TextView nightState=label(NightLab.storedReport(store),10,muted,false);nightState.setPadding(dp(10),dp(8),dp(10),dp(8));nightState.setBackground(round(surface2,dp(12),0,0));box.addView(nightState);Button runNight=button("RUN NIGHT LAB NOW",blueDim,blue,blue);box.addView(runNight,buttonLp());\n';new=old+'        section(box,"LEARNING STORAGE","Automatic daily housekeeping retains compact lifetime learning and current champion gates while pruning old per-day recommendation/order flags after roughly 60 weekday sessions.");TextView storageState=label(Housekeeping.summary(this,store),10,muted,false);storageState.setPadding(dp(10),dp(8),dp(10),dp(8));storageState.setBackground(round(surface2,dp(12),0,0));box.addView(storageState);Button cleanup=button("CLEAN LEARNING STORAGE NOW",greenDim,green,green);box.addView(cleanup,buttonLp());\n';assert old in s;s=s.replace(old,new);old2='        runNight.setOnClickListener(v->{Intent ni=new Intent(this,DeliveryMomentumService.class);ni.putExtra("night_now",true);if(Build.VERSION.SDK_INT>=26)startForegroundService(ni);else startService(ni);toast("NIGHT LAB requested — keep the app online while replay runs");});\n';assert old2 in s;s=s.replace(old2,old2+'        cleanup.setOnClickListener(v->{Housekeeping.Result hr=Housekeeping.run(this,store,true);storageState.setText(Housekeeping.summary(this,store));if(storageReport!=null)storageReport.setText(Housekeeping.summary(this,store));toast("Cleanup complete • removed "+hr.removed+" stale flags");});\n');p.write_text(s)
+PY
+cat > app/src/test/java/com/suhas/nsedeliverymomentum/HousekeepingTest.java <<'JAVA'
+package com.suhas.nsedeliverymomentum;
+import org.junit.Test;import java.time.*;import static org.junit.Assert.*;
+public class HousekeepingTest {
+ @Test public void extractsOnlyDailyFlagDates(){assertEquals(LocalDate.of(2026,8,26),Housekeeping.extractDate("rec_2026-08-26_RELIANCE"));assertEquals(LocalDate.of(2026,8,26),Housekeeping.extractDate("short_rec_2026-08-26_ABC"));assertEquals(LocalDate.of(2026,8,26),Housekeeping.extractDate("bought_2026-08-26_XYZ"));assertNull(Housekeeping.extractDate("night_lab_day"));assertNull(Housekeeping.extractDate("rec_bad-date_X"));}
+ @Test public void countsWeekdaysNotWeekends(){assertEquals(1,Housekeeping.tradingWeekdaysBetween(LocalDate.of(2026,8,21),LocalDate.of(2026,8,24)));assertEquals(5,Housekeeping.tradingWeekdaysBetween(LocalDate.of(2026,8,24),LocalDate.of(2026,8,31)));}
+}
+JAVA
+cat > RELEASE-NOTES-v1.7.0.txt <<'TXT'
+NSE Delivery Momentum v1.7.0 — NIGHT LAB + BOUNDED LEARNING STORAGE
+
+Built on v1.6.0; scanner/trading logic remains intact.
+- Daily automatic cleanup of stale rec_, short_rec_ and bought_ flags after roughly 60 weekday sessions.
+- Lifetime score buckets, NIGHT LAB champion gates/report and Groww credentials/settings are preserved.
+- Main screen and Settings show learning-storage footprint and last cleanup.
+- Manual CLEAN LEARNING STORAGE NOW control added.
+- Intraday RAM caches and temporal confirmation streaks reset automatically on trading-day rollover.
+- Old unresolved learning calls older than 72 hours are dropped; active-call storage is capped at 200 records.
+- Housekeeping runs again after NIGHT LAB finishes.
+- SHORT remains analysis-only; live execution is never auto-enabled; no forced quota and no auto-sell.
+TXT
+rm -f NSE-Delivery-Momentum-S24-v1.6.0-* APK-SIGNATURE-VERIFY.txt SHA256.txt RELEASE-NOTES-v1.5.0.txt RELEASE-NOTES-v1.6.0.txt
+cd ..
+mv nse-delivery-v160 nse-delivery-v170
