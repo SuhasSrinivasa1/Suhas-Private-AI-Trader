@@ -182,6 +182,35 @@ def record_success() -> None:
         _save_state(state)
 
 
+def status_cached() -> Dict[str, Any]:
+    """Return passive history-control telemetry without ever waiting for the pacer lock.
+
+    The history request pacer intentionally owns _LOCK while sleeping through rate-limit
+    cooldowns. Health/readiness endpoints must never queue behind that sleep. If another
+    worker owns the pacer, expose a truthful BUSY snapshot from lock-free in-memory fields
+    and let the next health poll collect the detailed persisted counters.
+    """
+    acquired=_LOCK.acquire(blocking=False)
+    if not acquired:
+        return {
+            "mode":"CENTRAL_PACED_HISTORY_WITH_GROWW_WINDOW_CONTRACT_V2",
+            "status":"PACER_BUSY_NONBLOCKING_SNAPSHOT",
+            "pacer_busy":True,
+            "global_cooldown_remaining_seconds":round(max(0.0,_GLOBAL_COOLDOWN_UNTIL-time.time()),2),
+            "consecutive_429":int(_CONSECUTIVE_429),
+            "nonblocking":True,
+        }
+    try:
+        out=status()
+        out=dict(out)
+        out["status"]="READY"
+        out["pacer_busy"]=False
+        out["nonblocking"]=True
+        return out
+    finally:
+        _LOCK.release()
+
+
 def status() -> Dict[str, Any]:
     settings = load_settings()
     with _LOCK:

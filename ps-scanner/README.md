@@ -1,3 +1,17 @@
+# PS Scanner Quant v6.7.1 — Nonblocking Health & Validation Reliability
+
+v6.7.1 is a narrow reliability update over v6.7.0. It preserves all scanner, execution, risk, lifecycle and learning behavior while fixing the production observability defect found on the Mac install.
+
+- `/api/health` is passive: no broker/network calls, no universe refresh, and no wait behind the Groww history pacing lock.
+- Health DB snapshots use short bounded timeouts and fail soft with explicit degraded telemetry instead of hanging.
+- Cached execution readiness uses bounded order-count and position-reconciliation reads.
+- `/api/evidence/status` uses the same passive/nonblocking history and bounded evidence snapshots.
+- `/api/sanity` no longer performs unbounded final state reads for execution-integrity telemetry.
+- The post-install validator retries bounded endpoint checks and now correctly initializes the v6.7 diagnostics, execution analytics and backup status checks.
+- New regression tests reproduce a busy history pacer and verify health still returns promptly.
+
+See `RELEASE_v6.7.1.md`.
+
 # PS Scanner Quant v6.7.0 — Production Integrity, Replay & Execution Attribution
 
 v6.7.0 completes the next production-hardening agenda without adding strategy sprawl or weakening any recommendation safety gate.
@@ -140,10 +154,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.7.0.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.7.0
-unzip -q PS_Scanner_Quant_v6.7.0.zip
-cd PS_Scanner_Quant_v6.7.0
+unzip -t PS_Scanner_Quant_v6.7.1.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.7.1
+unzip -q PS_Scanner_Quant_v6.7.1.zip
+cd PS_Scanner_Quant_v6.7.1
 chmod +x install.sh
 ./install.sh
 ```

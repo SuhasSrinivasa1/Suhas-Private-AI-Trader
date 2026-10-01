@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -26,7 +27,7 @@ from .fundamentals import snapshot_status as fundamental_snapshot_status
 from .trading_calendar import status as trading_calendar_status, is_regular_trading_day
 from .sector_context import status as sector_status, status_cached as sector_status_cached
 from .event_calendar import status as event_calendar_status
-from .history_control import status as history_control_status
+from .history_control import status as history_control_status, status_cached as history_control_status_cached
 from .execution_integrity import execution_analytics, reconcile_positions, cached_position_reconciliation
 from .production_integrity import (
     no_trade_diagnostics, replay_decisions, backup_status, backup_database,
@@ -65,14 +66,14 @@ def index():return FileResponse(STATIC/"index.html")
 def ping():
     return {"ok": True, "app": APP_NAME, "version": VERSION, "at": now_iso()}
 
-def _cached_states(keys):
+def _cached_states(keys, timeout_seconds:float=.25):
     """Read several system_state keys in one bounded WAL snapshot."""
     out={}
     keys=list(dict.fromkeys(str(k) for k in keys if k))
     if not keys:return out
     try:
         marks=",".join("?" for _ in keys)
-        with db(timeout_seconds=.5) as con:
+        with db(timeout_seconds=timeout_seconds) as con:
             rows=con.execute(f"SELECT key,value_json FROM system_state WHERE key IN ({marks})",tuple(keys)).fetchall()
         for r in rows:
             try:out[str(r[0])]=json.loads(r[1] or "{}")
@@ -80,6 +81,50 @@ def _cached_states(keys):
     except Exception:
         return {}
     return out
+
+
+def _bounded_evidence_db(timeout_seconds:float=.25):
+    fundamentals={"status":"BOUNDED_SNAPSHOT_UNAVAILABLE","mode":"PROSPECTIVE_POINT_IN_TIME_CAPTURE"}
+    events={"status":"BOUNDED_SNAPSHOT_UNAVAILABLE","policy":"Only persisted timestamped events are used. Missing macro data remains UNKNOWN rather than assumed safe."}
+    try:
+        with db(timeout_seconds=timeout_seconds) as con:
+            f=con.execute("SELECT COUNT(*),COUNT(DISTINCT symbol),MIN(asof),MAX(asof) FROM fundamental_snapshots").fetchone()
+            e=con.execute("SELECT COUNT(*),SUM(CASE WHEN starts_at>=? THEN 1 ELSE 0 END) FROM market_events",(now_iso(),)).fetchone()
+        fundamentals={
+            "snapshots":int(f[0] or 0),"symbols":int(f[1] or 0),"first_asof":f[2],"last_asof":f[3],
+            "mode":"PROSPECTIVE_POINT_IN_TIME_CAPTURE","bounded":True,
+            "historical_backtest_policy":"Only snapshots captured by the decision timestamp are eligible; current fundamentals are never backfilled into the past.",
+        }
+        events={
+            "total_events":int(e[0] or 0),"future_events":int(e[1] or 0),"bounded":True,
+            "policy":"Only persisted timestamped events are used. Missing macro data remains UNKNOWN rather than assumed safe.",
+        }
+    except Exception as exc:
+        fundamentals["detail"]=str(exc)[:120];events["detail"]=str(exc)[:120]
+    return fundamentals,events
+
+
+def _cached_universe_health(state):
+    u=dict(state.get("universe_status") or {})
+    breadth=dict(state.get("full_breadth_discovery") or {})
+    daily=dict(state.get("daily_history_warm_status") or {})
+    intra=dict(state.get("last_intraday_history_warm") or {})
+    ltp=dict(state.get("live_price_cache_status") or {})
+    current_n=int(u.get("n") or 0);breadth_n=int(breadth.get("universe") or 0)
+    current=bool(current_n and breadth_n==current_n and breadth.get("status")!="STALE_UNIVERSE")
+    if current:
+        daily_ready=breadth.get("daily_history_ready");intraday_ready=breadth.get("intraday_history_ready")
+        live_ready=breadth.get("live_prices");evaluated=breadth.get("evaluated");limited=breadth.get("new_or_limited_history")
+        breadth_at=breadth.get("at");breadth_status="CURRENT"
+    else:
+        daily_ready=((daily.get("coverage") or {}).get("ready"));intraday_ready=intra.get("ready")
+        live_ready=None;evaluated=None;limited=None;breadth_at=None;breadth_status="AWAITING_CURRENT_UNIVERSE_PASS"
+    return {**u,
+        "daily_ready":daily_ready,"intraday_ready":intraday_ready,"live_prices_ready":live_ready,
+        "breadth_evaluated":evaluated,"new_or_limited_history":limited,"last_breadth_scan_at":breadth_at,
+        "breadth_status":breadth_status,"live_price_refresh":ltp,
+        "scan_policy":"FULL_BREADTH_DISCOVERY_NO_TOP_N_UNIVERSE_CAP","cached":True,
+    }
 
 
 @app.get("/api/groww/status")
@@ -92,34 +137,53 @@ def groww_status(refresh: bool=False):
 
 @app.get("/api/health")
 def health():
-    now=datetime.now(IST);market=is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE
+    started=time.monotonic();now=datetime.now(IST)
+    market=is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE
     recent=[];recs=[];decisions=[]
     try:
-        with db(timeout_seconds=.5) as con:
+        with db(timeout_seconds=.25) as con:
             recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
             recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
             decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
     except Exception as exc:
-        recent=[{"ts":now_iso(),"component":"health","level":"ERROR","message":"bounded DB snapshot failed: "+str(exc)[:160]}]
-    state_keys=["last_regime","global_context","last_research_cycle"]+["scan_status_"+b for b in BOOKS]
-    state=_cached_states(state_keys)
+        recent=[{"ts":now_iso(),"component":"health","level":"WARN","message":"bounded DB snapshot unavailable: "+str(exc)[:160]}]
+    state_keys=["last_regime","global_context","last_research_cycle","universe_status","full_breadth_discovery",
+                "daily_history_warm_status","last_intraday_history_warm","live_price_cache_status",
+                "position_reconciliation","last_verified_backup"]+["scan_status_"+b for b in BOOKS]
+    state=_cached_states(state_keys,.25)
+    fundamentals,events=_bounded_evidence_db(.25)
+    history_cached=history_control_status_cached()
+    execution_cached=execution_readiness(use_cached=True)
+    workers=engine.worker_status()
+    evidence={
+        "fundamentals":fundamentals,
+        "trading_calendar":trading_calendar_status(),
+        "sector_breadth":sector_status_cached(),
+        "event_calendar":events,
+        "history_control":history_cached,
+        "nse_universe":_cached_universe_health(state),
+    }
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.7.0","name":"PRODUCTION_INTEGRITY_OBSERVABILITY_AND_REPLAY",
+        "architecture_patch":{"version":"6.7.1","name":"NONBLOCKING_HEALTH_AND_VALIDATION_RELIABILITY",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
             "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True,
             "dynamic_mis_permission":True,"broker_position_reconciliation":True,"decision_to_fill_attribution":True,
             "point_in_time_audit_envelope":True,"production_contract_replay":True,"verified_database_backups":True,
-            "experiment_governance":True,"evidence_gated_cohorts":True},
-        "reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],"worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
-        "strategic_recovery":{"version":"6.5.1","name":"SANITY_AND_RECOVERY_HOTFIX","near_miss_telemetry":True,"strategy_promotion_validation":True,"candidate_funnel":True,"weekly_monthly_symbol_isolation":True,"etf_missed_freeze_recovery":True,"international_hard_timeout":True},
+            "experiment_governance":True,"evidence_gated_cohorts":True,"nonblocking_health":True},
+        "reliability_patch":{"version":"6.7.1","name":"NONBLOCKING_HEALTH_AND_VALIDATION","health_network_calls":False,
+            "health_waits_for_history_pacer":False,"bounded_health_db_reads":True},
         "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
-        "workers":engine.worker_status(),"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
+        "workers":workers,"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
         "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
-        "execution":execution_readiness(use_cached=True),"execution_integrity":{"positions":cached_position_reconciliation(),"backup":backup_status().get("last") or {}},
+        "execution":execution_cached,
+        "execution_integrity":{"positions":state.get("position_reconciliation") or {},"backup":state.get("last_verified_backup") or {}},
         "regime":state.get("last_regime",{}),"global_context":state.get("global_context",{}),
         "last_research_cycle":state.get("last_research_cycle",{}),"scan_status":{b:state.get("scan_status_"+b,{}) for b in BOOKS},
-        "evidence":{"fundamentals":fundamental_snapshot_status(),"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),"event_calendar":event_calendar_status(),"history_control":history_control_status(),"nse_universe":universe_status()},
-        "recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},"recent_health_events":recent}
+        "evidence":evidence,
+        "recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},
+        "recent_health_events":recent,
+        "health_contract":{"passive":True,"network_calls":False,"history_pacer_nonblocking":True,
+            "bounded_db_timeout_seconds":.5,"elapsed_ms":round((time.monotonic()-started)*1000.0,1)}}
 
 
 @app.get("/api/sanity")
@@ -165,8 +229,8 @@ def sanity():
     dead=[name for name,x in workers.items() if not x.get("alive")]
     hung=[name for name,x in workers.items() if x.get("hung")]
     persistent=[name for name,x in workers.items() if int(x.get("restart_count") or 0)>=3]
-    state=_cached_states(["last_daily_strategy_validation","last_recommendation_learning_evidence"]+
-                         ["scan_status_"+b for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")])
+    state=_cached_states(["last_daily_strategy_validation","last_recommendation_learning_evidence","position_reconciliation","last_verified_backup"]+
+                         ["scan_status_"+b for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")],.25)
     learning=state.get("last_daily_strategy_validation",{}) or {}
     evidence=state.get("last_recommendation_learning_evidence",{}) or {}
     overdue=bool(is_regular_trading_day(now.date()) and now.hour>=20 and str(learning.get("day") or "")!=today)
@@ -187,7 +251,7 @@ def sanity():
         "learning":{"last_daily_validation":learning,"last_ledger_evidence":evidence,
                     "strategy_worker_alive":bool(workers.get("strategy",{}).get("alive")),"validation_overdue":overdue},
         "frozen_book_shortages":shortages,"books":books,"recommendation_counts":counts,
-        "execution_integrity":{"position_reconciliation":get_state("position_reconciliation",{}) or {},"last_verified_backup":get_state("last_verified_backup",{}) or {}},
+        "execution_integrity":{"position_reconciliation":state.get("position_reconciliation") or {},"last_verified_backup":state.get("last_verified_backup") or {}},
         "policy":"V670_PRODUCTION_INTEGRITY_SANITY",
     }
 
@@ -455,7 +519,12 @@ def positions_reconcile():
 
 @app.get("/api/evidence/status")
 def evidence_status():
-    return {"fundamentals":fundamental_snapshot_status(),"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),"event_calendar":event_calendar_status(),"history_control":history_control_status(),"shadow":strategy_status().get("shadow_signals",{})}
+    state=_cached_states(["universe_status","full_breadth_discovery","daily_history_warm_status","last_intraday_history_warm","live_price_cache_status"],.25)
+    fundamentals,events=_bounded_evidence_db(.25)
+    return {"fundamentals":fundamentals,"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),
+            "event_calendar":events,"history_control":history_control_status_cached(),
+            "nse_universe":_cached_universe_health(state),"shadow":strategy_status().get("shadow_signals",{}),
+            "passive_nonblocking":True}
 
 @app.get("/api/history/status")
 def history_status():

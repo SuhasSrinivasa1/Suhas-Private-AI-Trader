@@ -20,10 +20,13 @@ def _rec(rec_id:str)->Dict[str,Any]:
     return dict(r)
 
 
-def _today_order_count()->int:
+def _today_order_count(timeout_seconds:float=10.0)->Optional[int]:
     day=datetime.now(IST).date().isoformat()
-    with db() as con:
-        return int(con.execute("SELECT COUNT(*) FROM orders WHERE substr(created_at,1,10)=? AND state NOT IN ('FAILED','CANCELLED')",(day,)).fetchone()[0])
+    try:
+        with db(timeout_seconds=timeout_seconds) as con:
+            return int(con.execute("SELECT COUNT(*) FROM orders WHERE substr(created_at,1,10)=? AND state NOT IN ('FAILED','CANCELLED')",(day,)).fetchone()[0])
+    except Exception:
+        return None
 
 
 def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)->Dict[str,Any]:
@@ -33,8 +36,10 @@ def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)
     if not ip.get("configured"):blockers.append("static_ip_not_set")
     elif not ip.get("matches"):blockers.append("current_ip_does_not_match_configured_static_ip")
     if (not is_regular_trading_day(now.date())) or not (MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE):blockers.append("market_closed_or_nse_holiday")
-    if _today_order_count()>=int(settings.get('max_open_manual_orders',8) or 8):blockers.append('daily_manual_order_limit_reached')
-    position_state=cached_position_reconciliation()
+    order_count=_today_order_count(.25 if use_cached else 2.0)
+    if order_count is None:blockers.append("daily_order_count_unavailable")
+    elif order_count>=int(settings.get('max_open_manual_orders',8) or 8):blockers.append('daily_manual_order_limit_reached')
+    position_state=cached_position_reconciliation(.25 if use_cached else 2.0)
     if position_state.get("hard_block") and position_state.get("verified"):
         blockers.append("broker_position_mismatch")
     portfolio=None
@@ -48,7 +53,7 @@ def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)
         if portfolio.get('hard_block'):blockers.append('portfolio_correlation_cluster_limit')
     return {"ready":not blockers,"blockers":list(dict.fromkeys(blockers)),"groww":bs,"static_ip":ip,
             "max_notional":TRADE_NOTIONAL_RUPEES,"max_rupee_risk_to_stop":MAX_RUPEE_RISK_PER_TRADE,
-            "today_manual_orders":_today_order_count(),"portfolio_fit":portfolio,
+            "today_manual_orders":order_count,"portfolio_fit":portfolio,
             "position_reconciliation":position_state}
 
 

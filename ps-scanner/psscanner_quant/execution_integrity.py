@@ -116,8 +116,22 @@ def reconcile_positions() -> Dict[str,Any]:
         return out
 
 
-def cached_position_reconciliation() -> Dict[str,Any]:
-    return get_state("position_reconciliation",{}) or {
+def cached_position_reconciliation(timeout_seconds:float=10.0) -> Dict[str,Any]:
+    try:
+        with db(timeout_seconds=timeout_seconds) as con:
+            row=con.execute("SELECT value_json FROM system_state WHERE key='position_reconciliation'").fetchone()
+        if row:
+            try:
+                data=json.loads(row[0] or "{}")
+                if isinstance(data,dict) and data:return data
+            except Exception:
+                pass
+    except Exception:
+        return {
+            "verified":False,"hard_block":False,"status":"CACHE_UNAVAILABLE_BOUNDED",
+            "policy":POSITION_POLICY,"nonblocking":True,
+        }
+    return {
         "verified":False,"hard_block":False,"status":"NOT_YET_CHECKED","policy":POSITION_POLICY
     }
 
