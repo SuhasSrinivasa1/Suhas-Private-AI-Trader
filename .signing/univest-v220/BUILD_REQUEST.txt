@@ -1,0 +1,2 @@
+Authorized new permanent signing identity for Univest AutoTrade v2.2.0.
+Signing material remains private and must never be exposed in chat or public repositories.
