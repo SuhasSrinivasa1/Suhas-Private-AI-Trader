@@ -17,7 +17,7 @@ class V651SanityRecoveryTests(unittest.TestCase):
 
     def test_legacy_collision_repair_voids_loser(self):
         src=inspect.getsource(engine._repair_weekly_monthly_collisions)
-        self.assertIn("HORIZON_COLLISION_REPAIR_V651", src)
+        self.assertIn("HORIZON_IDENTITY_COLLISION_REPAIR_V661", src)
         self.assertIn("state='CLOSED'", src)
         self.assertIn("result='VOID'", src)
 

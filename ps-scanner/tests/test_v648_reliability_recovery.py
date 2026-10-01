@@ -43,7 +43,8 @@ class V648ReliabilityRecoveryTests(unittest.TestCase):
     def test_intraday_zero_output_has_reason(self):
         src=inspect.getsource(engine.run_intraday_cycle)
         self.assertIn('availability_reason',src)
-        self.assertIn('NO_DATA_VALID_CANDIDATES_AFTER_QUALITY_RISK_GATES',src)
+        self.assertIn('DETERMINISTIC_CACHED_READY_UNIVERSE_PASS_INCOMPLETE',src)
+        self.assertIn('NO_QUALIFIED_OPPORTUNITY_AFTER_EXHAUSTIVE_CACHED_READY_PASS',src)
 
     def test_international_api_exposes_contract(self):
         src=inspect.getsource(main.international_board)
