@@ -11,7 +11,7 @@ import psscanner_quant.strategy_lab as lab
 
 class V637DBConcurrencyTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_db_context_has_no_process_wide_python_lock(self):
         src=inspect.getsource(dbmod.db)

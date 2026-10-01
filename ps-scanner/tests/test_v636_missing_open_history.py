@@ -14,7 +14,7 @@ from psscanner_quant.trade_intelligence import evaluate
 
 class V636MissingOpenHistoryTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def _live_shape(self, n=237):
         base = pd.Timestamp("2025-10-10", tz="Asia/Kolkata")

@@ -8,7 +8,7 @@ from psscanner_quant import data, engine
 
 class V641EquityShareUniverseTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_nse_share_series_excludes_debt_funds_and_other_cash_securities(self):
         allowed = ["EQ","BE","BZ","SM","ST","SZ","E1","EA","X1","XZ"]

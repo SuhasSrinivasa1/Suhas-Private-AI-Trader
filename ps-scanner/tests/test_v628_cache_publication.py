@@ -11,7 +11,7 @@ from psscanner_quant import data, engine
 
 class V628CachePublicationTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_cached_only_history_does_not_require_instrument_metadata(self):
         with tempfile.TemporaryDirectory() as td:

@@ -12,7 +12,7 @@ from psscanner_quant.config import load_settings
 
 class V643FullBreadthHydrationTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_ltp_keeps_partial_success_when_one_batch_fails(self):
         b=GrowwBroker()

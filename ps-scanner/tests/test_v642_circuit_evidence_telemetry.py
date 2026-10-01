@@ -11,7 +11,7 @@ from psscanner_quant import data, specialized
 
 class V642CircuitEvidenceTelemetryTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_stale_breadth_counts_are_not_exposed_for_smaller_current_universe(self):
         with patch.object(data,"get_state") as gs:

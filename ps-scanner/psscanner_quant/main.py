@@ -11,7 +11,9 @@ from .broker import broker
 from .config import load_settings, update_settings
 from .constants import APP_NAME, VERSION, IST, MARKET_OPEN, MARKET_CLOSE, TRADE_NOTIONAL_RUPEES, MAX_RUPEE_RISK_PER_TRADE, BOOKS
 from .db import db, get_state, init_db, now_iso
-from .engine import engine, recommendations
+from .engine import engine, recommendations, period_key
+from .analytics import history_rows as recommendation_history_rows, performance as performance_stats
+from .lifecycle import lifecycle_payload
 from .orders import create_preview, execute_preview, execution_readiness, recent_orders, reconcile_orders, recent_fills
 from .paths import STATIC
 from .regime import classify
@@ -56,6 +58,23 @@ def index():return FileResponse(STATIC/"index.html")
 def ping():
     return {"ok": True, "app": APP_NAME, "version": VERSION, "at": now_iso()}
 
+def _cached_states(keys):
+    """Read several system_state keys in one bounded WAL snapshot."""
+    out={}
+    keys=list(dict.fromkeys(str(k) for k in keys if k))
+    if not keys:return out
+    try:
+        marks=",".join("?" for _ in keys)
+        with db(timeout_seconds=.5) as con:
+            rows=con.execute(f"SELECT key,value_json FROM system_state WHERE key IN ({marks})",tuple(keys)).fetchall()
+        for r in rows:
+            try:out[str(r[0])]=json.loads(r[1] or "{}")
+            except Exception:out[str(r[0])]={}
+    except Exception:
+        return {}
+    return out
+
+
 @app.get("/api/groww/status")
 def groww_status(refresh: bool=False):
     """Read-only Groww connectivity status. refresh=true performs an explicit broker probe.
@@ -67,48 +86,112 @@ def groww_status(refresh: bool=False):
 @app.get("/api/health")
 def health():
     now=datetime.now(IST);market=is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE
-    with db() as con:
-        recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
-        recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
-    with db() as con:
-        decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
-    return {"app":APP_NAME,"version":VERSION,"reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],"worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True}, "strategic_recovery":{"version":"6.5.1","name":"SANITY_AND_RECOVERY_HOTFIX","near_miss_telemetry":True,"strategy_promotion_validation":True,"candidate_funnel":True,"weekly_monthly_symbol_isolation":True,"etf_missed_freeze_recovery":True,"international_hard_timeout":True},"generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,"workers":engine.worker_status(),"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),"research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},"execution":execution_readiness(use_cached=True),"regime":get_state("last_regime",{}),"global_context":get_state("global_context",{}),"last_research_cycle":get_state("last_research_cycle",{}),"scan_status":{b:get_state("scan_status_"+b,{}) for b in BOOKS},"evidence":{"fundamentals":fundamental_snapshot_status(),"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),"event_calendar":event_calendar_status(),"history_control":history_control_status(),"nse_universe":universe_status()},"recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},"recent_health_events":recent}
+    recent=[];recs=[];decisions=[]
+    try:
+        with db(timeout_seconds=.5) as con:
+            recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
+            recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
+            decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
+    except Exception as exc:
+        recent=[{"ts":now_iso(),"component":"health","level":"ERROR","message":"bounded DB snapshot failed: "+str(exc)[:160]}]
+    state_keys=["last_regime","global_context","last_research_cycle"]+["scan_status_"+b for b in BOOKS]
+    state=_cached_states(state_keys)
+    return {"app":APP_NAME,"version":VERSION,
+        "architecture_patch":{"version":"6.6.0","name":"CURRENT_PERIOD_LIFECYCLE_AND_STATISTICAL_AUDIT",
+            "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
+            "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True},
+        "reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],"worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
+        "strategic_recovery":{"version":"6.5.1","name":"SANITY_AND_RECOVERY_HOTFIX","near_miss_telemetry":True,"strategy_promotion_validation":True,"candidate_funnel":True,"weekly_monthly_symbol_isolation":True,"etf_missed_freeze_recovery":True,"international_hard_timeout":True},
+        "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
+        "workers":engine.worker_status(),"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
+        "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
+        "execution":execution_readiness(use_cached=True),"regime":state.get("last_regime",{}),"global_context":state.get("global_context",{}),
+        "last_research_cycle":state.get("last_research_cycle",{}),"scan_status":{b:state.get("scan_status_"+b,{}) for b in BOOKS},
+        "evidence":{"fundamentals":fundamental_snapshot_status(),"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),"event_calendar":event_calendar_status(),"history_control":history_control_status(),"nse_universe":universe_status()},
+        "recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},"recent_health_events":recent}
 
 
 @app.get("/api/sanity")
 def sanity():
-    """Cheap cross-page integrity check; no provider/network calls."""
+    """Bounded cross-page integrity check; no provider/network calls."""
     now=datetime.now(IST);today=now.date().isoformat()
-    with db() as con:
-        collisions=[dict(r) for r in con.execute(
-            "SELECT UPPER(symbol) symbol,GROUP_CONCAT(DISTINCT book) books,COUNT(*) n "
-            "FROM recommendations WHERE book IN ('WEEKLY','MONTHLY') AND state='LIVE' "
-            "AND COALESCE(result,'')<>'VOID' GROUP BY UPPER(symbol) "
-            "HAVING COUNT(DISTINCT book)>1"
-        ).fetchall()]
-        old_intraday=int(con.execute(
-            "SELECT COUNT(*) FROM recommendations WHERE book='INTRADAY' AND state='LIVE' AND period_key<>?",
-            (today,),
-        ).fetchone()[0])
-        db_check=str(con.execute("PRAGMA quick_check").fetchone()[0])
-        counts=[dict(r) for r in con.execute(
-            "SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state ORDER BY book,state"
-        ).fetchall()]
+    collisions=[];counts=[];db_check="ERROR";old_intraday=old_circuit=0;missing_levels=0;duplicates=[]
+    stale_session_live=0
+    try:
+        with db(timeout_seconds=1.0) as con:
+            collisions=[dict(r) for r in con.execute(
+                "SELECT UPPER(symbol) symbol,GROUP_CONCAT(DISTINCT book) books,COUNT(*) n "
+                "FROM recommendations WHERE book IN ('WEEKLY','MONTHLY') AND state='LIVE' "
+                "AND COALESCE(result,'')<>'VOID' GROUP BY UPPER(symbol) HAVING COUNT(DISTINCT book)>1"
+            ).fetchall()]
+            old_intraday=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='INTRADAY' AND state='LIVE' AND period_key<>?",(today,)).fetchone()[0])
+            old_circuit=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='CIRCUIT' AND state='LIVE' AND period_key<>?",(today,)).fetchone()[0])
+            missing_levels=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE state='LIVE' AND (target_price IS NULL OR stop_price IS NULL OR entry_price<=0)").fetchone()[0])
+            duplicates=[dict(r) for r in con.execute(
+                "SELECT book,period_key,UPPER(symbol) symbol,side,COUNT(*) n FROM recommendations "
+                "WHERE state='LIVE' GROUP BY book,period_key,UPPER(symbol),side HAVING COUNT(*)>1"
+            ).fetchall()]
+            if is_regular_trading_day(now.date()) and MARKET_OPEN<=now.time().replace(tzinfo=None)<=MARKET_CLOSE:
+                cutoff=now.timestamp()-20*60
+                # ISO timestamps sort chronologically because runtime writes one timezone.
+                cutoff_iso=datetime.fromtimestamp(cutoff,tz=IST).isoformat(timespec="seconds")
+                stale_session_live=int(con.execute(
+                    "SELECT COUNT(*) FROM recommendations WHERE state='LIVE' AND exchange='NSE' "
+                    "AND book IN ('INTRADAY','CIRCUIT') AND period_key=? AND updated_at<?",(today,cutoff_iso)
+                ).fetchone()[0])
+            db_check=str(con.execute("PRAGMA quick_check").fetchone()[0])
+            counts=[dict(r) for r in con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state ORDER BY book,state").fetchall()]
+    except Exception as exc:
+        db_check="ERROR: "+str(exc)[:160]
     workers=engine.worker_status()
     dead=[name for name,x in workers.items() if not x.get("alive")]
-    learning=get_state("last_daily_strategy_validation",{}) or {}
-    scan={b:get_state("scan_status_"+b,{}) or {} for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")}
+    hung=[name for name,x in workers.items() if x.get("hung")]
+    persistent=[name for name,x in workers.items() if int(x.get("restart_count") or 0)>=3]
+    state=_cached_states(["last_daily_strategy_validation","last_recommendation_learning_evidence"]+
+                         ["scan_status_"+b for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")])
+    learning=state.get("last_daily_strategy_validation",{}) or {}
+    evidence=state.get("last_recommendation_learning_evidence",{}) or {}
+    overdue=bool(is_regular_trading_day(now.date()) and now.hour>=20 and str(learning.get("day") or "")!=today)
+    books={b:state.get("scan_status_"+b,{}) or {} for b in ("INTRADAY","WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY")}
+    shortages={}
+    for b in ("WEEKLY","MONTHLY","ETF","INTERNATIONAL"):
+        contract=(books.get(b) or {}).get("contract") or {}
+        if int(contract.get("shortage") or 0)>0:
+            shortages[b]={"shortage":int(contract.get("shortage") or 0),"status":(books.get(b) or {}).get("status"),
+                          "recovery_required":bool(contract.get("recovery_required",True))}
+    ok=(db_check=="ok" and not collisions and old_intraday==0 and old_circuit==0 and missing_levels==0 and
+        not duplicates and stale_session_live==0 and not dead and not hung and not overdue)
     return {
-        "at":now_iso(),"version":VERSION,"ok":db_check=="ok" and not collisions and old_intraday==0 and not dead,
-        "database_quick_check":db_check,
-        "weekly_monthly_collisions":collisions,
-        "old_intraday_live_rows":old_intraday,
-        "dead_workers":dead,
-        "learning":{"last_daily_validation":learning,"strategy_worker_alive":bool(workers.get("strategy",{}).get("alive"))},
-        "books":scan,
-        "recommendation_counts":counts,
-        "policy":"V651_NO_NETWORK_SANITY_CHECK",
+        "at":now_iso(),"version":VERSION,"ok":ok,"database_quick_check":db_check,
+        "weekly_monthly_collisions":collisions,"old_intraday_live_rows":old_intraday,"old_circuit_live_rows":old_circuit,
+        "stale_session_live_rows":stale_session_live,"live_rows_missing_entry_target_stop":missing_levels,
+        "duplicate_live_identities":duplicates,"dead_workers":dead,"hung_workers":hung,"persistent_worker_restarts":persistent,
+        "learning":{"last_daily_validation":learning,"last_ledger_evidence":evidence,
+                    "strategy_worker_alive":bool(workers.get("strategy",{}).get("alive")),"validation_overdue":overdue},
+        "frozen_book_shortages":shortages,"books":books,"recommendation_counts":counts,
+        "policy":"V660_BOUNDED_CURRENT_PERIOD_SANITY",
     }
+
+
+@app.get("/api/lifecycle")
+def lifecycle(page:Optional[str]=None):
+    return lifecycle_payload(page)
+
+
+@app.get("/api/history/recommendations")
+def recommendation_history(book:Optional[str]=None,period_key:Optional[str]=None,limit:int=200):
+    if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
+    return {"book":book.upper() if book else None,"period_key":period_key,
+            "rows":recommendation_history_rows(book,period_key,limit),
+            "policy":"EXPLICIT_HISTORY_ONLY_NOT_MIXED_IN_ACTIVE_BOOK_PAYLOADS"}
+
+
+@app.get("/api/performance")
+def performance(book:Optional[str]=None,group_by:str="book",limit:int=10000):
+    allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","day","week","month"}
+    if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
+    if group_by.lower() not in allowed:raise HTTPException(400,"Unsupported group_by")
+    return performance_stats(book,group_by,limit)
 
 
 @app.get("/api/book/{book}")
@@ -213,10 +296,14 @@ def nse_universe_status():
 def regime_refresh():return classify()
 
 @app.get("/api/workers")
-def workers():return {"scheduler":get_state("scheduler_v624",{}),"threads":engine.worker_status(),"states":{name:get_state("worker_"+name,{}) for name in engine.worker_status()}}
+def workers():
+    threads=engine.worker_status();state=_cached_states(["scheduler_v624"]+["worker_"+name for name in threads])
+    return {"scheduler":state.get("scheduler_v624",{}),"threads":threads,"states":{name:state.get("worker_"+name,{}) for name in threads}}
 
 @app.get("/api/scan/status")
-def scan_status():return {b:{"worker":get_state("scan_status_"+b,{}),"detail":get_state("scan_detail_"+b,{})} for b in BOOKS}
+def scan_status():
+    state=_cached_states([p+b for b in BOOKS for p in ("scan_status_","scan_detail_")])
+    return {b:{"worker":state.get("scan_status_"+b,{}),"detail":state.get("scan_detail_"+b,{})} for b in BOOKS}
 
 @app.get("/api/strategy-lab")
 def strategy_lab():return strategy_status()

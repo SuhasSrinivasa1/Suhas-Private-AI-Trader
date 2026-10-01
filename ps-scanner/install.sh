@@ -16,7 +16,7 @@ MODE="migration"
 cleanup(){ rm -f "$TMPSECRET" "$OLD_STATUS" "$NEW_HEALTH" "$NEW_GROWW" "$PLIST_BACKUP" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "PS Scanner Quant v6.4.3 safe install / in-place upgrade"
+echo "PS Scanner Quant v6.6.0 safe install / in-place upgrade"
 echo "Target: $APP"
 echo
 
@@ -209,7 +209,7 @@ for i in {1..60}; do
 import json,sys
 try:d=json.load(open(sys.argv[1]))
 except Exception:d={}
-ok=(d.get('version')=='6.4.3' and d.get('engine_alive') is True)
+ok=(d.get('version')=='6.6.0' and d.get('engine_alive') is True)
 raise SystemExit(0 if ok else 1)
 PYH
     then ok=1; break; fi
@@ -217,7 +217,7 @@ PYH
   sleep 2
 done
 if [[ $ok -ne 1 ]]; then
-  echo "v6.4.3 service did not pass application health check. See $APP/logs/service-error.log" >&2
+  echo "v6.6.0 service did not pass application health check. See $APP/logs/service-error.log" >&2
   exit 20
 fi
 
@@ -248,7 +248,7 @@ PYA
 done
 
 if [[ $groww_ok -ne 1 ]]; then
-  echo "v6.4.3 application started, but Groww connectivity could not be verified after explicit probes." >&2
+  echo "v6.6.0 application started, but Groww connectivity could not be verified after explicit probes." >&2
   if [[ $groww_auth_required -gt 0 ]]; then
     echo "Groww returned AUTH_REQUIRED during verification." >&2
   else
@@ -267,7 +267,7 @@ except Exception:g={}
 print('New app:', h.get('app'), h.get('version'))
 print('New Groww status:', g.get('status') or 'UNKNOWN')
 print('Credential capabilities:', g.get('credential_capabilities') or {})
-ok=(h.get('version')=='6.4.3' and h.get('engine_alive') is True and g.get('connected') is True)
+ok=(h.get('version')=='6.6.0' and h.get('engine_alive') is True and g.get('connected') is True)
 raise SystemExit(0 if ok else 1)
 PYV
 
@@ -276,12 +276,12 @@ trap cleanup EXIT
 
 echo
 echo "============================================================"
-echo "PS Scanner Quant v6.4.3 INSTALLED"
+echo "PS Scanner Quant v6.6.0 INSTALLED"
 echo "UI: http://127.0.0.1:8765"
 echo "Groww authentication: VERIFIED"
 echo "v6 runtime data/ledger: PRESERVED"
-echo "Weekly: 10% target-qualified morning-frozen period book (09:20 IST; recovery to 12:00 if missing)"
-echo "Monthly: 50% target-qualified morning-frozen period book (recovery freeze supported if missing)"
+echo "Weekly: current-period frozen book; preferred freeze 09:00-09:12 IST; deterministic missed-freeze recovery without gate relaxation"
+echo "Monthly: current-period frozen book; pre-month preferred; no hindsight reconstruction of effectively expired periods"
 echo "No rank replacement; no backfill after close"
 echo "NSE stock universe: all NSE equity-share series from Groww (main board + trade-for-trade + SME + partly-paid); debt/funds/REIT/InvIT/warrants/ETFs excluded from stock scans"
 echo "New listings: discovered automatically on instrument-master refresh; limited-history names remain visible and are prioritized for cache warm-up"
@@ -296,14 +296,15 @@ echo "History contract: 1day <=175-day chunks; 5minute <=30-day requests; false 
 echo "History parser: mixed Groww ISO/epoch cache formats normalized; existing raw caches reused"
 echo "History priority: live/frozen + new listings -> missing caches -> full NSE rotating background -> ETFs"
 echo "Scheduler: dynamic NSE instrument refresh + full-breadth batched LTP discovery + independent cache-first research workers"
-echo "Intraday: LONG may carry; every new SHORT must be deadline-feasible and ends by 15:00 IST"
+echo "Intraday: current-session only; SHORT ends by 15:00 IST; unresolved LONG resolves at NSE session end/rollover"
 echo "Circuit live: same-session calls require target feasibility by 15:00 + fresh intraday bars + known liquidity/volume + execution permission"
 echo "Circuit 3PM: frozen LONG-only next-NSE-session upper-circuit watchlist at 15:00 IST"
 echo "International: frozen US WEEKLY LONG-only stock/ETF book; no replacement/backfill; closes at target/stop/week end"
 echo "Global->India: overnight provisional sector/cross-asset map scans full NSE breadth; LONG/SHORT board freezes after 09:00 IST"
-echo "Research/API: /api/recommendations + /api/circuit/board + /api/international/board (independent of Static IP)"
+echo "Research/API: active-period recommendations + /api/performance + /api/history/recommendations + /api/lifecycle (independent of Static IP)"
 echo "Execution: Static IP mismatch disables order buttons only"
 echo "Diagnostics: ./tools/run_diagnostics.sh"
+echo "Post-install validation: python3 tools/post_install_validate.py"
 echo "============================================================"
 python3 - "$NEW_HEALTH" <<'PY'
 import json,sys,urllib.request

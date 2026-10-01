@@ -9,7 +9,7 @@ from psscanner_quant import engine, specialized, main, global_context, cross_mar
 
 class V630DeadlineGlobalTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_circuit_nextday_period_rolls_at_1500(self):
         before=datetime(2026,9,25,14,59,tzinfo=IST)

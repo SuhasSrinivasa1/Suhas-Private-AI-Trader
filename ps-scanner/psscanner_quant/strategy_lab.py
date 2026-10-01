@@ -20,6 +20,7 @@ from .regime import classify
 from .trading_calendar import add_trading_sessions, is_regular_trading_day
 from .fundamentals import snapshot_history, resolve_snapshot, get as fundamentals_get
 from .strategy_library import score_strategy, library_status, challenger_strategies
+from .analytics import wilson_interval, learning_evidence_snapshot
 
 KEYWORDS={
     "momentum":"MOMENTUM","mean reversion":"MEAN_REVERSION","breakout":"TREND_BREAKOUT",
@@ -138,7 +139,7 @@ def validate_strategies(max_symbols:int=18)->Dict[str,Any]:
             shadow_ok=(m['sp'].get('status')=='SEED_CHAMPION') or (sh['n']>=shadow_required and sh['avg_r']>0 and sh['profit_factor']>1.0)
             eligible=bool(m['n']>=minimum_samples and adjusted>.035 and m['walk']>.015 and m['hold']>.015 and m['pf']>1.10 and m['robust']>=2/3 and m['stability']>=.5 and shadow_ok)
             con.execute("INSERT INTO strategy_stats(strategy_id,regime,sample_count,win_rate,avg_r,profit_factor,max_drawdown,robustness,walk_forward_score,score,last_validated_at,holdout_avg_r,cost_adjusted_avg_r,parameter_stability,multiple_testing_penalty,decay_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(strategy_id,regime) DO UPDATE SET sample_count=excluded.sample_count,win_rate=excluded.win_rate,avg_r=excluded.avg_r,profit_factor=excluded.profit_factor,max_drawdown=excluded.max_drawdown,robustness=excluded.robustness,walk_forward_score=excluded.walk_forward_score,score=excluded.score,last_validated_at=excluded.last_validated_at,holdout_avg_r=excluded.holdout_avg_r,cost_adjusted_avg_r=excluded.cost_adjusted_avg_r,parameter_stability=excluded.parameter_stability,multiple_testing_penalty=excluded.multiple_testing_penalty,decay_state=excluded.decay_state",(sid,'ALL',m['n'],m['wr'],m['avg'],m['pf'],m['dd'],m['robust'],m['walk'],score,ts,m['hold'],adjusted,m['stability'],m['penalty'],'HEALTHY' if eligible else 'REVIEW'))
-            con.execute("INSERT INTO strategy_validation_runs(run_id,strategy_id,validated_at,sample_count,train_avg_r,walk_avg_r,holdout_avg_r,cost_adjusted_avg_r,parameter_stability,multiple_testing_penalty,promotion_eligible,metrics_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(run_id,sid,ts,m['n'],m['train'],m['walk'],m['hold'],adjusted,m['stability'],m['penalty'],1 if eligible else 0,json.dumps({'win_rate':m['wr'],'profit_factor':m['pf'],'max_drawdown':m['dd'],'robustness':m['robust'],'score':score,'handbook_evidence_grade':evidence_grade,'minimum_samples_required':minimum_samples,'shadow':sh,'shadow_required':shadow_required,'shadow_ok':shadow_ok},separators=(',',':'))))
+            con.execute("INSERT INTO strategy_validation_runs(run_id,strategy_id,validated_at,sample_count,train_avg_r,walk_avg_r,holdout_avg_r,cost_adjusted_avg_r,parameter_stability,multiple_testing_penalty,promotion_eligible,metrics_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(run_id,sid,ts,m['n'],m['train'],m['walk'],m['hold'],adjusted,m['stability'],m['penalty'],1 if eligible else 0,json.dumps({'win_rate':m['wr'],'win_rate_wilson_95':dict(zip(('low','high'),wilson_interval(round(m['wr']*m['n']/100),m['n']))),'profit_factor':m['pf'],'max_drawdown':m['dd'],'robustness':m['robust'],'score':score,'handbook_evidence_grade':evidence_grade,'minimum_samples_required':minimum_samples,'shadow':sh,'shadow_required':shadow_required,'shadow_ok':shadow_ok},separators=(',',':'))))
             if not eligible and m['n']>=50 and m['sp'].get('status')=='CHAMPION' and (m['hold']<-.03 or adjusted<0):
                 con.execute("UPDATE strategies SET status='SUSPENDED',updated_at=? WHERE strategy_id=?",(ts,sid));suspended.append(sid)
             updated+=1
@@ -169,7 +170,10 @@ def monitor_strategy_decay(min_live_samples:int=12)->Dict[str,Any]:
     """Suspend Champions only after predeclared live evidence thresholds are breached."""
     with db() as con:
         champs=[r[0] for r in con.execute("SELECT strategy_id FROM strategies WHERE status='CHAMPION'").fetchall()]
-        closed=[dict(r) for r in con.execute("SELECT strategy_ids_json,side,entry_price,current_price,stop_price FROM recommendations WHERE state='CLOSED' ORDER BY closed_at DESC LIMIT 3000").fetchall()]
+        closed=[dict(r) for r in con.execute(
+            "SELECT strategy_ids_json,side,entry_price,current_price,stop_price,result FROM recommendations "
+            "WHERE state='CLOSED' AND result IN ('WIN','LOSS','MISS') ORDER BY closed_at DESC LIMIT 3000"
+        ).fetchall()]
     stats={sid:[] for sid in champs}
     for r in closed:
         try:ids=json.loads(r.get('strategy_ids_json') or '[]')
@@ -299,7 +303,10 @@ def shadow_stats(strategy_id:str)->Dict[str,Any]:
     with db() as con:
         rs=con.execute("SELECT r_multiple FROM shadow_signals WHERE strategy_id=? AND state='RESOLVED' ORDER BY resolved_at DESC LIMIT 80",(strategy_id,)).fetchall()
     vals=[float(r[0]) for r in rs if r[0] is not None]
-    return {'n':len(vals),'avg_r':_avg(vals),'profit_factor':_pf(vals) if vals else 0.0,'win_rate':(100*sum(1 for x in vals if x>0)/len(vals)) if vals else 0.0}
+    wins=sum(1 for x in vals if x>0);lo,hi=wilson_interval(wins,len(vals))
+    return {'n':len(vals),'avg_r':_avg(vals),'profit_factor':_pf(vals) if vals else 0.0,
+            'win_rate':(100*wins/len(vals)) if vals else 0.0,
+            'win_rate_wilson_95':{'low':round(lo,4) if lo is not None else None,'high':round(hi,4) if hi is not None else None}}
 
 def maybe_weekly_jobs()->None:
     """Maintain strategy evidence continuously and validate after each NSE trading day.
@@ -312,6 +319,11 @@ def maybe_weekly_jobs()->None:
 
     if now.weekday()==5 and now.hour>=10 and get_state("strategy_discovery_week")!=week:
         discover_new_strategies();set_state("strategy_discovery_week",week)
+
+    if is_regular_trading_day(now.date()) and now.hour>=16 and get_state("recommendation_learning_evidence_day")!=day:
+        evidence=learning_evidence_snapshot()
+        set_state("last_recommendation_learning_evidence",evidence)
+        set_state("recommendation_learning_evidence_day",day)
 
     if is_regular_trading_day(now.date()) and now.hour>=18 and get_state("strategy_validation_day")!=day:
         result=validate_strategies()
@@ -338,6 +350,6 @@ def status()->Dict[str,Any]:
         sr=con.execute("SELECT state,COUNT(*) n FROM shadow_signals GROUP BY state").fetchall();base['shadow_signals']={r[0]:r[1] for r in sr}
         base['recent_shadow_resolved']=[dict(r) for r in con.execute("SELECT resolved_at,strategy_id,horizon,symbol,side,return_pct,r_multiple FROM shadow_signals WHERE state='RESOLVED' ORDER BY resolved_at DESC LIMIT 30").fetchall()]
     base['last_shadow_cycle']=get_state('last_shadow_cycle',{});base['last_shadow_resolution']=get_state('last_shadow_resolution',{})
-    base['learning_cadence']={'validation':'DAILY_AFTER_18_IST_ON_NSE_TRADING_DAYS','weekly_deep_validation':'SUNDAY_AFTER_18_IST_POST_DISCOVERY','decay':'DAILY_AFTER_16_IST','discovery':'SATURDAY_AFTER_10_IST','promotion':'UNCHANGED_STRICT_CHAMPION_CONTRACT'};base['last_daily_validation']=get_state('last_daily_strategy_validation',{});base['last_weekly_validation']=get_state('last_weekly_strategy_validation',{})
+    base['learning_cadence']={'ledger_evidence':'DAILY_AFTER_16_IST_ON_NSE_TRADING_DAYS','validation':'DAILY_AFTER_18_IST_ON_NSE_TRADING_DAYS','weekly_deep_validation':'SUNDAY_AFTER_18_IST_POST_DISCOVERY','decay':'DAILY_AFTER_16_IST','discovery':'SATURDAY_AFTER_10_IST','promotion':'UNCHANGED_STRICT_CHAMPION_CONTRACT'};base['last_daily_validation']=get_state('last_daily_strategy_validation',{});base['last_weekly_validation']=get_state('last_weekly_strategy_validation',{});base['last_recommendation_learning_evidence']=get_state('last_recommendation_learning_evidence',{})
     base['champion_contract']={'minimum_samples_by_handbook_evidence':{'A':50,'B':70,'C':100,'UNRATED':120},'requires_positive_walk_forward':True,'requires_positive_untouched_holdout':True,'cost_adjusted':True,'parameter_neighborhood_stability':True,'multiple_testing_penalty':True,'live_shadow_required_for_challenger_promotion':True,'shadow_minimums':{'INTRADAY':20,'WEEKLY':8,'MONTHLY':3},'live_decay_suspension':True,'point_in_time_fundamentals':'prospective snapshots are now accumulated and only used at/after their capture timestamp'}
     return base

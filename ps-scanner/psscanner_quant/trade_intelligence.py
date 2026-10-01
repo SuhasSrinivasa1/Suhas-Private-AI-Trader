@@ -190,8 +190,19 @@ def evaluate(*, book:str, symbol:str, side:str, features:Dict[str,Any], fundamen
     else:add(48,'UNKNOWN','portfolio correlation evaluated on shortlisted candidates/order preview')
     add(49,'PASS','no active application kill switch supplied to this evaluation')
     decayed=[s for s in strategy_ids if s in suspended]
-    required_votes=2 if book in ('INTRADAY','WEEKLY','MONTHLY') else 1
-    add(50,'FAIL' if len(strategy_ids)<required_votes or decayed else 'PASS',f'strategy_votes={len(strategy_ids)}, required={required_votes}, suspended_selected={len(decayed)}',hard=True)
+    # v6.6.0: strategy evidence is required, but an arbitrary count of two independent
+    # families/IDs is not a safety property. Diversity remains visible as WARN/shadow
+    # evidence until outcome data demonstrates that making it mandatory improves OOS edge.
+    if decayed:
+        add(50,'FAIL',f'strategy_votes={len(strategy_ids)}, suspended_selected={len(decayed)}',hard=True)
+    elif not strategy_ids:
+        add(50,'FAIL','no audited strategy evidence attached',hard=True)
+    elif book in ('INTRADAY','WEEKLY','MONTHLY') and len(strategy_ids)<2:
+        # A valid audited strategy passes strategy-evidence integrity. Diversity remains
+        # advisory/shadow metadata and therefore contributes neither a veto nor score penalty.
+        add(50,'PASS',f'strategy_votes={len(strategy_ids)}; family diversity=ADVISORY_SHADOW_UNTIL_OOS_VALIDATED',hard=False)
+    else:
+        add(50,'PASS',f'strategy_votes={len(strategy_ids)}; suspended_selected=0')
 
     # Score only information we actually have. Unknown data never earns points and never silently becomes a fail.
     weights=_HORIZON_WEIGHTS.get(book,_HORIZON_WEIGHTS['INTRADAY'])

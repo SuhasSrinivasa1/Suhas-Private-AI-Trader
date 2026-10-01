@@ -10,7 +10,7 @@ import psscanner_quant.orders as orders
 
 class V638HorizonSidePolicyTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_indian_horizon_execution_is_long_only(self):
         self.assertEqual(engine.HORIZON_EXECUTABLE_SIDES["WEEKLY"], ("LONG",))

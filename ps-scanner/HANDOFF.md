@@ -1,9 +1,43 @@
 # PS Scanner handoff
 
-Current source version: **6.5.1**.
+Current source version: **6.6.0**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
 
-The v6.5.1 hotfix was produced after diagnostics showed four issues: Weekly/Monthly symbol collision, ETF missed-freeze recovery blocked by the morning-window rule, an International recovery fetch that could remain running too long, and SQLite disk-I/O failures propagating across workers. The source here includes the corresponding code fixes and the v6.5.1 regression test.
+## v6.6.0 architecture
 
-Do not weaken hard risk, freshness, data-quality, or order-safety gates to force recommendation counts. Strategy combinations remain subject to validation/learning rules rather than being treated as automatically reliable.
+Start with `ARCHITECTURE_AUDIT_v6.6.0.md` and `RELEASE_v6.6.0.md`. The central runtime lifecycle definition is `psscanner_quant/lifecycle.py`; historical analytics are in `psscanner_quant/analytics.py`.
+
+Active pages are now current-period views, not history views:
+- Intraday: current NSE session only.
+- Weekly: current relevant NSE week.
+- Monthly: current relevant month.
+- ETF: current relevant NSE week.
+- Circuit Radar: current same-day session plus current next-session forecast lane.
+- International: current relevant US weekly book plus current/next Global→India forecast session.
+- Older rows remain in SQLite and are exposed through Performance & History, never deleted merely because they leave the active UI.
+
+The v6.6.0 audit found and corrected two recommendation-volume accounting defects without weakening safety: strategy-family diversity was acting as an unvalidated publication veto in two layers, and Intraday scanned at score 72 but silently refused publication below 76. Family diversity is now advisory/shadow until validated out of sample. Intraday's effective threshold remains 76 but exists in exactly one visible funnel stage.
+
+Weekly/Monthly symbol mutual exclusion is enforced both by the application transaction and SQLite INSERT/UPDATE triggers. Same-session Intraday and Circuit identities have deterministic rollover closure. International external-history transport remains subprocess-bounded with no stale fallback. Missed-freeze recovery never fabricates a five-name book.
+
+Performance and learning treat WIN/LOSS/MISS as trading evidence and report VOID/data-integrity rows separately. Wilson confidence intervals are exposed so tiny samples cannot masquerade as established edge. Daily strategy decay excludes VOID rows.
+
+Workers remain independent domain threads. Health/sanity use bounded snapshots; worker telemetry exposes state, timing, stage, progress, rejection counters, timeout/hung state, recovery state and watchdog restart count.
+
+## Safety contract
+
+Do not weaken hard risk, freshness, liquidity, data-quality, target-feasibility, execution-permission, Groww budget, stop-risk or order-safety gates to force recommendation counts. Never fabricate names, use stale prices, reconstruct hindsight books, replace frozen identities to improve results, or count VOID/data errors as wins.
+
+Static IP is an order-execution control only. It must not gate recommendation research/publication.
+
+## Validation
+
+Run:
+
+```bash
+python -m unittest discover -s tests -v
+python3 tools/post_install_validate.py
+```
+
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.6.0.zip` only after tests pass.

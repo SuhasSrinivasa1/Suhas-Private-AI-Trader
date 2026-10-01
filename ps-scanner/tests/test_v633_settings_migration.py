@@ -9,7 +9,7 @@ from psscanner_quant.config import migrate_morning_freeze_settings
 
 class V633SettingsMigrationTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_upgrade_migrates_old_observation_gates_and_preserves_other_settings(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,0 +1,80 @@
+name: PS Scanner CI
+
+on:
+  push:
+    branches: [main, ps-scanner-v660-architecture]
+    paths:
+      - "ps-scanner/**"
+      - ".github/workflows/ps-scanner-ci.yml"
+  pull_request:
+    paths:
+      - "ps-scanner/**"
+      - ".github/workflows/ps-scanner-ci.yml"
+
+jobs:
+  test:
+    name: Regression (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        python-version: ["3.12"]
+    defaults:
+      run:
+        working-directory: ps-scanner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: ps-scanner/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compile Python
+        run: python -m compileall -q psscanner_quant tests tools
+      - name: Unit/regression suite
+        run: |
+          python -c "from psscanner_quant.db import init_db; init_db()"
+          python -m unittest discover -s tests -v
+      - name: Validate UI JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html=Path("static/index.html").read_text()
+          js=html.rsplit("<script>",1)[1].split("</script>",1)[0]
+          Path("/tmp/ps-scanner-ui.js").write_text(js)
+          PY
+          node --check /tmp/ps-scanner-ui.js
+      - name: Validate shell syntax where zsh exists
+        run: |
+          if command -v zsh >/dev/null 2>&1; then
+            zsh -n install.sh
+            zsh -n run.sh
+          fi
+
+  package:
+    name: Build installable ZIP
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package PS Scanner
+        run: |
+          rm -rf /tmp/PS_Scanner_Quant_v6.6.0
+          cp -R ps-scanner /tmp/PS_Scanner_Quant_v6.6.0
+          find /tmp/PS_Scanner_Quant_v6.6.0 -name '__pycache__' -type d -prune -exec rm -rf {} +
+          cd /tmp
+          zip -qr "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.6.0.zip" PS_Scanner_Quant_v6.6.0
+          unzip -t "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.6.0.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PS_Scanner_Quant_v6.6.0
+          path: PS_Scanner_Quant_v6.6.0.zip
+          if-no-files-found: error
+          retention-days: 30

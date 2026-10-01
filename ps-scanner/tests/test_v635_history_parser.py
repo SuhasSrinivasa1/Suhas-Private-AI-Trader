@@ -12,7 +12,7 @@ from psscanner_quant.constants import VERSION
 
 class V635HistoryParserTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_parser_accepts_iso_epoch_seconds_numeric_string_and_milliseconds(self):
         base=int(pd.Timestamp("2026-01-01", tz="Asia/Kolkata").timestamp())

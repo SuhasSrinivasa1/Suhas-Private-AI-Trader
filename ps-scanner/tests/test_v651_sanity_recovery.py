@@ -7,7 +7,7 @@ from psscanner_quant import engine, specialized, data, main
 
 class V651SanityRecoveryTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.5.1")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 5, 1))
 
     def test_weekly_monthly_publication_interlock_is_atomic(self):
         src=inspect.getsource(engine._insert_rec)
@@ -27,10 +27,10 @@ class V651SanityRecoveryTests(unittest.TestCase):
         self.assertIn("_weekly_monthly_conflicts", src)
         self.assertIn("if rid:", src)
 
-    def test_intraday_default_view_is_today_only_for_closed(self):
+    def test_active_book_default_view_is_current_period_only_for_closed(self):
         src=inspect.getsource(engine.recommendations)
-        self.assertIn("today_start", src)
-        self.assertIn("COALESCE(closed_at,created_at)>=?", src)
+        self.assertIn("book=? AND period_key=? AND state='CLOSED'", src)
+        self.assertIn("/api/history/recommendations", src)
 
     def test_etf_can_self_heal_after_missed_freeze_without_gate_relaxation(self):
         cyc=inspect.getsource(specialized.run_etf_cycle)

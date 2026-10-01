@@ -10,7 +10,7 @@ from psscanner_quant import engine, specialized, main, data
 
 class V631USWeeklyTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_international_period_is_new_york_week_monday(self):
         # 00:30 IST Friday is Thursday in New York; both belong to Monday Sep 21 week.

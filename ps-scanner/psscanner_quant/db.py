@@ -49,6 +49,42 @@ CREATE TABLE IF NOT EXISTS recommendations (
 CREATE INDEX IF NOT EXISTS idx_recs_book_state ON recommendations(book,state,score DESC);
 CREATE INDEX IF NOT EXISTS idx_recs_period ON recommendations(book,period_key,state);
 
+-- Defense-in-depth database publication interlock. Application code already performs
+-- a BEGIN IMMEDIATE check+insert, but these triggers make the WEEKLY/MONTHLY symbol
+-- exclusivity invariant survive future publication paths as well.
+CREATE TRIGGER IF NOT EXISTS trg_weekly_monthly_symbol_exclusive_insert
+BEFORE INSERT ON recommendations
+WHEN NEW.state='LIVE'
+  AND NEW.book IN ('WEEKLY','MONTHLY')
+  AND COALESCE(NEW.result,'')<>'VOID'
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM recommendations r
+    WHERE r.state='LIVE'
+      AND r.book IN ('WEEKLY','MONTHLY')
+      AND r.book<>NEW.book
+      AND UPPER(r.symbol)=UPPER(NEW.symbol)
+      AND COALESCE(r.result,'')<>'VOID'
+  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_SYMBOL_COLLISION') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_weekly_monthly_symbol_exclusive_update
+BEFORE UPDATE OF book,state,symbol,result ON recommendations
+WHEN NEW.state='LIVE'
+  AND NEW.book IN ('WEEKLY','MONTHLY')
+  AND COALESCE(NEW.result,'')<>'VOID'
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM recommendations r
+    WHERE r.recommendation_id<>NEW.recommendation_id
+      AND r.state='LIVE'
+      AND r.book IN ('WEEKLY','MONTHLY')
+      AND r.book<>NEW.book
+      AND UPPER(r.symbol)=UPPER(NEW.symbol)
+      AND COALESCE(r.result,'')<>'VOID'
+  ) THEN RAISE(ABORT,'WEEKLY_MONTHLY_SYMBOL_COLLISION') END;
+END;
+
 CREATE TABLE IF NOT EXISTS strategies (
   strategy_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

@@ -8,7 +8,7 @@ from psscanner_quant import specialized
 
 class V627NonblockingScannerTests(unittest.TestCase):
     def test_version_bumped(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_scanner_uses_cached_context_not_sync_refresh(self):
         src=inspect.getsource(engine_mod.scan_equities)

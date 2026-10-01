@@ -714,9 +714,11 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
          "parser_policy":"V642_FULL_BREADTH_ON_THE_FLY","at":now_iso()}
     stats={"book":book,"started_at":now_iso(),"running":True,"stage":"PREP","universe":len(syms),
            "full_nse_universe":len(all_syms),"current_universe":len(all_syms),"breadth_evaluated":0,"processed":0,"history_ready":0,
-           "history_missing":0,"limited_history_scanned":0,"limited_history_samples":[],"fundamentals_missing":0,"family_vote_reject":0,
+           "history_missing":0,"limited_history_scanned":0,"limited_history_samples":[],"fundamentals_missing":0,
+           "family_vote_reject":0,"family_vote_advisory":0,"strategy_evidence_reject":0,
            "ensemble_score_reject":0,"intelligence_no_trade":0,"intelligence_watch":0,
-           "target_feasibility_reject":0,"raw_eligible":0,"near_misses":[],"history_coverage":cov,
+           "target_feasibility_reject":0,"liquidity_reject":0,"freshness_reject":0,"risk_reject":0,
+           "data_error":0,"raw_eligible":0,"near_misses":[],"history_coverage":cov,
            "universe_policy":scan_policy or ("FULL_GROWW_NSE_EQUITY_SHARES_NO_TOP_N_CAP" if symbols_override is None else "DETERMINISTIC_RECOVERY_BATCH_NO_GATE_RELAXATION"),
            "target_period_key":str(period_key_override or period_key(book))}
     set_state(f"scan_detail_{book}",stats)
@@ -737,14 +739,19 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
         if force or stats["processed"]<=1 or stats["processed"]%progress_step==0 or stats["processed"]==len(syms):
             set_state(f"scan_detail_{book}",stats)
 
-    def near(symbol,side,stage,score=None,detail=None):
-        item={"symbol":symbol,"side":side,"stage":stage}
+    def near(symbol,side,stage,score=None,detail=None,distance_to_threshold=None):
+        item={"symbol":symbol,"side":side,"stage":stage,"rejection_stage":stage}
         if score is not None:item["score"]=round(float(score),2)
-        if detail:item["detail"]=str(detail)[:180]
+        if detail:
+            item["detail"]=str(detail)[:180]
+            item["rejection_reason"]=str(detail)[:180]
+        if distance_to_threshold is not None:
+            try:item["distance_to_threshold"]=round(float(distance_to_threshold),4)
+            except Exception:item["distance_to_threshold"]=None
         arr=stats["near_misses"]
         arr.append(item)
         if len(arr)>12:
-            arr.sort(key=lambda x:float(x.get("score") or 0),reverse=True)
+            arr.sort(key=lambda x:(float(x.get("score") or 0),-abs(float(x.get("distance_to_threshold") or 999999))),reverse=True)
             del arr[12:]
 
     raw=[];decision_buffer=[]
@@ -812,21 +819,41 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
                 fam=vote[2]
                 if fam not in best_by_family or vote[0]>best_by_family[fam][0]:best_by_family[fam]=vote
             family_votes=sorted(best_by_family.values(),reverse=True)
+            if not family_votes:
+                stats["family_vote_reject"]+=1;stats["strategy_evidence_reject"]+=1
+                near(sym,side,"STRATEGY_EVIDENCE",score=0,detail="no audited strategy produced score >=64",distance_to_threshold=64)
+                continue
+            # v6.6.0: distinct-family count is evidence, not a safety gate. Requiring two
+            # families had never been validated out-of-sample and was eliminating otherwise
+            # measurable candidates before liquidity/risk/intelligence gates could evaluate them.
             if len(family_votes)<2:
-                stats["family_vote_reject"]+=1;near(sym,side,"FAMILY_VOTES",score=max([v[0] for v in family_votes],default=0),detail=f"distinct_families={len(family_votes)}");continue
-            top=family_votes[:5];ensemble_score=sum(x[0] for x in top)/len(top);conf=min(1.0,len(family_votes)/8)
-            base_min=72 if book=="INTRADAY" else 74
+                stats["family_vote_advisory"]+=1
+            top=family_votes[:5];ensemble_score=sum(x[0] for x in top)/len(top)
+            # One authoritative score threshold per book. Earlier code scanned Intraday at
+            # 72 and then silently discarded 72-75.99 at publication. Keep the effective
+            # safety threshold unchanged at 76, but make every rejection visible in the funnel.
+            base_min=76 if book=="INTRADAY" else 74
+            # Joint evidence proxy: normalized signal score multiplied by independent data
+            # completeness. Family count is intentionally absent until its incremental OOS
+            # value has been statistically demonstrated.
+            conf=max(0.0,min(1.0,data_conf*(ensemble_score/100.0)))
             if ensemble_score<base_min:
-                stats["ensemble_score_reject"]+=1;near(sym,side,"ENSEMBLE_SCORE",ensemble_score,f"minimum={base_min}");continue
+                stats["ensemble_score_reject"]+=1;near(sym,side,"ENSEMBLE_SCORE",ensemble_score,f"minimum={base_min}",distance_to_threshold=base_min-ensemble_score);continue
             if candles is None:candles=detect_patterns(df)
             geom=_risk_geometry(book,f);target_pct=geom["target_pct"];stop_pct=geom["stop_pct"]
             cached_news=news_context(sym,allow_refresh=False)
             sctx=sector_context_cached(sym,side);ectx=event_risk_context(sym,book)
             ti=evaluate_trade_intelligence(book=book,symbol=sym,side=side,features=f,fundamentals=fund,regime_state=regime_state,candle_info=candles,news=cached_news,global_ctx=global_ctx,portfolio=None,sector_ctx=sctx,event_ctx=ectx,target_pct=target_pct,stop_pct=stop_pct,strategy_ids=[x[1] for x in top],data_confidence=data_conf)
-            rationale={"reasons":sum([x[3][:2] for x in top],[]),"ensemble_families":[x[2] for x in top],"fundamental_quality":fq,"fundamentals_asof":fund.get("_asof") if fund else None,"fundamentals_source":fund.get("_source") if fund else None,"data_confidence":data_conf,"candlestick_context":candles,"global_context":global_ctx,"news_context":cached_news,"sector_context":sctx,"event_context":ectx,"trade_intelligence":ti}
+            rationale={"reasons":sum([x[3][:2] for x in top],[]),"ensemble_families":[x[2] for x in top],
+                "strategy_evidence":{"family_count":len(family_votes),"family_diversity_mode":"MULTI_FAMILY" if len(family_votes)>=2 else "ADVISORY_SHADOW","hard_gate":False,"policy":"V660_UNVALIDATED_FAMILY_VOTE_IS_ADVISORY"},
+                "fundamental_quality":fq,"fundamentals_asof":fund.get("_asof") if fund else None,"fundamentals_source":fund.get("_source") if fund else None,"data_confidence":data_conf,"candlestick_context":candles,"global_context":global_ctx,"news_context":cached_news,"sector_context":sctx,"event_context":ectx,"trade_intelligence":ti}
             candidate={"symbol":sym,"side":side,"score":ensemble_score,"raw_ensemble_score":ensemble_score,"confidence":conf,"price":px,"features":f,"regime":regime,"strategies":[x[1] for x in top],"rationale":rationale,"trade_intelligence":ti,"candlestick_context":candles,"fundamentals":fund}
             if ti['decision']=='NO_TRADE':
-                stats["intelligence_no_trade"]+=1;near(sym,side,"INTELLIGENCE_NO_TRADE",ensemble_score,"; ".join((ti.get('hard_blockers') or [])[:3]));journal(candidate);continue
+                stats["intelligence_no_trade"]+=1
+                failed={int(x.get("rank") or 0) for x in (ti.get("filters") or []) if x.get("hard_fail")}
+                if 41 in failed:stats["liquidity_reject"]+=1
+                if failed.intersection({44,45,46,47,48,50}):stats["risk_reject"]+=1
+                near(sym,side,"INTELLIGENCE_NO_TRADE",ensemble_score,"; ".join((ti.get('hard_blockers') or [])[:3]));journal(candidate);continue
             if ti['decision']!='ELIGIBLE':
                 stats["intelligence_watch"]+=1;near(sym,side,"INTELLIGENCE_WATCH",ensemble_score);journal(candidate);continue
             candidate['score']=0.70*ensemble_score+0.30*float(ti['score'])
@@ -855,7 +882,11 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
         c['trade_intelligence']=ti;c['rationale']['trade_intelligence']=ti;c['rationale']['news_context']=news;c['rationale']['portfolio_fit']=portfolio;c['rationale']['sector_context']=sctx;c['rationale']['event_context']=ectx
         c['score']=0.70*float(c['raw_ensemble_score'])+0.30*float(ti['score'])
         if ti['decision']!='ELIGIBLE':
-            stats["intelligence_no_trade"]+=1;near(c['symbol'],c['side'],"FINAL_INTELLIGENCE",c['score'],"; ".join((ti.get('hard_blockers') or [])[:3]));journal(c);continue
+            stats["intelligence_no_trade"]+=1
+            failed={int(x.get("rank") or 0) for x in (ti.get("filters") or []) if x.get("hard_fail")}
+            if 41 in failed:stats["liquidity_reject"]+=1
+            if failed.intersection({44,45,46,47,48,50}):stats["risk_reject"]+=1
+            near(c['symbol'],c['side'],"FINAL_INTELLIGENCE",c['score'],"; ".join((ti.get('hard_blockers') or [])[:3]));journal(c);continue
         if book in ('WEEKLY','MONTHLY'):
             tf=_target_feasibility(book,c['side'],c['features'],c['score'],c['confidence'],float(c['rationale'].get('data_confidence') or 0),c['rationale'].get('fundamental_quality'),now=target_now);c['target_feasibility']=tf;c['rationale']['target_feasibility']=tf
             if not tf['target_qualified']:
@@ -865,6 +896,14 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
     if decision_buffer:
         _journal_decisions(book,list(decision_buffer),period_key_override=period_key_override);decision_buffer.clear()
     stats["history_coverage"].update({"ready":stats["history_ready"],"files":stats["history_ready"]+stats["history_missing"],"scanned_on_the_fly":True})
+    stats["funnel"]={
+        "universe_total":len(syms),"history_ready":stats["history_ready"],"history_reject":stats["history_missing"],
+        "liquidity_reject":stats["liquidity_reject"],"freshness_reject":stats["freshness_reject"],
+        "strategy_evidence_reject":stats["strategy_evidence_reject"],"strategy_diversity_advisory":stats["family_vote_advisory"],
+        "score_reject":stats["ensemble_score_reject"],"target_feasibility_reject":stats["target_feasibility_reject"],
+        "risk_reject":stats["risk_reject"],"trade_intelligence_reject":stats["intelligence_no_trade"]+stats["intelligence_watch"],
+        "data_error":stats["data_error"],"raw_eligible":stats["raw_eligible"],"publication_ready":len(out),"published":0,
+    }
     stats.update({"running":False,"stage":"DONE","output_candidates":len(out),"completed_at":now_iso(),"duration_seconds":round(time.monotonic()-started,2)})
     progress(force=True)
     return out
@@ -923,6 +962,14 @@ def update_live_books():
                 elif book=='CIRCUIT' and r.get('period_key')==today:close='USER_1500_CIRCUIT_CUTOFF';result='MISS'
                 elif book in ('CIRCUIT_NEXTDAY','GLOBAL_INDIA_LONG','GLOBAL_INDIA_SHORT') and str(r.get('period_key') or '')<=today:
                     close='SESSION_1500_FORECAST_CUTOFF';result='MISS'
+            # Session/rollover safety if the laptop was asleep at the normal close.
+            if close is None and book=='INTRADAY':
+                if str(r.get('period_key') or '')<today:
+                    close='INTRADAY_SESSION_ROLLOVER';result='MISS'
+                elif str(r.get('period_key') or '')==today and t>=MARKET_CLOSE:
+                    close='NSE_SESSION_END_TARGET_NOT_REACHED';result='MISS'
+            if close is None and book=='CIRCUIT' and str(r.get('period_key') or '')<today:
+                close='CIRCUIT_SESSION_ROLLOVER';result='MISS'
             # Rollover safety for forecast books if the laptop was asleep at the cutoff.
             if close is None and book in ('CIRCUIT_NEXTDAY','GLOBAL_INDIA_LONG','GLOBAL_INDIA_SHORT') and str(r.get('period_key') or '')<today:
                 close='FORECAST_SESSION_ROLLOVER';result='MISS'
@@ -937,7 +984,7 @@ def run_intraday_cycle():
     live_window=is_regular_trading_day(now.date()) and MARKET_OPEN <= now.time().replace(tzinfo=None) <= INTRADAY_ENTRY_CUTOFF
     status={"book":"INTRADAY","started_at":now_iso(),"running":True,"live_window":live_window}
     set_state("scan_status_INTRADAY",status)
-    made=0;cands=[];pk=period_key("INTRADAY",now)
+    made=0;freshness_holds=0;cands=[];pk=period_key("INTRADAY",now)
     with db() as con:
         live_count=int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='INTRADAY' AND period_key=? AND state='LIVE'",(pk,)).fetchone()[0])
     if live_window:
@@ -966,11 +1013,19 @@ def run_intraday_cycle():
             with db() as con:
                 exists=con.execute("SELECT 1 FROM recommendations WHERE book='INTRADAY' AND period_key=? AND symbol=? AND side=? AND state IN ('LIVE','CLOSED')",
                     (pk,c["symbol"],c["side"])).fetchone()
-            if not exists and c["score"]>=76:
-                _insert_rec("INTRADAY",c["symbol"],c["side"],c["score"],c["confidence"],c["price"],c["features"],c["regime"],c["strategies"],c["rationale"]);made+=1
+            if not exists:
+                rid=_insert_rec("INTRADAY",c["symbol"],c["side"],c["score"],c["confidence"],c["price"],c["features"],c["regime"],c["strategies"],c["rationale"])
+                if rid:made+=1
+                else:freshness_holds+=1
     else:
         set_state("scan_detail_INTRADAY",{"book":"INTRADAY","running":False,"status":"OUTSIDE_LIVE_WINDOW","at":now_iso(),"processed":0,"universe":0})
     detail=get_state("scan_detail_INTRADAY",{}) or {}
+    if isinstance(detail.get("funnel"),dict):
+        detail["funnel"]["freshness_reject"]=int(detail["funnel"].get("freshness_reject") or 0)+freshness_holds
+        detail["funnel"]["published"]=made
+        detail["freshness_holds_at_publication"]=freshness_holds
+        detail["published"]=made
+        set_state("scan_detail_INTRADAY",detail)
     if live_window and made==0:
         history_ready=int(detail.get("history_ready") or 0)
         processed=int(detail.get("processed") or 0)
@@ -1022,8 +1077,13 @@ def run_single_horizon_cycle(book: str):
         _mark_scan_detail_idle(book,status,period_key=pk,freeze_contract=contract,target_period=ctx)
         return 0
 
-    research_window = preperiod or (is_regular_trading_day(now.date()) and HORIZON_RESEARCH_START<=t<=HORIZON_RECOVERY_END)
-    publication_allowed = preperiod or _publication_window_open(now,book)
+    normal_research = is_regular_trading_day(now.date()) and HORIZON_RESEARCH_START<=t<=HORIZON_RECOVERY_END
+    missed_freeze_recovery = bool(
+        not preperiod and existing<required and is_regular_trading_day(now.date())
+        and HORIZON_RECOVERY_END<t<=MARKET_CLOSE
+    )
+    research_window = preperiod or normal_research or missed_freeze_recovery
+    publication_allowed = preperiod or _publication_window_open(now,book) or missed_freeze_recovery
     if not research_window:
         state=_horizon_freeze_window(book,now)
         status="FREEZE_CONTRACT_SHORTAGE_WINDOW_CLOSED" if existing<required and t>HORIZON_RECOVERY_END else (state.get("status") or "OUTSIDE_MORNING_RESEARCH_WINDOW")
@@ -1035,7 +1095,7 @@ def run_single_horizon_cycle(book: str):
     prepublished=0
     if publication_allowed:
         prepublished=_publish_frozen(book,1,required,publication_anchor=scan_anchor,
-            period_key_override=pk,allow_preperiod=preperiod)
+            period_key_override=pk,allow_preperiod=preperiod,allow_recovery=missed_freeze_recovery)
         existing=_freeze_contract_count(book,pk)
         if existing>=required:
             contract={"required":required,"published_total":existing,"shortage":0,"recovery_required":False}
@@ -1052,9 +1112,11 @@ def run_single_horizon_cycle(book: str):
         fund_status={}
     obs=1;started=time.monotonic()
     batch=_recovery_symbol_batch(book,"1day",pk,int(settings.get("horizon_recovery_batch_size",120)))
-    st={"book":book,"running":True,"started_at":now_iso(),"fundamental_snapshots":fund_status.get("snapshots",0),
+    st={"book":book,"running":True,"started_at":now_iso(),"status":"MISSED_FREEZE_CACHED_RECOVERY" if missed_freeze_recovery else "STAGED_CONTRACT_RECOVERY",
+        "fundamental_snapshots":fund_status.get("snapshots",0),
         "fundamental_symbols":fund_status.get("symbols",0),"contract":{"required":required,"published_total":existing,"shortage":max(0,required-existing)},
-        "target_period":ctx,"recovery_batch":{"batch_size":batch.get("batch_size",0),"ready_cached":batch.get("ready",0),
+        "target_period":ctx,"recovery_policy":"CACHED_ONLY_NO_GATE_RELAXATION" if missed_freeze_recovery else "DETERMINISTIC_STAGED_RECOVERY_NO_GATE_RELAXATION",
+        "recovery_batch":{"batch_size":batch.get("batch_size",0),"ready_cached":batch.get("ready",0),
             "cursor":batch.get("cursor",0),"pass":batch.get("pass",0)}}
     set_state(f"scan_status_{book}",st)
     try:
@@ -1063,10 +1125,10 @@ def run_single_horizon_cycle(book: str):
         _observe(book,c,period_key_override=pk)
         published=prepublished
         completion=datetime.now(IST)
-        publication_at_completion = preperiod or _publication_window_open(completion,book)
+        publication_at_completion = preperiod or _publication_window_open(completion,book) or missed_freeze_recovery
         if publication_at_completion:
             published+=_publish_frozen(book,obs,required,publication_anchor=completion,
-                period_key_override=pk,allow_preperiod=preperiod)
+                period_key_override=pk,allow_preperiod=preperiod,allow_recovery=missed_freeze_recovery)
         total=_freeze_contract_count(book,pk);shortage=max(0,required-total)
         with db() as con:
             obs_rows=con.execute("SELECT COUNT(*) FROM candidate_observations WHERE book=? AND period_key=?",(book,pk)).fetchone()[0]
@@ -1081,7 +1143,7 @@ def run_single_horizon_cycle(book: str):
             out_candidates=int(detail.get("output_candidates") or len(c) or 0)
             reason="INSUFFICIENT_DATA_VALID_LONG_CANDIDATES_IN_CURRENT_BATCH" if out_candidates<required else "QUALIFIED_CANDIDATES_ACCUMULATING"
         contract={"required":required,"published_total":total,"shortage":shortage,"recovery_required":shortage>0,"reason":reason,
-                  "staged_expansion":True,"no_gate_relaxation":True}
+                  "staged_expansion":True,"no_gate_relaxation":True,"missed_freeze_recovery":missed_freeze_recovery}
         st.update({"running":False,"status":status,"eligible_candidates":len(c),"candidate_observation_rows":int(obs_rows),
                    "max_observations":int(max_obs),"required_observations":obs,"published":published,
                    "publication_window":publication_at_completion,"freeze":_horizon_freeze_window(book,completion),
@@ -1111,17 +1173,42 @@ def run_research_cycle():
     return n
 
 
+def _ui_freshness(row_: Dict[str, Any], now: Optional[datetime]=None) -> Dict[str, Any]:
+    """Label current-quote freshness without changing recommendation validity."""
+    now=now or datetime.now(IST)
+    raw=row_.get("updated_at")
+    snapshot=row_.get("feature_snapshot") if isinstance(row_.get("feature_snapshot"),dict) else {}
+    publication_asof=snapshot.get("asof")
+    if not raw:
+        return {"state":"INVALID","quote_asof":None,"age_seconds":None,"publication_data_asof":publication_asof}
+    try:
+        dt=datetime.fromisoformat(str(raw).replace("Z","+00:00"))
+        if dt.tzinfo is None:dt=dt.replace(tzinfo=IST)
+        dt=dt.astimezone(IST);age=max(0.0,(now-dt).total_seconds())
+    except Exception:
+        return {"state":"INVALID","quote_asof":str(raw),"age_seconds":None,"publication_data_asof":publication_asof}
+    state="FRESH" if age<=180 else ("AGING" if age<=900 else "STALE")
+    return {"state":state,"quote_asof":dt.isoformat(timespec="seconds"),"age_seconds":round(age,1),
+            "publication_data_asof":publication_asof}
+
+
 def recommendations(book: str) -> Dict[str, Any]:
     target_ctx=_horizon_target_context(book) if book in ("WEEKLY","MONTHLY","ETF") else {"period_key":period_key(book),"target_now":datetime.now(IST),"preperiod":False}
     pk = str(target_ctx.get("period_key") or period_key(book))
     with db() as con:
+        # International can be frozen for next week during the Friday-close/weekend window.
+        # Prefer a live future/current frozen key instead of showing the just-finished week.
+        if str(book).upper()=="INTERNATIONAL":
+            rpk=con.execute("SELECT MAX(period_key) FROM recommendations WHERE book='INTERNATIONAL' AND state='LIVE'").fetchone()
+            if rpk and rpk[0] and str(rpk[0])>=pk:pk=str(rpk[0])
         live = [dict(r) for r in con.execute("SELECT * FROM recommendations WHERE book=? AND period_key=? AND state='LIVE' ORDER BY side,score DESC", (book, pk)).fetchall()]
-        # v6.5.0 sanity: intraday UI must not mix historical closed calls into today's view.
-        if str(book).upper() == "INTRADAY":
-            today_start = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-            closed = [dict(r) for r in con.execute("SELECT * FROM recommendations WHERE book=? AND state='CLOSED' AND COALESCE(closed_at,created_at)>=? ORDER BY closed_at DESC LIMIT 100", (book, today_start)).fetchall()]
-        else:
-            closed = [dict(r) for r in con.execute("SELECT * FROM recommendations WHERE book=? AND state='CLOSED' ORDER BY closed_at DESC LIMIT 100", (book,)).fetchall()]
+        # v6.6.0 lifecycle contract: every active page returns CLOSED rows only for
+        # the same active period. Historical rows remain in the ledger and are exposed
+        # explicitly through /api/history/recommendations and /api/performance.
+        closed = [dict(r) for r in con.execute(
+            "SELECT * FROM recommendations WHERE book=? AND period_key=? AND state='CLOSED' ORDER BY closed_at DESC LIMIT 100",
+            (book,pk),
+        ).fetchall()]
 
         # v6.5.1 defensive display guard. Publication itself is atomically protected,
         # but hide any legacy Weekly/Monthly collision until startup repair has run.
@@ -1144,6 +1231,8 @@ def recommendations(book: str) -> Dict[str, Any]:
                     d[k[:-5]] = json.loads(d.pop(k) or ("[]" if "strategy" in k else "{}"))
                 except Exception:
                     d[k[:-5]] = [] if "strategy" in k else {}
+            if d.get("state")=="LIVE":
+                d["freshness"]=_ui_freshness(d)
     frozen_books=("WEEKLY","MONTHLY","ETF","INTERNATIONAL","CIRCUIT_NEXTDAY","GLOBAL_INDIA_LONG","GLOBAL_INDIA_SHORT")
     dynamic_target_books=("INTERNATIONAL","CIRCUIT","CIRCUIT_NEXTDAY","GLOBAL_INDIA_LONG","GLOBAL_INDIA_SHORT")
     target_policy={
@@ -1173,7 +1262,7 @@ def recommendations(book: str) -> Dict[str, Any]:
         "target_is_not_guaranteed": True,
         "publication_window_ist": f"pre-period after prior close; first-session {HORIZON_FREEZE_START.strftime('%H:%M')}-{HORIZON_FREEZE_END.strftime('%H:%M')} (recovery until {HORIZON_RECOVERY_END.strftime('%H:%M')})" if book in ("WEEKLY", "MONTHLY", "ETF") else None,
         "remaining_sessions_estimate": _remaining_sessions(book,target_ctx.get("target_now")) if book in ("WEEKLY", "MONTHLY", "ETF") else None,
-        "fewer_than_five_is_valid": False if contract_required else True,
+        "fewer_than_five_is_valid": True,
         "minimum_frozen_recommendations": contract_required or None,
         "forecast_lane": "3PM_NEXT_SESSION_UPPER_CIRCUIT_LONG_ONLY" if book=="CIRCUIT_NEXTDAY" else ("US_WEEKLY_FROZEN_LONG_ONLY" if book=="INTERNATIONAL" else ("GLOBAL_TO_INDIA_NEXT_SESSION" if book in ("GLOBAL_INDIA_LONG","GLOBAL_INDIA_SHORT") else None)),
         "policy_version": ("V649_STAGED_RECOVERY_PREPERIOD_FREEZE" if contract_required else ("V642_CIRCUIT_EVIDENCE_FAIL_CLOSED" if book in ("CIRCUIT","CIRCUIT_NEXTDAY") else "V632_MORNING_FREEZE_RECOVERY")),
@@ -1228,6 +1317,7 @@ def recommendations(book: str) -> Dict[str, Any]:
 class Engine:
     def __init__(self):
         self.stop_evt=threading.Event();self.thread=None;self.last_error="";self.workers={};self.worker_specs={}
+        self.worker_runtime={};self.worker_restarts={}
 
     def start(self):
         if self.thread and self.thread.is_alive():return
@@ -1241,24 +1331,69 @@ class Engine:
     def stop(self):
         self.stop_evt.set()
 
+    def _worker_timeout_seconds(self,name,interval):
+        explicit={"international":120.0,"broker_probe":90.0,"live_update":180.0,"market_snapshot":240.0,
+                  "intraday":900.0,"weekly":1200.0,"monthly":1200.0,"etf":900.0,
+                  "circuit":600.0,"circuit_nextday":300.0,"global_india":600.0}
+        return float(explicit.get(name,max(300.0,float(interval)*4.0)))
+
     def worker_status(self):
-        return {name:{"alive":bool(t.is_alive()),"thread":t.name} for name,t in self.workers.items()}
+        now=datetime.now(IST);out={}
+        # Read scan progress in one short WAL read. Failure is fail-soft so /api/health
+        # cannot hang behind many independent state lookups.
+        scan_cache={}
+        worker_book={"intraday":"INTRADAY","weekly":"WEEKLY","monthly":"MONTHLY","etf":"ETF",
+                     "circuit":"CIRCUIT","circuit_nextday":"CIRCUIT_NEXTDAY","international":"INTERNATIONAL"}
+        keys=[f"scan_detail_{b}" for b in worker_book.values()]+[f"scan_status_{b}" for b in worker_book.values()]
+        try:
+            qs=",".join("?" for _ in keys)
+            with db(timeout_seconds=.5) as con:
+                for row_ in con.execute(f"SELECT key,value_json FROM system_state WHERE key IN ({qs})",tuple(keys)).fetchall():
+                    try:scan_cache[str(row_[0])]=json.loads(row_[1] or "{}")
+                    except Exception:pass
+        except Exception:
+            scan_cache={}
+        for name,t in self.workers.items():
+            spec=self.worker_specs.get(name,(300,None));interval=float(spec[0]);timeout=self._worker_timeout_seconds(name,interval)
+            state=dict(self.worker_runtime.get(name) or {})
+            started=state.get("started_at");elapsed=None
+            if state.get("state")=="RUNNING" and started:
+                try:
+                    s=datetime.fromisoformat(str(started));s=s if s.tzinfo else s.replace(tzinfo=IST);elapsed=max(0.0,(now-s).total_seconds())
+                except Exception:elapsed=None
+            b=worker_book.get(name);detail=scan_cache.get(f"scan_detail_{b}",{}) if b else {};scan=scan_cache.get(f"scan_status_{b}",{}) if b else {}
+            processed=detail.get("processed",scan.get("processed"));universe=detail.get("universe",scan.get("universe"))
+            remaining=max(0,int(universe)-int(processed)) if isinstance(universe,(int,float)) and isinstance(processed,(int,float)) else None
+            out[name]={**state,"alive":bool(t.is_alive()),"thread":t.name,"timeout_seconds":timeout,
+                       "elapsed_seconds":round(elapsed,2) if elapsed is not None else state.get("duration_seconds"),
+                       "hung":bool(t.is_alive() and state.get("state")=="RUNNING" and elapsed is not None and elapsed>timeout),
+                       "current_stage":detail.get("stage") or scan.get("status") or state.get("state"),
+                       "processed":processed,"remaining":remaining,
+                       "rejection_counters":(detail.get("funnel") or {}),
+                       "recovery_state":scan.get("contract") or scan.get("recovery_policy"),
+                       "restart_count":int(self.worker_restarts.get(name,0))}
+        return out
 
     def _worker(self,name,interval,func,initial_delay=0):
         if self.stop_evt.wait(initial_delay):return
         while not self.stop_evt.is_set():
-            started=time.monotonic()
-            set_state(f"worker_{name}",{"state":"RUNNING","started_at":now_iso()})
+            started=time.monotonic();started_at=now_iso()
+            previous=dict(self.worker_runtime.get(name) or {})
+            running={"state":"RUNNING","started_at":started_at,"last_ok_at":previous.get("last_ok_at"),
+                     "last_error":previous.get("last_error")}
+            self.worker_runtime[name]=running
+            set_state(f"worker_{name}",running)
             try:
                 func()
                 self.last_error=""
-                state={"state":"IDLE","last_ok_at":now_iso(),"duration_seconds":round(time.monotonic()-started,2)}
+                state={"state":"IDLE","started_at":started_at,"last_ok_at":now_iso(),"duration_seconds":round(time.monotonic()-started,2),"last_error":None}
             except Exception as exc:
                 self.last_error=f"{name}: {str(exc)[:260]}"
                 health(name,"ERROR",str(exc)[:240])
-                state={"state":"ERROR","last_error":str(exc)[:240],"at":now_iso(),"duration_seconds":round(time.monotonic()-started,2)}
-            # set_state is fail-soft in v6.4.8; telemetry contention cannot terminate
-            # this loop and leave a stale RUNNING flag forever.
+                state={"state":"ERROR","started_at":started_at,"last_ok_at":previous.get("last_ok_at"),
+                       "last_error":str(exc)[:240],"at":now_iso(),"duration_seconds":round(time.monotonic()-started,2)}
+            self.worker_runtime[name]=state
+            # set_state is fail-soft; telemetry contention cannot terminate this loop.
             set_state(f"worker_{name}",state)
             wait=max(1.0,float(interval)-(time.monotonic()-started))
             if self.stop_evt.wait(wait):return
@@ -1389,8 +1524,11 @@ class Engine:
                 t=self.workers.get(name)
                 if t is not None and t.is_alive():
                     continue
-                health("worker_watchdog","WARN",f"respawning dead worker {name}")
-                set_state(f"worker_{name}",{"state":"RESTARTING","at":now_iso(),"reason":"THREAD_NOT_ALIVE"})
+                self.worker_restarts[name]=int(self.worker_restarts.get(name,0))+1
+                health("worker_watchdog","WARN",f"respawning dead worker {name}",
+                       {"restart_count":self.worker_restarts[name],"persistent_failure":self.worker_restarts[name]>=3})
+                restart={"state":"RESTARTING","at":now_iso(),"reason":"THREAD_NOT_ALIVE","restart_count":self.worker_restarts[name]}
+                self.worker_runtime[name]=restart;set_state(f"worker_{name}",restart)
                 self._spawn_worker(name,interval,fn,1)
 
 

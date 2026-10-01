@@ -9,7 +9,7 @@ from psscanner_quant import engine, specialized, config, trading_calendar
 
 class V632MorningFreezeTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_weekly_monday_morning_freeze_is_open(self):
         dt=datetime(2026,9,28,9,21,tzinfo=IST)
@@ -56,7 +56,8 @@ class V632MorningFreezeTests(unittest.TestCase):
     def test_ui_shows_near_misses_and_hides_legacy_international_by_default(self):
         html=(Path(__file__).resolve().parents[1]/'static'/'index.html').read_text()
         self.assertIn('RESEARCH NEAR-MISSES',html)
-        self.assertIn('Morning-freeze policy',html)
+        self.assertIn('CURRENT PERIOD ONLY',html)
+        self.assertIn('Performance & History',html)
         self.assertIn('LIVE CIRCUIT WATCH',html)
         self.assertIn('Legacy U.S. daily/audit rows',html)
 

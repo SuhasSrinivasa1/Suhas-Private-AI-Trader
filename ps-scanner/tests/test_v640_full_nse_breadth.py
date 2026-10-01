@@ -14,7 +14,7 @@ from psscanner_quant.config import load_settings, update_settings
 
 class V640FullNSEBreadthTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_universe_uses_full_groww_nse_equity_master_without_cap(self):
         rows=[]

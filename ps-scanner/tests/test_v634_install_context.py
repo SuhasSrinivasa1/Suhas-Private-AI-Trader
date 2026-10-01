@@ -10,7 +10,7 @@ from psscanner_quant import config
 
 class V634InstallContextTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_load_settings_self_heals_legacy_observation_gates(self):
         with tempfile.TemporaryDirectory() as td:

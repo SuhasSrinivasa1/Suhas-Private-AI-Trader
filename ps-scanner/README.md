@@ -1,3 +1,11 @@
+# PS Scanner Quant v6.6.0 — Current-Period Lifecycle & Statistical Audit
+
+v6.6.0 restructures PS Scanner around explicit page/book lifecycle contracts. Active pages show the current actionable period only; historical outcomes remain in SQLite for learning and are available in the dedicated Performance & History surface. The release adds `/api/lifecycle`, `/api/performance`, `/api/history/recommendations`, a broader bounded `/api/sanity`, rejection-funnel telemetry, numerical uncertainty metrics and richer worker health.
+
+The audit removed two accidental recommendation-volume bottlenecks without lowering hard safety gates: the unvalidated two-family strategy requirement is now advisory/shadow, and Intraday's hidden second score gate was consolidated so the unchanged effective score-76 threshold is visible and countable. Weekly/Monthly symbol exclusivity is additionally enforced by SQLite triggers. Same-session stale LIVE rows are deterministically resolved; VOID/data errors remain auditable and are excluded from trading P/L/decay evidence.
+
+See `ARCHITECTURE_AUDIT_v6.6.0.md` for the page/domain matrix and first-principles findings, and `RELEASE_v6.6.0.md` for release notes.
+
 # PS Scanner Quant v6.4.3 — Full-Breadth Data Hydration
 
 v6.4.3 keeps the 3,395-share full NSE equity discovery and v6.4.2 Circuit evidence gates, but fixes the data-hydration bottleneck exposed by the live diagnostic. One failed Groww LTP batch can no longer abort the entire 3k+ symbol refresh; successful batches are preserved and client-side symbol errors get a bounded 10-symbol fallback. Universe telemetry now exposes the LTP batch result directly.
@@ -110,10 +118,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.4.3.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.4.3
-unzip -q PS_Scanner_Quant_v6.4.3.zip
-cd PS_Scanner_Quant_v6.4.3
+unzip -t PS_Scanner_Quant_v6.6.0.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.6.0
+unzip -q PS_Scanner_Quant_v6.6.0.zip
+cd PS_Scanner_Quant_v6.6.0
 chmod +x install.sh
 ./install.sh
 ```

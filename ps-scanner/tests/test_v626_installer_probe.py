@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class V625InstallerProbeTests(unittest.TestCase):
     def test_version_bumped(self):
-        self.assertEqual(VERSION, "6.4.3")
+        self.assertGreaterEqual(tuple(map(int, VERSION.split("."))), (6, 4, 3))
 
     def test_groww_probe_route_registered(self):
         paths = {getattr(r, "path", None) for r in app.routes}
