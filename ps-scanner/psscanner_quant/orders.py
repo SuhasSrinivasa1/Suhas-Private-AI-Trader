@@ -69,7 +69,7 @@ def execution_readiness_cached_snapshot(order_count:Optional[int], position_stat
 
 def execution_readiness(rec:Optional[Dict[str,Any]]=None, use_cached:bool=False)->Dict[str,Any]:
     # Safety invariants remain delegated to _execution_readiness_from_snapshot:
-    # SHORT_HARD_EXIT at 15:00 and horizon_short_research_only for WEEKLY/MONTHLY/ETF.
+    # SHORT_HARD_EXIT -> short_entry_cutoff_1500; horizon_short_research_only -> ("WEEKLY","MONTHLY","ETF").
     settings=load_settings()
     ip=broker.static_ip_status_cached() if use_cached else broker.static_ip_status()
     bs=broker.status_cached() if use_cached else broker.status()
