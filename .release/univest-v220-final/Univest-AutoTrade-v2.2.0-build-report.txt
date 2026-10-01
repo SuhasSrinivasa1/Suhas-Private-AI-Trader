@@ -8,5 +8,5 @@ notificationDuplicateExecutionGate=removed
 backInRangeBrokerFlat=INR 20000 missed initial entry
 backInRangeHoldingExists=INR 5000 add
 averaging=INR 5000 at -2/-4/-6 percent, max 3
-signingCertificateSHA256=86fed092a63b77daf4cb81bac8708ccc114568f6d7652cf0dca9d5b065f7b768
+signingCertificateSHA256=4e5aafd4a4b25734ae79d801fa9e8bff515c7e2374a9d42d839dc2db05a2f986
 signingIdentity=ephemeral new identity
