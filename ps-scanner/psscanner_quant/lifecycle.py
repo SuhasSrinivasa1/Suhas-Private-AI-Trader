@@ -10,7 +10,7 @@ expiry, recovery and learning semantics from one source instead of stale page co
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-POLICY_VERSION = "V661_FROZEN_IDENTITY_AND_SEARCH_EXHAUSTION"
+POLICY_VERSION = "V670_PRODUCTION_INTEGRITY_AND_REPLAY"
 
 BOOK_CONTRACTS: Dict[str, Dict[str, Any]] = {
     "INTRADAY": {

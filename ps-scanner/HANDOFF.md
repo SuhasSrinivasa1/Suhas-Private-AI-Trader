@@ -1,14 +1,16 @@
 # PS Scanner handoff
 
-Current source version: **6.6.1**.
+Current source version: **6.7.0**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
 
-## v6.6.1 architecture
+## v6.7.0 production-integrity architecture
 
-Start with `ARCHITECTURE_AUDIT_v6.6.1.md` and `RELEASE_v6.6.1.md`; `ARCHITECTURE_AUDIT_v6.6.0.md` remains the prior structural baseline. The central runtime lifecycle definition is `psscanner_quant/lifecycle.py`; historical analytics are in `psscanner_quant/analytics.py`.
+Start with `ARCHITECTURE_AUDIT_v6.7.0.md` and `RELEASE_v6.7.0.md`. The v6.6.1 audit remains the frozen-identity/search-exhaustion baseline. The central runtime lifecycle definition is `psscanner_quant/lifecycle.py`; historical analytics are in `psscanner_quant/analytics.py`.
 
-v6.6.1 is a first-principles follow-up to the v6.6.0 restructure. It fixes four integrity gaps found by re-reading the implementation rather than trusting the prior handoff: Weekly/Monthly exclusion now follows overlapping frozen-period identity even after early closure; zero-live Intraday recovery accumulates complete-pass funnel evidence before it may claim no qualified opportunity; ETF missed-freeze recovery is bounded to the live NSE session; and every short-lived SQLite connection explicitly reasserts synchronous=NORMAL.
+v6.7.0 completes the production-integrity roadmap on top of v6.6.1. It adds execution-only broker permission checks, position reconciliation, decision-to-fill attribution, first-class no-trade diagnostics, deterministic stored-input production replay, point-in-time audit envelopes, verified SQLite backup/restore, experiment governance and evidence-gated time-of-day/behavior cohorts. No live recommendation threshold is loosened and cohort analytics do not auto-activate as trading gates.
+
+v6.6.1 was a first-principles follow-up to the v6.6.0 restructure. It fixes four integrity gaps found by re-reading the implementation rather than trusting the prior handoff: Weekly/Monthly exclusion now follows overlapping frozen-period identity even after early closure; zero-live Intraday recovery accumulates complete-pass funnel evidence before it may claim no qualified opportunity; ETF missed-freeze recovery is bounded to the live NSE session; and every short-lived SQLite connection explicitly reasserts synchronous=NORMAL.
 
 Active pages are now current-period views, not history views:
 - Intraday: current NSE session only.
@@ -42,4 +44,4 @@ python -m unittest discover -s tests -v
 python3 tools/post_install_validate.py
 ```
 
-The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.6.1.zip` only after tests pass.
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.0.zip` only after tests pass.

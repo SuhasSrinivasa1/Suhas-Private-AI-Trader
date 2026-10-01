@@ -103,6 +103,13 @@ _DEFAULTS: Dict[str, Any] = {
     "international_enabled": True,
     "news_enabled": True,
     "max_open_manual_orders": 8,
+    # v6.7.0 execution-integrity and evidence-governance controls.
+    "execution_slippage_reserve_bps": 10.0,
+    "execution_min_net_edge_rupees": 0.0,
+    "execution_integrity_worker_interval_seconds": 120,
+    "backup_worker_interval_seconds": 3600,
+    "cohort_min_samples_for_live_use": 50,
+    "cohort_max_wilson_width_for_live_use": 0.30,
 }
 
 

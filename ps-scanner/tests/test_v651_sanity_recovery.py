@@ -12,8 +12,8 @@ class V651SanityRecoveryTests(unittest.TestCase):
     def test_weekly_monthly_publication_interlock_is_atomic(self):
         src=inspect.getsource(engine._insert_rec)
         self.assertIn("BEGIN IMMEDIATE", src)
-        self.assertIn("V651_SYMBOL_LEVEL_HORIZON_ISOLATION", src)
-        self.assertIn("book=? AND UPPER(symbol)=? AND state='LIVE'", src)
+        self.assertIn("V670_FROZEN_PERIOD_IDENTITY_APPLICATION_AND_DB", src)
+        self.assertIn("_weekly_monthly_conflicts(b,pk)", src)
 
     def test_legacy_collision_repair_voids_loser(self):
         src=inspect.getsource(engine._repair_weekly_monthly_collisions)

@@ -19,11 +19,11 @@ def fail(message):
 
 
 ping=get("/api/ping")
-if ping.get("version")!="6.6.1":fail("runtime version is not 6.6.1")
+if ping.get("version")!="6.7.0":fail("runtime version is not 6.7.0")
 health=get("/api/health")
 if health.get("engine_alive") is not True:fail("engine supervisor is not alive")
 life=get("/api/lifecycle")
-if life.get("policy_version")!="V661_FROZEN_IDENTITY_AND_SEARCH_EXHAUSTION":fail("lifecycle contract is not v6.6.1")
+if life.get("policy_version")!="V670_PRODUCTION_INTEGRITY_AND_REPLAY":fail("lifecycle contract is not v6.7.0")
 sanity=get("/api/sanity")
 if sanity.get("database_quick_check")!="ok":fail("SQLite quick_check failed")
 if sanity.get("weekly_monthly_collisions"):fail("Weekly/Monthly overlapping frozen-period identity collision detected")
@@ -49,5 +49,8 @@ print(json.dumps({
     "database":sanity.get("database_quick_check"),
     "workers":len(health.get("workers") or {}),
     "performance_rows_scanned":perf.get("rows_scanned"),
+    "diagnostic_books":len(diag.get("books") or {}),
+    "execution_orders_scanned":execution.get("orders_scanned"),
+    "backup_policy":backups.get("policy"),
     "frozen_book_shortages":sanity.get("frozen_book_shortages") or {},
 },indent=2))

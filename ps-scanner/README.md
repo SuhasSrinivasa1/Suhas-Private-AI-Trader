@@ -1,3 +1,19 @@
+# PS Scanner Quant v6.7.0 — Production Integrity, Replay & Execution Attribution
+
+v6.7.0 completes the next production-hardening agenda without adding strategy sprawl or weakening any recommendation safety gate.
+
+- **Execution integrity:** every manual order preview/submit re-checks Groww connectivity, Static IP, market session, live spread/circuit conditions, broker positions, dynamic margin/MIS permission, portfolio limits, stop-risk sizing and expected net edge after live execution-cost reserves.
+- **Broker position is the execution source of truth:** current-session Groww positions are reconciled to PS Scanner fills. Any mismatch or external non-zero session position hard-blocks new execution until reconciled.
+- **Signal and execution quality are separate:** recommendations retain their own outcome/MFE/MAE ledger; orders/fills now carry decision price/time, submit/ack timestamps, fill slippage and decision-to-fill latency.
+- **Why No Trade is first-class:** the Performance surface distinguishes search incomplete, data not ready, true qualified-opportunity scarcity, and downstream publication/execution conditions using funnel coverage, blockers and near misses.
+- **Deterministic production replay:** v6.7+ candidate decisions include a point-in-time audit envelope and can replay their stored production gate contract. Legacy rows remain explicitly partial rather than having historical inputs invented.
+- **Audit lineage:** new recommendations/decisions store release version, settings hash, strategy versions/parameter hashes, input hashes and context timestamps.
+- **Verified backups:** SQLite backups are produced with the SQLite backup API, restored into an isolated temporary database, and accepted only after `PRAGMA quick_check` and required-table verification.
+- **Experiment governance:** changes can be registered with hypothesis, affected books, sample requirement, promotion criterion and rollback criterion.
+- **Evidence-gated cohorts:** opening/midday/late-session and behavior-cluster analytics are visible, but remain shadow-only until minimum sample, Wilson-width, positive-expectancy and PF requirements are satisfied. They never auto-activate.
+
+See `ARCHITECTURE_AUDIT_v6.7.0.md` and `RELEASE_v6.7.0.md`.
+
 # PS Scanner Quant v6.6.1 — Frozen Identity & Search Exhaustion Integrity
 
 v6.6.1 is a structural follow-up to the v6.6.0 lifecycle audit. It does not loosen any trading threshold or hard safety gate. It strengthens frozen-book identity integrity, makes zero-live Intraday shortage claims depend on an actually completed cached-ready universe pass, bounds ETF missed-freeze recovery to market hours, reasserts SQLite durability policy per connection, and adds loss/miss rates plus result/close-reason performance grouping.
@@ -124,10 +140,10 @@ Global → India continues to use major U.S./European/Asian indices, sector ETFs
 
 ```zsh
 cd ~/Downloads
-unzip -t PS_Scanner_Quant_v6.6.1.zip || exit 1
-rm -rf PS_Scanner_Quant_v6.6.1
-unzip -q PS_Scanner_Quant_v6.6.1.zip
-cd PS_Scanner_Quant_v6.6.1
+unzip -t PS_Scanner_Quant_v6.7.0.zip || exit 1
+rm -rf PS_Scanner_Quant_v6.7.0
+unzip -q PS_Scanner_Quant_v6.7.0.zip
+cd PS_Scanner_Quant_v6.7.0
 chmod +x install.sh
 ./install.sh
 ```

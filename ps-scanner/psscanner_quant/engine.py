@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from .broker import broker
 from .config import load_settings
-from .constants import (IST, MARKET_OPEN, MARKET_CLOSE, INTRADAY_ENTRY_CUTOFF, SHORT_HARD_EXIT,
+from .constants import (IST, VERSION, MARKET_OPEN, MARKET_CLOSE, INTRADAY_ENTRY_CUTOFF, SHORT_HARD_EXIT,
     HORIZON_RESEARCH_START, HORIZON_FREEZE_START, HORIZON_FREEZE_END, HORIZON_RECOVERY_END,
     HORIZON_PUBLISH_START, HORIZON_PUBLISH_END)
 from .data import (bootstrap_history, warm_intraday_history, warm_daily_history, cached_history_coverage, history, liquidity_rank, live_prices, refresh_live_price_cache, refresh_instruments, refresh_universe, universe, full_nse_symbols, full_breadth_discovery_snapshot, universe_status, _history_path, _load_raw_candles)
@@ -29,6 +29,9 @@ from .trading_calendar import (period_end_date as exchange_period_end_date, rema
     is_regular_trading_day, next_trading_day, first_trading_day_of_week, first_trading_day_of_month)
 from .sector_context import context as sector_context, context_cached as sector_context_cached
 from .event_calendar import risk_context as event_risk_context, refresh_symbol_event, seed_official_calendar
+from .production_integrity import (
+    common_audit_context, make_audit_envelope, record_scan_run, seed_release_experiment, maybe_daily_backup,
+)
 
 
 HORIZON_EXECUTABLE_SIDES = {"WEEKLY": ("LONG",), "MONTHLY": ("LONG",), "ETF": ("LONG",)}
@@ -311,51 +314,50 @@ def _intraday_short_deadline_feasibility(f: Dict[str, Any], target_pct: float, n
 
 def _insert_rec(book, symbol, side, score, confidence, price, f, regime, strategies, rationale, exchange="NSE", target_pct_override=None, stop_pct_override=None, period_key_override=None):
     b=str(book).upper();sym=str(symbol).upper()
-    pk = str(period_key_override or period_key(b))
+    pk=str(period_key_override or period_key(b))
     geom=_risk_geometry(b,f,target_pct_override,stop_pct_override)
     target_pct=geom["target_pct"];stop_pct=geom["stop_pct"]
-    sign = 1 if side == "LONG" else -1
-    target = price * (1 + sign * target_pct / 100)
-    stop = price * (1 - sign * stop_pct / 100)
-    rid = f"{b}-{pk}-{sym}-{side}-{uuid.uuid4().hex[:8]}"
-    ts = now_iso()
+    sign=1 if side=="LONG" else -1
+    target=price*(1+sign*target_pct/100);stop=price*(1-sign*stop_pct/100)
+    rid=f"{b}-{pk}-{sym}-{side}-{uuid.uuid4().hex[:8]}";ts=now_iso()
+    rationale=dict(rationale or {})
+    audit=rationale.get("audit_envelope")
+    if not isinstance(audit,dict) or not audit:
+        audit=make_audit_envelope(b,pk,sym,side,f,rationale,strategies)
+    audit=dict(audit);audit["regime"]=regime
+    decision_id=rationale.get("decision_id") or audit.get("decision_id")
+    config_hash=audit.get("settings_hash")
+    audit_json=json.dumps(audit,default=str,separators=(",",":"))
 
-    # v6.5.1 final publication interlock. WEEKLY and MONTHLY are symbol-disjoint
-    # executable books. BEGIN IMMEDIATE makes the check+insert atomic even though
-    # the horizon workers run independently.
+    # Application-level frozen-period conflict gives a clean diagnostic; the SQLite trigger
+    # remains the atomic race-safe authority.
+    if b in ("WEEKLY","MONTHLY") and sym in _weekly_monthly_conflicts(b,pk):
+        health("horizon_collision","WARN",
+               f"{b} publication rejected because {sym} already belongs to an overlapping frozen opposite book",
+               {"book":b,"symbol":sym,"period_key":pk,"policy":"V670_FROZEN_PERIOD_IDENTITY_APPLICATION_AND_DB"})
+        return None
+
+    sql=("INSERT INTO recommendations(recommendation_id,book,period_key,symbol,exchange,side,state,score,confidence,"
+         "entry_price,current_price,target_price,stop_price,target_pct,horizon,regime,strategy_ids_json,rationale_json,"
+         "feature_snapshot_json,data_confidence,software_version,config_hash,decision_id,audit_envelope_json,created_at,updated_at) "
+         "VALUES(?,?,?,?,?,?,'LIVE',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    args=(rid,b,pk,sym,exchange,side,round(score,2),round(confidence,3),price,price,target,stop,target_pct,b,regime,
+          json.dumps(strategies),json.dumps(rationale),json.dumps(f,default=str),rationale.get("data_confidence",0),
+          VERSION,config_hash,decision_id,audit_json,ts,ts)
     if b in ("WEEKLY","MONTHLY"):
-        other="MONTHLY" if b=="WEEKLY" else "WEEKLY"
         with db() as con:
             con.execute("BEGIN IMMEDIATE")
             try:
-                conflict=con.execute(
-                    "SELECT recommendation_id,book,period_key,side FROM recommendations "
-                    "WHERE book=? AND UPPER(symbol)=? AND state='LIVE' "
-                    "AND COALESCE(result,'')<>'VOID' LIMIT 1",
-                    (other,sym),
-                ).fetchone()
-                if conflict:
-                    con.execute("ROLLBACK")
-                    health("horizon_collision","WARN",
-                           f"{b} publication rejected because {sym} is already live in {other}",
-                           {"book":b,"other_book":other,"symbol":sym,"period_key":pk,
-                            "policy":"V651_SYMBOL_LEVEL_HORIZON_ISOLATION"})
-                    return None
-                con.execute(
-                    "INSERT INTO recommendations(recommendation_id,book,period_key,symbol,exchange,side,state,score,confidence,entry_price,current_price,target_price,stop_price,target_pct,horizon,regime,strategy_ids_json,rationale_json,feature_snapshot_json,data_confidence,created_at,updated_at) VALUES(?,?,?,?,?,?,'LIVE',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (rid, b, pk, sym, exchange, side, round(score, 2), round(confidence, 3), price, price, target, stop, target_pct, b, regime, json.dumps(strategies), json.dumps(rationale), json.dumps(f, default=str), rationale.get("data_confidence", 0), ts, ts),
-                )
-                con.execute("COMMIT")
-            except Exception:
+                con.execute(sql,args);con.execute("COMMIT")
+            except Exception as exc:
                 con.execute("ROLLBACK")
+                if "WEEKLY_MONTHLY_PERIOD_IDENTITY_COLLISION" in str(exc):
+                    health("horizon_collision","WARN",str(exc)[:180],
+                           {"book":b,"symbol":sym,"period_key":pk,"policy":"V670_DB_ATOMIC_FROZEN_IDENTITY"})
+                    return None
                 raise
         return rid
-
-    with db() as con:
-        con.execute(
-            "INSERT INTO recommendations(recommendation_id,book,period_key,symbol,exchange,side,state,score,confidence,entry_price,current_price,target_price,stop_price,target_pct,horizon,regime,strategy_ids_json,rationale_json,feature_snapshot_json,data_confidence,created_at,updated_at) VALUES(?,?,?,?,?,?,'LIVE',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (rid, b, pk, sym, exchange, side, round(score, 2), round(confidence, 3), price, price, target, stop, target_pct, b, regime, json.dumps(strategies), json.dumps(rationale), json.dumps(f, default=str), rationale.get("data_confidence", 0), ts, ts),
-        )
+    with db() as con:con.execute(sql,args)
     return rid
 
 def _observation_bucket(book: str, now: Optional[datetime] = None) -> str:
@@ -670,33 +672,43 @@ def _publish_frozen(book: str, min_obs: int = 3, per_side: int = 5, publication_
 
 
 def _journal_decisions(book: str, candidates: List[Dict[str,Any]], period_key_override: Optional[str]=None) -> None:
-    """Batch decision-journal writes to reduce SQLite writer contention."""
-    if not candidates:
-        return
+    """Batch decision-journal writes with point-in-time audit envelopes."""
+    if not candidates:return
     try:
-        now=datetime.now(IST); bucket=now.replace(minute=(now.minute//5)*5,second=0,microsecond=0).isoformat()
-        ts=now_iso(); pk=str(period_key_override or period_key(book)); rows=[]
+        now=datetime.now(IST);bucket=now.replace(minute=(now.minute//5)*5,second=0,microsecond=0).isoformat()
+        ts=now_iso();pk=str(period_key_override or period_key(book));rows=[]
+        strategy_union=[]
         for c in candidates:
-            ti=c.get('trade_intelligence') or {}
+            for sid in c.get("strategies") or []:
+                if sid not in strategy_union:strategy_union.append(sid)
+        common=common_audit_context(strategy_union)
+        for c in candidates:
+            ti=c.get("trade_intelligence") or {}
             did=f"{book}|{pk}|{c.get('symbol')}|{c.get('side')}|{bucket}"
+            envelope=c.get("audit_envelope")
+            if not isinstance(envelope,dict) or not envelope:
+                envelope=make_audit_envelope(book,pk,c.get("symbol"),c.get("side"),c.get("features") or {},
+                                             c.get("rationale") or {},c.get("strategies") or [],common=common,decision_ts=ts)
+            envelope=dict(envelope);envelope["decision_id"]=did;c["audit_envelope"]=envelope;c["decision_id"]=did
+            if isinstance(c.get("rationale"),dict):
+                c["rationale"]["audit_envelope"]=envelope;c["rationale"]["decision_id"]=did
             rows.append((
-                did,ts,book,pk,c.get('symbol'),c.get('side'),
-                ti.get('decision') or c.get('decision') or 'WATCH',
-                float(c.get('raw_ensemble_score') or c.get('score') or 0),
-                float(ti.get('score') or 0),
-                int(ti.get('hard_fail_count') or 0),
-                json.dumps(c.get('strategies') or []),
-                json.dumps(c,default=str,separators=(',',':')),
+                did,ts,book,pk,c.get("symbol"),c.get("side"),
+                ti.get("decision") or c.get("decision") or "WATCH",
+                float(c.get("raw_ensemble_score") or c.get("score") or 0),
+                float(ti.get("score") or 0),int(ti.get("hard_fail_count") or 0),
+                json.dumps(c.get("strategies") or []),json.dumps(c,default=str,separators=(",",":")),
+                json.dumps(envelope,default=str,separators=(",",":")),
+                c.get("pipeline_verdict"),c.get("pipeline_stage"),
             ))
         with db() as con:
             con.executemany(
-                "INSERT OR IGNORE INTO trade_decisions(decision_id,ts,book,period_key,symbol,side,decision,ensemble_score,intelligence_score,hard_fail_count,strategy_ids_json,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                rows,
-            )
+                "INSERT OR IGNORE INTO trade_decisions(decision_id,ts,book,period_key,symbol,side,decision,ensemble_score,"
+                "intelligence_score,hard_fail_count,strategy_ids_json,payload_json,audit_envelope_json,pipeline_verdict,pipeline_stage) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",rows)
             con.execute("DELETE FROM trade_decisions WHERE id NOT IN (SELECT id FROM trade_decisions ORDER BY id DESC LIMIT 50000)")
     except Exception as exc:
-        health('trade_journal','WARN',str(exc)[:180])
-
+        health("trade_journal","WARN",str(exc)[:180])
 
 def _journal_decision(book: str, c: Dict[str, Any]) -> None:
     _journal_decisions(book,[c])
@@ -778,6 +790,10 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
         decision_buffer.append(candidate)
         if len(decision_buffer)>=100:
             _journal_decisions(book,list(decision_buffer),period_key_override=period_key_override);decision_buffer.clear()
+    def mark(candidate,verdict,stage,rejection_code=None):
+        candidate["pipeline_verdict"]=verdict;candidate["pipeline_stage"]=stage
+        if rejection_code:candidate["rejection_code"]=rejection_code
+        return candidate
     stats["stage"]="SCORING";progress(force=True)
     for idx_symbol,sym in enumerate(syms,1):
         stats["processed"]=idx_symbol;stats["breadth_evaluated"]=idx_symbol;progress(sym)
@@ -872,14 +888,14 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
                 failed={int(x.get("rank") or 0) for x in (ti.get("filters") or []) if x.get("hard_fail")}
                 if 41 in failed:stats["liquidity_reject"]+=1
                 if failed.intersection({44,45,46,47,48,50}):stats["risk_reject"]+=1
-                near(sym,side,"INTELLIGENCE_NO_TRADE",ensemble_score,"; ".join((ti.get('hard_blockers') or [])[:3]));journal(candidate);continue
+                near(sym,side,"INTELLIGENCE_NO_TRADE",ensemble_score,"; ".join((ti.get('hard_blockers') or [])[:3]));journal(mark(candidate,"REJECT","TRADE_INTELLIGENCE","INTELLIGENCE_NO_TRADE"));continue
             if ti['decision']!='ELIGIBLE':
-                stats["intelligence_watch"]+=1;near(sym,side,"INTELLIGENCE_WATCH",ensemble_score);journal(candidate);continue
+                stats["intelligence_watch"]+=1;near(sym,side,"INTELLIGENCE_WATCH",ensemble_score);journal(mark(candidate,"WATCH","TRADE_INTELLIGENCE","INTELLIGENCE_WATCH"));continue
             candidate['score']=0.70*ensemble_score+0.30*float(ti['score'])
             if book in ("WEEKLY","MONTHLY"):
                 tf=_target_feasibility(book,side,f,candidate['score'],conf,data_conf,fq,now=target_now);candidate["target_feasibility"]=tf;candidate["rationale"]["target_feasibility"]=tf
                 if not tf["target_qualified"]:
-                    stats["target_feasibility_reject"]+=1;near(sym,side,"TARGET_FEASIBILITY",candidate['score'],f"ratio={tf.get('feasibility_ratio')}");journal(candidate);continue
+                    stats["target_feasibility_reject"]+=1;near(sym,side,"TARGET_FEASIBILITY",candidate['score'],f"ratio={tf.get('feasibility_ratio')}");journal(mark(candidate,"REJECT","TARGET_FEASIBILITY","TARGET_NOT_QUALIFIED"));continue
                 candidate["rationale"]["raw_ensemble_score"]=round(ensemble_score,3)
                 capacity_score=min(100.0,70.0+30.0*min(1.0,max(0.0,tf["feasibility_ratio"]-1.0)));candidate["score"]=0.60*candidate['score']+0.40*capacity_score
             raw.append(candidate);stats["raw_eligible"]+=1
@@ -905,12 +921,12 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
             failed={int(x.get("rank") or 0) for x in (ti.get("filters") or []) if x.get("hard_fail")}
             if 41 in failed:stats["liquidity_reject"]+=1
             if failed.intersection({44,45,46,47,48,50}):stats["risk_reject"]+=1
-            near(c['symbol'],c['side'],"FINAL_INTELLIGENCE",c['score'],"; ".join((ti.get('hard_blockers') or [])[:3]));journal(c);continue
+            near(c['symbol'],c['side'],"FINAL_INTELLIGENCE",c['score'],"; ".join((ti.get('hard_blockers') or [])[:3]));journal(mark(c,"REJECT","FINAL_TRADE_INTELLIGENCE","FINAL_INTELLIGENCE"));continue
         if book in ('WEEKLY','MONTHLY'):
             tf=_target_feasibility(book,c['side'],c['features'],c['score'],c['confidence'],float(c['rationale'].get('data_confidence') or 0),c['rationale'].get('fundamental_quality'),now=target_now);c['target_feasibility']=tf;c['rationale']['target_feasibility']=tf
             if not tf['target_qualified']:
-                stats["target_feasibility_reject"]+=1;near(c['symbol'],c['side'],"FINAL_TARGET_FEASIBILITY",c['score'],f"ratio={tf.get('feasibility_ratio')}");journal(c);continue
-        journal(c);out.append(c)
+                stats["target_feasibility_reject"]+=1;near(c['symbol'],c['side'],"FINAL_TARGET_FEASIBILITY",c['score'],f"ratio={tf.get('feasibility_ratio')}");journal(mark(c,"REJECT","FINAL_TARGET_FEASIBILITY","FINAL_TARGET_NOT_QUALIFIED"));continue
+        journal(mark(c,"PUBLICATION_READY","FINAL_GATES"));out.append(c)
     out.sort(key=lambda x:x['score'],reverse=True)
     if decision_buffer:
         _journal_decisions(book,list(decision_buffer),period_key_override=period_key_override);decision_buffer.clear()
@@ -926,6 +942,7 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
         "data_error":stats["data_error"],"raw_eligible":stats["raw_eligible"],"publication_ready":len(out),"published":0,
     }
     stats.update({"running":False,"stage":"DONE","output_candidates":len(out),"completed_at":now_iso(),"duration_seconds":round(time.monotonic()-started,2)})
+    stats["scan_run_id"]=record_scan_run(book,stats)
     progress(force=True)
     return out
 
@@ -1508,11 +1525,21 @@ class Engine:
         from .specialized import run_international_cycle
         run_international_cycle()
 
+    def _execution_integrity(self):
+        from .orders import reconcile_orders
+        from .execution_integrity import reconcile_positions
+        status=broker.status_cached()
+        if not status.get("connected"):
+            set_state("execution_integrity_worker",{"at":now_iso(),"status":"WAITING_FOR_GROWW_CONNECTION"})
+            return
+        orders=reconcile_orders();positions=reconcile_positions()
+        set_state("execution_integrity_worker",{"at":now_iso(),"status":"OK" if positions.get("verified") and not positions.get("hard_block") else "HALT",
+            "orders":orders,"positions":positions})
+
+    def _backup_integrity(self):
+        maybe_daily_backup()
+
     def _strategy(self):
-        try:
-            from .orders import reconcile_orders
-            reconcile_orders()
-        except Exception as exc:health("order_reconcile","WARN",str(exc)[:220])
         try:
             from .strategy_lab import maybe_weekly_jobs,run_shadow_cycle,resolve_shadow_signals
             resolve_shadow_signals();run_shadow_cycle();maybe_weekly_jobs()
@@ -1520,12 +1547,14 @@ class Engine:
 
     def _supervise(self):
         try:
-            refresh_instruments();refresh_universe();seed_library();seed_official_calendar()
+            refresh_instruments();refresh_universe();seed_library();seed_official_calendar();seed_release_experiment()
         except Exception as exc:
             self.last_error=str(exc)[:300];health("bootstrap","ERROR",self.last_error)
         settings=load_settings()
         specs=[
             ("broker_probe",float(settings.get("broker_probe_interval_seconds",300)),self._broker_probe,1),
+            ("execution_integrity",float(settings.get("execution_integrity_worker_interval_seconds",120)),self._execution_integrity,6),
+            ("backup_integrity",float(settings.get("backup_worker_interval_seconds",3600)),self._backup_integrity,120),
             ("universe_refresh",float(settings.get("universe_refresh_interval_seconds",1800)),self._universe_refresh,2),
             ("market_snapshot",float(settings.get("full_breadth_ltp_interval_seconds",180)),self._market_snapshot,3),
             ("live_update",float(settings.get("live_update_interval_seconds",60)),self._live_update,3),

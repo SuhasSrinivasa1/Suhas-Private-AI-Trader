@@ -36,9 +36,9 @@ class V661IntegrityTests(unittest.TestCase):
             )
 
     def test_version_and_policy(self):
-        self.assertEqual(VERSION,"6.6.1")
+        self.assertEqual(VERSION,"6.7.0")
         self.assertEqual(lifecycle.lifecycle_payload()["policy_version"],
-                         "V661_FROZEN_IDENTITY_AND_SEARCH_EXHAUSTION")
+                         "V670_PRODUCTION_INTEGRITY_AND_REPLAY")
 
     def test_weekly_monthly_overlap_stays_exclusive_after_early_close(self):
         self._insert("W-CLOSED","WEEKLY","2026-09-28","OVERLAP",state="CLOSED",result="WIN")

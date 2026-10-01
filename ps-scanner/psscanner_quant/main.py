@@ -27,6 +27,11 @@ from .trading_calendar import status as trading_calendar_status, is_regular_trad
 from .sector_context import status as sector_status, status_cached as sector_status_cached
 from .event_calendar import status as event_calendar_status
 from .history_control import status as history_control_status
+from .execution_integrity import execution_analytics, reconcile_positions, cached_position_reconciliation
+from .production_integrity import (
+    no_trade_diagnostics, replay_decisions, backup_status, backup_database,
+    experiments as experiment_rows, register_experiment,
+)
 from .data import liquidity_rank, cached_history_coverage, full_nse_symbols, universe_status
 from .cross_market import board_payload as global_india_board_payload
 
@@ -43,6 +48,8 @@ async def _disable_runtime_cache(request, call_next):
 class SettingsPatch(BaseModel):
     expected_static_ip: Optional[str]=None
     manual_execution_enabled: Optional[bool]=None
+    execution_slippage_reserve_bps: Optional[float]=None
+    execution_min_net_edge_rupees: Optional[float]=None
 
 @app.on_event("startup")
 def _startup():
@@ -97,15 +104,19 @@ def health():
     state_keys=["last_regime","global_context","last_research_cycle"]+["scan_status_"+b for b in BOOKS]
     state=_cached_states(state_keys)
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.6.1","name":"CURRENT_PERIOD_LIFECYCLE_AND_STATISTICAL_AUDIT",
+        "architecture_patch":{"version":"6.7.0","name":"PRODUCTION_INTEGRITY_OBSERVABILITY_AND_REPLAY",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
-            "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True},
+            "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True,
+            "dynamic_mis_permission":True,"broker_position_reconciliation":True,"decision_to_fill_attribution":True,
+            "point_in_time_audit_envelope":True,"production_contract_replay":True,"verified_database_backups":True,
+            "experiment_governance":True,"evidence_gated_cohorts":True},
         "reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],"worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
         "strategic_recovery":{"version":"6.5.1","name":"SANITY_AND_RECOVERY_HOTFIX","near_miss_telemetry":True,"strategy_promotion_validation":True,"candidate_funnel":True,"weekly_monthly_symbol_isolation":True,"etf_missed_freeze_recovery":True,"international_hard_timeout":True},
         "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
         "workers":engine.worker_status(),"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
         "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
-        "execution":execution_readiness(use_cached=True),"regime":state.get("last_regime",{}),"global_context":state.get("global_context",{}),
+        "execution":execution_readiness(use_cached=True),"execution_integrity":{"positions":cached_position_reconciliation(),"backup":backup_status().get("last") or {}},
+        "regime":state.get("last_regime",{}),"global_context":state.get("global_context",{}),
         "last_research_cycle":state.get("last_research_cycle",{}),"scan_status":{b:state.get("scan_status_"+b,{}) for b in BOOKS},
         "evidence":{"fundamentals":fundamental_snapshot_status(),"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),"event_calendar":event_calendar_status(),"history_control":history_control_status(),"nse_universe":universe_status()},
         "recommendation_counts":[{"book":r[0],"state":r[1],"n":r[2]} for r in recs],"decision_counts_24h":{r[0]:r[1] for r in decisions},"recent_health_events":recent}
@@ -176,7 +187,8 @@ def sanity():
         "learning":{"last_daily_validation":learning,"last_ledger_evidence":evidence,
                     "strategy_worker_alive":bool(workers.get("strategy",{}).get("alive")),"validation_overdue":overdue},
         "frozen_book_shortages":shortages,"books":books,"recommendation_counts":counts,
-        "policy":"V661_FROZEN_IDENTITY_SEARCH_EXHAUSTION_SANITY",
+        "execution_integrity":{"position_reconciliation":get_state("position_reconciliation",{}) or {},"last_verified_backup":get_state("last_verified_backup",{}) or {}},
+        "policy":"V670_PRODUCTION_INTEGRITY_SANITY",
     }
 
 
@@ -195,10 +207,48 @@ def recommendation_history(book:Optional[str]=None,period_key:Optional[str]=None
 
 @app.get("/api/performance")
 def performance(book:Optional[str]=None,group_by:str="book",limit:int=10000):
-    allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","result","close_reason","day","week","month"}
+    allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","result","close_reason","day","week","month","time_bucket","behavior_cluster"}
     if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
     if group_by.lower() not in allowed:raise HTTPException(400,"Unsupported group_by")
     return performance_stats(book,group_by,limit)
+
+
+@app.get("/api/diagnostics/no-trade")
+def diagnostics_no_trade(book:Optional[str]=None,limit:int=12):
+    if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
+    return no_trade_diagnostics(book,limit)
+
+
+@app.get("/api/replay/decisions")
+def decision_replay(decision_id:Optional[str]=None,limit:int=100):
+    return replay_decisions(decision_id,limit)
+
+
+@app.get("/api/execution/analytics")
+def execution_quality_analytics(limit:int=500):
+    return execution_analytics(limit)
+
+
+@app.get("/api/experiments")
+def experiment_registry(limit:int=200):
+    return {"policy":"V670_EXPLICIT_EXPERIMENT_GOVERNANCE","experiments":experiment_rows(limit)}
+
+
+@app.post("/api/experiments")
+def experiment_register(payload:Dict[str,Any]):
+    try:return register_experiment(payload)
+    except Exception as exc:raise HTTPException(400,str(exc))
+
+
+@app.get("/api/maintenance/backups")
+def backups():
+    return backup_status()
+
+
+@app.post("/api/maintenance/backup-now")
+def backup_now():
+    try:return backup_database(force=True)
+    except Exception as exc:raise HTTPException(500,str(exc))
 
 
 @app.get("/api/book/{book}")
@@ -394,7 +444,14 @@ def execute(preview_token:str):
 def orders():return {"orders":recent_orders(),"fills":recent_fills(100),"maximum_trade_notional_rupees":TRADE_NOTIONAL_RUPEES,"maximum_rupee_risk_to_stop":MAX_RUPEE_RISK_PER_TRADE}
 
 @app.post("/api/orders/reconcile")
-def orders_reconcile():return reconcile_orders()
+def orders_reconcile():
+    order_state=reconcile_orders()
+    position_state=reconcile_positions()
+    return {"orders":order_state,"positions":position_state}
+
+@app.post("/api/execution/positions/reconcile")
+def positions_reconcile():
+    return reconcile_positions()
 
 @app.get("/api/evidence/status")
 def evidence_status():
@@ -406,7 +463,8 @@ def history_status():
 
 @app.get("/api/portfolio")
 def portfolio():
-    out={"holdings":None,"positions":None,"last_error":"","risk_engine":risk_summary()}
+    out={"holdings":None,"positions":None,"last_error":"","risk_engine":risk_summary(),
+         "position_reconciliation":cached_position_reconciliation()}
     try:out["holdings"]=broker.holdings()
     except Exception as exc:out["last_error"]="holdings: "+str(exc)[:160]
     try:out["positions"]=broker.positions()

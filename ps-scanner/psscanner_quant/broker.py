@@ -305,6 +305,27 @@ class GrowwBroker:
         # Current Groww endpoint; if broker changes it, health shows degraded rather than guessing.
         return self._request("GET", "/v1/positions/user", params={"segment":"CASH"}, timeout=12)
 
+    def position_for_symbol(self, trading_symbol: str) -> Any:
+        return self._request("GET", "/v1/positions/trading-symbol",
+            params={"trading_symbol":str(trading_symbol).upper(),"segment":"CASH"}, timeout=12)
+
+    def available_margin(self) -> Dict[str, Any]:
+        return dict(self._request("GET", "/v1/margins/detail/user", timeout=12) or {})
+
+    def required_margin(self, *, trading_symbol: str, transaction_type: str, quantity: int,
+                        price: float, product: str, exchange: str = "NSE") -> Dict[str, Any]:
+        body=[{
+            "trading_symbol":str(trading_symbol).upper(),
+            "transaction_type":str(transaction_type).upper(),
+            "quantity":int(quantity),
+            "price":float(price),
+            "order_type":"LIMIT",
+            "product":str(product).upper(),
+            "exchange":str(exchange).upper(),
+        }]
+        return dict(self._request("POST", "/v1/margins/detail/orders",
+            params={"segment":"CASH"}, json_body=body, timeout=12) or {})
+
     def place_cash_order(self, *, trading_symbol: str, side: str, quantity: int, product: str, limit_price: float, order_reference_id: str, exchange: str = "NSE") -> Dict[str, Any]:
         tx = "BUY" if side.upper() == "LONG" else "SELL"
         body = {

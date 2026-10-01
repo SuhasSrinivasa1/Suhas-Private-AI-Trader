@@ -17,6 +17,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .constants import IST
 from .db import db, now_iso
+from .config import load_settings
 
 VALID_TRADING_RESULTS = {"WIN", "LOSS", "MISS"}
 NON_TRADING_RESULTS = {"VOID"}
@@ -38,6 +39,7 @@ def decode_recommendation(row: Dict[str, Any]) -> Dict[str, Any]:
     d["strategy_ids"] = _decode_json(d.pop("strategy_ids_json", None), [])
     d["rationale"] = _decode_json(d.pop("rationale_json", None), {})
     d["feature_snapshot"] = _decode_json(d.pop("feature_snapshot_json", None), {})
+    d["audit_envelope"] = _decode_json(d.pop("audit_envelope_json", None), {})
     return d
 
 
@@ -128,6 +130,36 @@ def _closed_dt(row: Dict[str, Any]) -> Optional[datetime]:
     return None
 
 
+def _opened_dt(row: Dict[str, Any]) -> Optional[datetime]:
+    raw=row.get("created_at")
+    if not raw:return None
+    try:
+        dt=datetime.fromisoformat(str(raw).replace("Z","+00:00"))
+        if dt.tzinfo is None:dt=dt.replace(tzinfo=IST)
+        return dt.astimezone(IST)
+    except Exception:return None
+
+
+def _time_bucket(row: Dict[str, Any]) -> str:
+    dt=_opened_dt(row)
+    if not dt:return "UNKNOWN"
+    m=dt.hour*60+dt.minute
+    if 9*60+15<=m<10*60:return "OPENING_0915_1000"
+    if 10*60<=m<14*60:return "MIDDAY_1000_1400"
+    if 14*60<=m<=15*60+30:return "LATE_1400_1530"
+    return "OUTSIDE_REGULAR_SESSION"
+
+
+def _behavior_cluster(row: Dict[str, Any]) -> str:
+    f=row.get("feature_snapshot") or {};r=row.get("rationale") or {}
+    try:atr=float(f.get("atr_pct") or 0)
+    except Exception:atr=0.0
+    vol="VOL_UNKNOWN" if atr<=0 else ("VOL_LOW" if atr<0.8 else ("VOL_MEDIUM" if atr<1.8 else "VOL_HIGH"))
+    sector=((r.get("sector_context") or {}).get("industry") if isinstance(r.get("sector_context"),dict) else None) or "SECTOR_UNKNOWN"
+    regime=str(row.get("regime") or "REGIME_UNKNOWN")
+    return f"{regime}|{vol}|{sector}"
+
+
 def _strategy_family_map() -> Dict[str, str]:
     try:
         with db() as con:
@@ -151,6 +183,10 @@ def _group_keys(row: Dict[str, Any], group_by: str, family_map: Dict[str, str]) 
         return vals or ["UNATTRIBUTED"]
     if g in {"book", "symbol", "side", "regime", "horizon", "period_key", "result", "close_reason"}:
         return [str(row.get(g) or "UNKNOWN")]
+    if g=="time_bucket":
+        return [_time_bucket(row)]
+    if g=="behavior_cluster":
+        return [_behavior_cluster(row)]
     dt = _closed_dt(row)
     if g == "day":
         return [dt.date().isoformat() if dt else "UNKNOWN"]
@@ -252,6 +288,13 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
         for key in _group_keys(row, group_by, family_map):
             grouped[key].append(row)
     groups = [_group_stats(key, values) for key, values in grouped.items()]
+    if str(group_by).lower() in {"time_bucket","behavior_cluster"}:
+        settings=load_settings();min_n=int(settings.get("cohort_min_samples_for_live_use",50) or 50);max_width=float(settings.get("cohort_max_wilson_width_for_live_use",.30) or .30)
+        for g in groups:
+            width=g.get("win_rate_wilson_width");expectancy=g.get("expectancy_pct");pf=g.get("profit_factor")
+            eligible=bool((g.get("trading_count") or 0)>=min_n and width is not None and width<=max_width and expectancy is not None and expectancy>0 and pf is not None and pf>1.0)
+            g["live_use_eligible"]=eligible
+            g["live_use_gate"]={"minimum_samples":min_n,"maximum_wilson_width":max_width,"positive_expectancy_required":True,"profit_factor_gt_1_required":True,"automatic_activation":False}
     groups.sort(key=lambda x: (x.get("trading_count") or 0, x.get("group") or ""), reverse=True)
     total = _group_stats("ALL", rows)
     return {

@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS recommendations (
   close_reason TEXT,
   max_favourable_pct REAL NOT NULL DEFAULT 0,
   max_adverse_pct REAL NOT NULL DEFAULT 0,
+  software_version TEXT,
+  config_hash TEXT,
+  decision_id TEXT,
+  audit_envelope_json TEXT NOT NULL DEFAULT '{}',
   UNIQUE(book, period_key, symbol, side, created_at)
 );
 CREATE INDEX IF NOT EXISTS idx_recs_book_state ON recommendations(book,state,score DESC);
@@ -153,6 +157,14 @@ CREATE TABLE IF NOT EXISTS orders (
   notional_cap REAL NOT NULL,
   state TEXT NOT NULL,
   response_json TEXT NOT NULL DEFAULT '{}',
+  decision_price REAL,
+  decision_ts TEXT,
+  submitted_at TEXT,
+  acknowledged_at TEXT,
+  execution_metrics_json TEXT NOT NULL DEFAULT '{}',
+  margin_check_json TEXT NOT NULL DEFAULT '{}',
+  cost_estimate_json TEXT NOT NULL DEFAULT '{}',
+  position_reconcile_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(recommendation_id) REFERENCES recommendations(recommendation_id)
@@ -223,6 +235,9 @@ CREATE TABLE IF NOT EXISTS trade_decisions (
   hard_fail_count INTEGER NOT NULL DEFAULT 0,
   strategy_ids_json TEXT NOT NULL DEFAULT '[]',
   payload_json TEXT NOT NULL DEFAULT '{}',
+  audit_envelope_json TEXT NOT NULL DEFAULT '{}',
+  pipeline_verdict TEXT,
+  pipeline_stage TEXT,
   realized_outcome TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trade_decisions_book_ts ON trade_decisions(book,ts DESC);
@@ -293,6 +308,40 @@ CREATE TABLE IF NOT EXISTS order_fills (
 );
 CREATE INDEX IF NOT EXISTS idx_order_fills_local ON order_fills(local_order_id);
 
+CREATE TABLE IF NOT EXISTS scan_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL UNIQUE,
+  book TEXT NOT NULL,
+  period_key TEXT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  universe_total INTEGER NOT NULL DEFAULT 0,
+  scan_scope_total INTEGER NOT NULL DEFAULT 0,
+  processed INTEGER NOT NULL DEFAULT 0,
+  funnel_json TEXT NOT NULL DEFAULT '{}',
+  near_misses_json TEXT NOT NULL DEFAULT '[]',
+  payload_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_scan_runs_book_time ON scan_runs(book,completed_at DESC);
+
+CREATE TABLE IF NOT EXISTS experiments (
+  experiment_id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  hypothesis TEXT NOT NULL,
+  affected_books_json TEXT NOT NULL DEFAULT '[]',
+  change_summary TEXT NOT NULL DEFAULT '',
+  sample_requirement TEXT NOT NULL DEFAULT '',
+  promotion_criterion TEXT NOT NULL DEFAULT '',
+  rollback_criterion TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'PLANNED',
+  release_version TEXT,
+  started_at TEXT,
+  ended_at TEXT,
+  metrics_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_experiments_status ON experiments(status,started_at DESC);
+
 CREATE TABLE IF NOT EXISTS strategy_validation_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT NOT NULL,
@@ -351,6 +400,42 @@ def _ensure_columns(con: sqlite3.Connection) -> None:
         "reconciliation_json": "TEXT NOT NULL DEFAULT '{}'",
     }
     for name, decl in order_additions.items():
+        if name not in order_cols:
+            con.execute(f"ALTER TABLE orders ADD COLUMN {name} {decl}")
+
+    rec_cols = {r[1] for r in con.execute("PRAGMA table_info(recommendations)").fetchall()}
+    rec_additions = {
+        "software_version": "TEXT",
+        "config_hash": "TEXT",
+        "decision_id": "TEXT",
+        "audit_envelope_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    for name, decl in rec_additions.items():
+        if name not in rec_cols:
+            con.execute(f"ALTER TABLE recommendations ADD COLUMN {name} {decl}")
+
+    decision_cols = {r[1] for r in con.execute("PRAGMA table_info(trade_decisions)").fetchall()}
+    decision_additions = {
+        "audit_envelope_json": "TEXT NOT NULL DEFAULT '{}'",
+        "pipeline_verdict": "TEXT",
+        "pipeline_stage": "TEXT",
+    }
+    for name, decl in decision_additions.items():
+        if name not in decision_cols:
+            con.execute(f"ALTER TABLE trade_decisions ADD COLUMN {name} {decl}")
+
+    order_cols = {r[1] for r in con.execute("PRAGMA table_info(orders)").fetchall()}
+    v670_order_additions = {
+        "decision_price": "REAL",
+        "decision_ts": "TEXT",
+        "submitted_at": "TEXT",
+        "acknowledged_at": "TEXT",
+        "execution_metrics_json": "TEXT NOT NULL DEFAULT '{}'",
+        "margin_check_json": "TEXT NOT NULL DEFAULT '{}'",
+        "cost_estimate_json": "TEXT NOT NULL DEFAULT '{}'",
+        "position_reconcile_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    for name, decl in v670_order_additions.items():
         if name not in order_cols:
             con.execute(f"ALTER TABLE orders ADD COLUMN {name} {decl}")
 
