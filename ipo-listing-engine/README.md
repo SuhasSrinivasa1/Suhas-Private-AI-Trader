@@ -58,3 +58,45 @@ IPO Sentinel must treat the listing session as a special market state. For NSE I
 - Phase 4: adaptive champion/challenger strategy weighting.
 
 See `docs/ARCHITECTURE.md` and `docs/RESEARCH_PLAN.md`.
+
+
+## Groww connection setup (v0.3)
+
+The APK now has a dedicated **Settings > Groww & Backend** screen. The user supplies:
+
+- Backend HTTPS URL
+- Backend admin key
+- Groww TOTP token
+- Groww TOTP secret
+- Expected/whitelisted static public IP
+- Confirmation that the IP has been whitelisted in Groww
+
+The TOTP token and secret are submitted to the backend and are **not persisted by the APK**. The backend stores them encrypted at rest.
+
+The backend host must define two deployment secrets:
+
+- `IPO_SENTINEL_ADMIN_KEY` — protects the settings endpoints
+- `IPO_SENTINEL_MASTER_KEY` — Fernet key used to encrypt Groww credentials at rest
+
+A Fernet key can be generated once on the backend with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Optional:
+
+- `IPO_SENTINEL_SETTINGS_FILE` — defaults to `.runtime/groww-settings.enc`
+
+Connection flow:
+
+1. Open **Settings** in the APK.
+2. Enter the backend HTTPS URL and admin key.
+3. Enter Groww TOTP token + TOTP secret.
+4. Enter the static public IP that has been whitelisted with Groww.
+5. Enable **I have whitelisted this IP in Groww**.
+6. Tap **Save encrypted configuration**.
+7. Tap **Validate Groww + Static IP**.
+8. Live execution readiness is true only when authentication succeeds, the detected backend egress IP matches the expected static IP, and the user confirmed the whitelist.
+
+The backend never returns the TOTP token or secret through its status APIs.
