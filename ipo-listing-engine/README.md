@@ -7,6 +7,7 @@ IPO Sentinel is an isolated Android + backend project for research, shadow tradi
 - Discover IPOs that are scheduled to list on the next NSE trading day.
 - Run an after-hours research job after the cash session closes.
 - Observe the special pre-open/listing process and continuous trading session.
+- Continue monitoring every newly listed IPO for its first **30 exchange trading days** for secondary opportunities.
 - Produce one of: WAIT, PROBE_LONG, BUILD_LONG, HOLD_LONG, REDUCE_LONG, FLAT, PROBE_SHORT, BUILD_SHORT, HOLD_SHORT, COVER_SHORT.
 - Long positions may persist as delivery when the thesis remains valid.
 - Short positions are intraday only and require live broker/exchange eligibility.
@@ -24,11 +25,25 @@ The first implementation is deliberately split into:
 
 1. **Discovery & research** — next-listing calendar, issue/fundamental data, market/sector context.
 2. **Listing-session intelligence** — special pre-open equilibrium data, 1m/3m/5m/15m bars, VWAP, RVOL, depth, spread, order-flow, circuit proximity.
-3. **Decision engine** — regime classification + compatible strategy ensemble.
-4. **Risk/execution engine** — broker eligibility, margin, liquidity, slippage, idempotent orders, OCO/exit logic.
-5. **Owned-position registry** — isolates IPO Sentinel trades from every unrelated portfolio holding.
-6. **Replay & learning** — exact point-in-time replay, MFE/MAE, missed opportunity, exit quality, strategy attribution, champion/challenger promotion.
-7. **Shadow ledger** — daily and cumulative net P&L for a fixed virtual capital amount.
+3. **30-day post-listing monitor** — keeps each IPO active for D1-D30 trading days and looks for continuation, healthy pullback, anchored-VWAP reclaim, post-IPO base breakout, failed breakdown/reclaim, volume revival, and eligible intraday fade opportunities.
+4. **Decision engine** — regime classification + compatible strategy ensemble.
+5. **Risk/execution engine** — broker eligibility, margin, liquidity, slippage, idempotent orders, OCO/exit logic.
+6. **Owned-position registry** — isolates IPO Sentinel trades from every unrelated portfolio holding.
+7. **Replay & learning** — exact point-in-time replay, MFE/MAE, missed opportunity, exit quality, strategy attribution, champion/challenger promotion.
+8. **Shadow ledger** — daily and cumulative net P&L for a fixed virtual capital amount.
+
+## 30-trading-day lifecycle
+
+A listing stays in the active research universe for 30 actual exchange trading days, not 30 calendar days. Weekends and official exchange holidays do not consume the monitoring window.
+
+The engine uses different opportunity families by age:
+
+- **D1-D5:** post-listing continuation, failed listing-day move, VWAP/anchored-VWAP behavior and liquidity normalization.
+- **D2-D10:** first healthy pullback, reclaim after shakeout, renewed relative strength.
+- **D5-D30:** post-IPO base breakout, volume revival, failed breakdown/reclaim and trend continuation.
+- **D1-D30 bearish:** bearish evidence can be tracked every day, but cash short execution is intraday-only and still requires current Groww/exchange eligibility.
+
+Every 30-day decision is also replayed in the INR 100,000 shadow account so the application learns whether listing-day, early-post-listing, or later-base opportunities have the best net expectancy.
 
 ## Listing-day timing assumption
 
@@ -37,7 +52,7 @@ IPO Sentinel must treat the listing session as a special market state. For NSE I
 ## Development phases
 
 - Phase 0: data-only discovery + three-month backfill + UI.
-- Phase 1: full shadow engine and replay.
+- Phase 1: full shadow engine, D1-D30 monitor and replay.
 - Phase 2: one-symbol canary with tiny live quantity.
 - Phase 3: controlled scaling up to the user-selected budget.
 - Phase 4: adaptive champion/challenger strategy weighting.

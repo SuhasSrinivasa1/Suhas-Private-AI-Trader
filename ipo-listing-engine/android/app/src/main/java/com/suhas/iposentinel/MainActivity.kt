@@ -51,7 +51,7 @@ private fun IpoSentinelApp() {
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text("IPO Sentinel", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                Text("Listing-day intelligence • NSE", color = Muted)
+                Text("Listing-day + 30 trading-day intelligence • NSE", color = Muted)
 
                 StatusCard(
                     title = "Next trading day",
@@ -96,6 +96,11 @@ private fun IpoSentinelApp() {
                     MetricCard("Today P&L", "₹0", Modifier.weight(1f))
                 }
 
+                StatusCard(
+                    title = "30-day IPO monitor",
+                    primary = "0 active listings",
+                    secondary = "Each new IPO remains under opportunity scan through trading day D30"
+                )
                 StatusCard(
                     title = "Decision engine",
                     primary = "WAIT",
