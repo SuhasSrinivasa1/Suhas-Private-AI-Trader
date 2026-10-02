@@ -18,22 +18,25 @@ class GrowwCredentials:
         token = os.environ.get("GROWW_TOTP_TOKEN", "").strip()
         secret = os.environ.get("GROWW_TOTP_SECRET", "").replace(" ", "").strip()
         if not token or not secret:
-            raise RuntimeError("GROWW_TOTP_TOKEN and GROWW_TOTP_SECRET must be provided by server secret storage")
+            raise RuntimeError("GROWW_TOTP_TOKEN and GROWW_TOTP_SECRET are not configured")
         return cls(token, secret)
 
 
 class GrowwSession:
-    """Server-side Groww session. Secrets never cross the API boundary to Android."""
+    """Server-side Groww session. Broker secrets never need to be persisted in the APK."""
 
     def __init__(self, api: GrowwAPI) -> None:
         self.api = api
 
     @classmethod
-    def from_totp_env(cls) -> "GrowwSession":
-        credentials = GrowwCredentials.from_env()
+    def from_credentials(cls, credentials: GrowwCredentials) -> "GrowwSession":
         current_totp = pyotp.TOTP(credentials.totp_secret).now()
         access_token = GrowwAPI.get_access_token(api_key=credentials.totp_token, totp=current_totp)
         return cls(GrowwAPI(access_token))
+
+    @classmethod
+    def from_totp_env(cls) -> "GrowwSession":
+        return cls.from_credentials(GrowwCredentials.from_env())
 
     def historical(
         self,
