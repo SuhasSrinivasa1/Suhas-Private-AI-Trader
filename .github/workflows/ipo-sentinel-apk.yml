@@ -57,3 +57,5 @@ jobs:
           path: ipo-listing-engine/android/release/*
           if-no-files-found: error
           retention-days: 30
+
+# v0.3.0 settings build
