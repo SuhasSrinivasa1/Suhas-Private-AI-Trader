@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ipo-sentinel-backend"
 version = "1.0.0"
@@ -24,3 +28,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 110
+
+
+[tool.setuptools]
+packages = ["app"]
