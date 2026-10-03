@@ -97,6 +97,16 @@ class V681BoundedPerformanceTests(unittest.TestCase):
         self.assertIn('performance(group_by="book", limit=limit)',src)
         self.assertNotIn("query_budget_seconds",src)
 
+    def test_internal_unbounded_analytics_does_not_silently_drop_db_errors(self):
+        class BrokenDb:
+            def __enter__(self):
+                raise sqlite3.OperationalError("database is locked")
+            def __exit__(self,*args):
+                return False
+        with patch.object(analytics,"db",return_value=BrokenDb()):
+            with self.assertRaises(sqlite3.OperationalError):
+                analytics.performance(group_by="book",limit=1000)
+
 
 if __name__=="__main__":
     unittest.main()

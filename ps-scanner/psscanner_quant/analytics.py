@@ -389,8 +389,12 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
         groups.sort(key=lambda x:(x.get("trading_count") or 0,x.get("group") or ""),reverse=True)
         total=_group_stats("ALL",rows,deadline)
     except TimeoutError as exc:
+        if budget is None:
+            raise
         return _performance_degraded(book,g,limit,started,"WALL_CLOCK_BUDGET_EXCEEDED",str(exc),budget,db_timeout_seconds,columns)
     except sqlite3.OperationalError as exc:
+        if budget is None:
+            raise
         msg=str(exc).lower()
         reason="SQL_BUDGET_EXCEEDED" if "interrupted" in msg else ("DB_BUSY_BOUNDED" if ("locked" in msg or "busy" in msg) else "SQL_OPERATIONAL_ERROR")
         return _performance_degraded(book,g,limit,started,reason,str(exc),budget,db_timeout_seconds,columns)
