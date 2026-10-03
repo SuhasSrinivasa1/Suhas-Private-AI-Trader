@@ -10,6 +10,7 @@ from .audit import audit_log
 from .connection_api import router as connection_router
 from .domain import LiveFeatures
 from .post_listing_monitor import PostListingOpportunityEngine, PostListingSnapshot
+from .live_pnl import live_ledger
 from .live_state import live_state_store
 from .ops_api import router as ops_router
 from .services import ExchangeCalendar, OwnedPositionRegistry, ShadowLedger
@@ -202,3 +203,24 @@ def post_listing_evaluate(payload: PostListingRequest) -> dict:
 @app.get("/shadow")
 def shadow_status() -> dict:
     return shadow.mark_to_market({})
+
+
+@app.get("/pnl/summary")
+def pnl_summary() -> dict:
+    state = live_state_store.load()
+    shadow_status = shadow.mark_to_market({})
+    live_status = live_ledger.summary(capital_base=state.budget_rupees)
+    variance = round(live_status["net_pnl"] - shadow_status["net_pnl"], 2)
+    return {
+        "shadow": shadow_status,
+        "live": live_status,
+        "shadow_vs_live_variance": variance,
+        "variance_attribution": {
+            "entry_latency": None,
+            "exit_latency": None,
+            "spread_slippage_partial_fill": None,
+            "known_live_estimated_charges": live_status["estimated_charges"],
+            "unattributed_variance": variance,
+            "note": "Latency/slippage attribution stays null until paired shadow and broker timestamps are available; IPO Sentinel does not invent attribution.",
+        },
+    }
