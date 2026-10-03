@@ -117,6 +117,8 @@ data class ValidationStatus(
     val staticIpMatches: Boolean = false,
     val staticIpConfirmed: Boolean = false,
     val secretStoreReady: Boolean = false,
+    val calendarReady: Boolean = false,
+    val nseIdentitySourceReady: Boolean = false,
     val liveExecutionReady: Boolean = false,
     val growwError: String? = null,
     val egressError: String? = null
@@ -400,6 +402,8 @@ class BackendApi {
             staticIpMatches = json.optBoolean("static_ip_matches", false),
             staticIpConfirmed = json.optBoolean("static_ip_confirmed", false),
             secretStoreReady = json.optBoolean("secret_store_ready", false),
+            calendarReady = json.optBoolean("calendar_ready", false),
+            nseIdentitySourceReady = json.optBoolean("nse_identity_source_ready", false),
             liveExecutionReady = json.optBoolean("live_execution_ready", false),
             growwError = json.optString("groww_error").ifBlank { null },
             egressError = json.optString("egress_error").ifBlank { null }
