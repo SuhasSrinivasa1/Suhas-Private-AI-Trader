@@ -40,21 +40,24 @@ class PositionRecord:
 
 
 class OwnedPositionRegistry:
-    """Only IPO Sentinel-tagged exposure can be mutated by this application."""
+    """Only IPO Sentinel-attributed exposure can be mutated by this application."""
 
     def __init__(self) -> None:
         self._lock = RLock()
-        self._records: dict[str, PositionRecord] = {}
+        self._records: dict[str, list[PositionRecord]] = {}
 
     def reconcile(self, broker_positions: Iterable[dict]) -> None:
-        with self._lock:
-            for raw in broker_positions:
-                symbol = str(raw.get("symbol") or raw.get("trading_symbol") or "").upper().strip()
-                if not symbol:
-                    continue
-                tag = str(raw.get("strategy_id") or raw.get("tag") or "")
-                ownership = Ownership.IPO_SENTINEL if tag.startswith("IPO_SENTINEL") else Ownership.EXTERNAL
-                self._records[symbol] = PositionRecord(
+        # Build a fresh snapshot first, then swap atomically. This prevents stale
+        # positions surviving after a broker position is closed.
+        rebuilt: dict[str, list[PositionRecord]] = {}
+        for raw in broker_positions:
+            symbol = str(raw.get("symbol") or raw.get("trading_symbol") or "").upper().strip()
+            if not symbol:
+                continue
+            tag = str(raw.get("strategy_id") or raw.get("tag") or "")
+            ownership = Ownership.IPO_SENTINEL if tag.startswith("IPO_SENTINEL") else Ownership.EXTERNAL
+            rebuilt.setdefault(symbol, []).append(
+                PositionRecord(
                     symbol=symbol,
                     quantity=int(raw.get("quantity") or 0),
                     product=str(raw.get("product") or ""),
@@ -62,17 +65,51 @@ class OwnedPositionRegistry:
                     strategy_id=tag or None,
                     broker_order_ids=tuple(raw.get("broker_order_ids") or ()),
                 )
+            )
+        with self._lock:
+            self._records = rebuilt
 
     def owned(self, symbol: str) -> PositionRecord | None:
-        record = self._records.get(symbol.upper())
-        return record if record and record.ownership is Ownership.IPO_SENTINEL else None
+        with self._lock:
+            records = [
+                record
+                for record in self._records.get(symbol.upper(), [])
+                if record.ownership is Ownership.IPO_SENTINEL
+            ]
+        if not records:
+            return None
+
+        return PositionRecord(
+            symbol=symbol.upper(),
+            quantity=sum(record.quantity for record in records),
+            product=records[0].product,
+            ownership=Ownership.IPO_SENTINEL,
+            strategy_id="IPO_SENTINEL_AGGREGATE",
+            broker_order_ids=tuple(
+                order_id
+                for record in records
+                for order_id in record.broker_order_ids
+            ),
+        )
+
+    def external_quantity(self, symbol: str) -> int:
+        with self._lock:
+            return sum(
+                record.quantity
+                for record in self._records.get(symbol.upper(), [])
+                if record.ownership is Ownership.EXTERNAL
+            )
 
     def may_mutate(self, symbol: str) -> bool:
-        record = self._records.get(symbol.upper())
-        return record is None or record.ownership is Ownership.IPO_SENTINEL
+        with self._lock:
+            records = self._records.get(symbol.upper(), [])
+            return not records or any(
+                record.ownership is Ownership.IPO_SENTINEL
+                for record in records
+            )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ShadowFill:
     symbol: str
     side: str
@@ -81,63 +118,151 @@ class ShadowFill:
     charges: float = 0.0
 
 
+@dataclass
+class ShadowPosition:
+    quantity: int
+    average_price: float
+    entry_charges: float = 0.0
+
+
 class ShadowLedger:
+    """
+    Long/short shadow ledger whose net P&L reconciles to marked account equity.
+
+    Entry charges stay attached to the open position until the corresponding
+    quantity is closed, preventing charges from being counted twice or assigned
+    to realized P&L too early.
+    """
+
     def __init__(self, capital: float = 100_000.0) -> None:
+        if capital <= 0:
+            raise ValueError("capital must be positive")
         self.starting_capital = float(capital)
         self.cash = float(capital)
-        self.positions: dict[str, tuple[int, float]] = {}
+        self.positions: dict[str, ShadowPosition] = {}
         self.realized_gross_pnl = 0.0
+        self.realized_pnl = 0.0
         self.charges_total = 0.0
 
     def apply(self, fill: ShadowFill) -> None:
-        symbol = fill.symbol.upper()
-        qty, avg = self.positions.get(symbol, (0, 0.0))
-        signed = fill.quantity if fill.side.upper() == "BUY" else -fill.quantity
+        if fill.quantity <= 0:
+            raise ValueError("fill quantity must be positive")
+        if fill.price <= 0:
+            raise ValueError("fill price must be positive")
+        if fill.charges < 0:
+            raise ValueError("charges cannot be negative")
+
+        side = fill.side.upper().strip()
+        if side not in {"BUY", "SELL"}:
+            raise ValueError("side must be BUY or SELL")
+
+        symbol = fill.symbol.upper().strip()
+        position = self.positions.get(symbol, ShadowPosition(0, 0.0, 0.0))
+        qty = position.quantity
+        signed = fill.quantity if side == "BUY" else -fill.quantity
         new_qty = qty + signed
+
+        if qty and new_qty and (qty > 0) != (new_qty > 0):
+            raise ValueError("Shadow ledger does not allow crossing through flat in one fill")
 
         self.cash -= signed * fill.price
         self.cash -= fill.charges
         self.charges_total += fill.charges
 
-        if qty and (qty > 0) != (new_qty > 0) and new_qty != 0:
-            raise ValueError("Shadow ledger does not allow crossing through flat in one fill")
+        opening_or_adding = (
+            qty == 0
+            or (qty > 0 and signed > 0)
+            or (qty < 0 and signed < 0)
+        )
 
-        if signed > 0:
-            if qty >= 0:
-                gross_qty = qty + signed
-                avg = ((qty * avg) + (signed * fill.price)) / gross_qty if gross_qty else 0.0
-            else:
-                covered = min(abs(qty), signed)
-                self.realized_gross_pnl += covered * (avg - fill.price)
-        else:
-            sold = abs(signed)
-            if qty > 0:
-                closed = min(qty, sold)
-                self.realized_gross_pnl += closed * (fill.price - avg)
-            elif qty <= 0:
-                gross_qty = abs(qty) + sold
-                avg = ((abs(qty) * avg) + (sold * fill.price)) / gross_qty if gross_qty else 0.0
+        if opening_or_adding:
+            old_abs = abs(qty)
+            add_abs = abs(signed)
+            total_abs = old_abs + add_abs
+            average_price = (
+                (old_abs * position.average_price)
+                + (add_abs * fill.price)
+            ) / total_abs
+            self.positions[symbol] = ShadowPosition(
+                quantity=new_qty,
+                average_price=average_price,
+                entry_charges=position.entry_charges + fill.charges,
+            )
+            return
 
+        closed = min(abs(qty), abs(signed))
+        entry_charge_alloc = (
+            position.entry_charges * (closed / abs(qty))
+            if qty
+            else 0.0
+        )
+        gross = (
+            closed * (fill.price - position.average_price)
+            if qty > 0
+            else closed * (position.average_price - fill.price)
+        )
+        self.realized_gross_pnl += gross
+        self.realized_pnl += gross - entry_charge_alloc - fill.charges
+
+        remaining_entry_charges = max(
+            0.0,
+            position.entry_charges - entry_charge_alloc,
+        )
         if new_qty == 0:
-            avg = 0.0
-        self.positions[symbol] = (new_qty, avg)
+            self.positions.pop(symbol, None)
+        else:
+            self.positions[symbol] = ShadowPosition(
+                quantity=new_qty,
+                average_price=position.average_price,
+                entry_charges=remaining_entry_charges,
+            )
 
     def mark_to_market(self, prices: dict[str, float]) -> dict:
         unrealized = 0.0
-        for symbol, (qty, avg) in self.positions.items():
-            if qty == 0:
-                continue
-            mark = float(prices.get(symbol, avg))
-            unrealized += qty * (mark - avg)
-        realized_net = self.realized_gross_pnl - self.charges_total
-        net_pnl = realized_net + unrealized
+        market_value = 0.0
+        deployed = 0.0
+        open_positions = []
+
+        for symbol, position in self.positions.items():
+            mark = float(prices.get(symbol, position.average_price))
+            if mark <= 0:
+                mark = position.average_price
+
+            qty = position.quantity
+            market_value += qty * mark
+            deployed += abs(qty) * mark
+            position_unrealized = (
+                qty * (mark - position.average_price)
+                - position.entry_charges
+            )
+            unrealized += position_unrealized
+            open_positions.append(
+                {
+                    "symbol": symbol,
+                    "quantity": qty,
+                    "average_price": round(position.average_price, 4),
+                    "mark_price": round(mark, 4),
+                    "unrealized_pnl": round(position_unrealized, 2),
+                }
+            )
+
+        equity = self.cash + market_value
+        net_pnl = equity - self.starting_capital
+
         return {
             "starting_capital": round(self.starting_capital, 2),
             "cash": round(self.cash, 2),
+            "equity": round(equity, 2),
+            "capital_deployed": round(deployed, 2),
             "realized_gross_pnl": round(self.realized_gross_pnl, 2),
             "charges": round(self.charges_total, 2),
-            "realized_pnl": round(realized_net, 2),
+            "charges_paid": round(self.charges_total, 2),
+            "realized_pnl": round(self.realized_pnl, 2),
             "unrealized_pnl": round(unrealized, 2),
             "net_pnl": round(net_pnl, 2),
-            "net_return_pct": round(net_pnl / self.starting_capital * 100, 4),
+            "net_return_pct": round(
+                net_pnl / self.starting_capital * 100,
+                4,
+            ),
+            "open_positions": open_positions,
         }
