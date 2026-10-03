@@ -25,7 +25,7 @@ class V673ExecutionCacheTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_version_and_policy(self):
-        self.assertEqual(VERSION,"6.8.1")
+        self.assertEqual(VERSION,"6.8.2")
         self.assertEqual(lifecycle_payload()["policy_version"],"V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM")
 
     def test_public_ip_probe_falls_back_and_populates_cache(self):
@@ -58,7 +58,7 @@ class V673ExecutionCacheTests(unittest.TestCase):
         started=time.monotonic()
         out=main.health()
         self.assertLess(time.monotonic()-started,2.0)
-        self.assertEqual(out["version"],"6.8.1")
+        self.assertEqual(out["version"],"6.8.2")
         self.assertEqual(out["health_contract"]["db_connections"],1)
         self.assertFalse(out["health_contract"]["network_calls"])
 
