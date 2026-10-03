@@ -1,8 +1,10 @@
 import inspect
+import sqlite3
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from psscanner_quant import analytics, db as dbmod, main
 from psscanner_quant.constants import VERSION
@@ -78,16 +80,24 @@ class V681BoundedPerformanceTests(unittest.TestCase):
         self.assertEqual(c["db_snapshot_connections"],1)
         self.assertLess(elapsed,3.5)
 
-    def test_tiny_budget_degrades_truthfully_instead_of_hanging(self):
-        self._insert_closed(3000)
-        with dbmod.db() as con:
-            con.execute("DROP INDEX idx_recs_state_closed_time")
-            con.execute("DROP INDEX idx_recs_book_state_closed_time")
+    def test_sql_budget_interrupt_degrades_truthfully_instead_of_hanging(self):
+        class InterruptedCon:
+            def set_progress_handler(self,*args):
+                pass
+            def execute(self,*args):
+                raise sqlite3.OperationalError("interrupted")
+        class InterruptedDb:
+            def __enter__(self):
+                return InterruptedCon()
+            def __exit__(self,*args):
+                return False
         started=time.monotonic()
-        out=analytics.performance(group_by="book",limit=50000,query_budget_seconds=.000001,db_timeout_seconds=.05)
+        with patch.object(analytics,"db",return_value=InterruptedDb()):
+            out=analytics.performance(group_by="book",limit=50000,query_budget_seconds=.1,db_timeout_seconds=.05)
         elapsed=time.monotonic()-started
         self.assertFalse(out["complete"])
         self.assertEqual(out["status"],"DEGRADED")
+        self.assertEqual(out["degraded"]["reason"],"SQL_BUDGET_EXCEEDED")
         self.assertIsNone(out["total"])
         self.assertEqual(out["groups"],[])
         self.assertLess(elapsed,1.0)
