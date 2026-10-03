@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ from .connection_settings import (
     require_device_key,
 )
 from .groww_session import GrowwCredentials, GrowwSession
+from . import research_service as research_module
 
 router = APIRouter(prefix="/settings", tags=["groww-settings"])
 store = EncryptedGrowwSettingsStore()
@@ -121,6 +123,21 @@ async def validate_connection() -> dict:
         and saved.static_ip_confirmed
         and store.ready
     )
+
+    if groww_auth_ok and research_module.research_service is not None:
+        try:
+            await asyncio.to_thread(
+                research_module.research_service.refresh,
+                trigger="groww_connected",
+            )
+            audit_log.append("GROWW_CONNECTED_RESEARCH_REFRESH", status="OK")
+        except Exception as exc:
+            audit_log.append(
+                "GROWW_CONNECTED_RESEARCH_REFRESH",
+                severity="WARN",
+                status="FAILED",
+                error=exc.__class__.__name__,
+            )
 
     audit_log.append(
         "GROWW_VALIDATION",
