@@ -33,7 +33,7 @@ def get(path, *, timeout=6.0, attempts=4):
 
 
 ping=get("/api/ping",timeout=2,attempts=3)
-if ping.get("version")!="6.8.0":fail("runtime version is not 6.8.0")
+if ping.get("version")!="6.8.1":fail("runtime version is not 6.8.1")
 
 health_started=time.monotonic()
 health=get("/api/health",timeout=3,attempts=4)
@@ -85,7 +85,23 @@ for book in ("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","CIRCUIT_NEXTDAY","IN
     bad=[r for r in (data.get("closed") or []) if str(r.get("period_key") or "")!=pk]
     if bad:fail(f"{book} active payload leaked {len(bad)} historical-period CLOSED rows")
 
-perf=get("/api/performance?group_by=book&limit=1000",timeout=6)
+perf_started=time.monotonic()
+perf=None
+for perf_attempt in range(4):
+    perf=get("/api/performance?group_by=book&limit=200",timeout=4,attempts=1)
+    if perf.get("complete") is True:
+        break
+    if perf_attempt<3:
+        time.sleep(0.5*(perf_attempt+1))
+perf_elapsed=time.monotonic()-perf_started
+perf_contract=(perf or {}).get("performance_contract") or {}
+if (perf or {}).get("complete") is not True:
+    fail("bounded performance analytics did not complete: "+str((perf or {}).get("degraded") or (perf or {}).get("status")))
+if perf_contract.get("passive") is not True:fail("performance endpoint is not passive")
+if perf_contract.get("network_calls") is not False:fail("performance endpoint may perform network calls")
+if perf_contract.get("bounded") is not True:fail("performance endpoint has no passive query budget")
+if perf_contract.get("db_snapshot_connections")!=1:fail("performance endpoint is not using one SQLite snapshot")
+if perf_elapsed>12:fail(f"performance endpoint retries exceeded bounded validation budget: {perf_elapsed:.1f}s")
 policy=perf.get("outcome_policy") or {}
 if "excluded" not in str(policy.get("voids") or "").lower():fail("performance VOID exclusion policy missing")
 
@@ -108,6 +124,8 @@ print(json.dumps({
     "algorithm_version":algorithm.get("algorithm_version"),
     "algorithm_accuracy_target":target,
     "performance_rows_scanned":perf.get("rows_scanned"),
+    "performance_elapsed_seconds":round(perf_elapsed,3),
+    "performance_contract":perf_contract,
     "diagnostic_books":len(diag.get("books") or {}),
     "execution_orders_scanned":execution.get("orders_scanned"),
     "backup_policy":backups.get("policy"),

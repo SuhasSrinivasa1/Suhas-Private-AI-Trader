@@ -1,3 +1,17 @@
+# PS Scanner Quant v6.8.1 — Bounded Performance Analytics Reliability
+
+v6.8.1 is a narrow reliability patch for the production Mac timeout on `/api/performance?group_by=book&limit=1000`.
+
+- Closed-ledger performance reads now use close-time indexes instead of scanning and sorting the whole recommendation ledger.
+- Ordinary groupings project only the columns they need; large rationale/feature/audit JSON envelopes are not loaded for book-level analytics.
+- Passive `/api/performance` requests use one SQLite snapshot, a short busy timeout and a 2.5-second SQL/wall-clock budget.
+- If the passive budget cannot be met, the API returns explicit degraded telemetry with no fabricated totals/groups rather than hanging.
+- Background learning keeps the unbounded evidence path so historical evidence is not silently discarded.
+- The post-install validator now checks a lightweight bounded 200-row performance contract instead of forcing a 1,000-row rebuild.
+- No scanner cadence, recommendation gate, execution control, risk cap, frozen-book identity rule, or v6.8 evidence-fabric policy is changed.
+
+See `RELEASE_v6.8.1.md` and `ARCHITECTURE_AUDIT_v6.8.1.md`.
+
 # PS Scanner Quant v6.8.0 — Shared Evidence Fabric & Adaptive Trading Algorithm
 
 v6.8.0 is a major orchestration release. It keeps the existing high-frequency scanner cadences while changing how evidence is acquired and reused.
