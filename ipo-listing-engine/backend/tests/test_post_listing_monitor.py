@@ -82,3 +82,26 @@ def test_bearish_signal_waits_when_short_not_eligible():
     result = PostListingOpportunityEngine().evaluate(calendar, snapshot)
     assert result.action == "WAIT"
     assert "SHORT_NOT_ELIGIBLE" in result.reasons
+
+
+def test_monitor_waits_when_official_calendar_not_ready():
+    calendar = ExchangeCalendar(source_ready=False)
+    snapshot = PostListingSnapshot(
+        symbol="TEST",
+        as_of=date(2026, 10, 5),
+        listing_date=date(2026, 10, 5),
+        last_price=110,
+        issue_price=100,
+        listing_price=105,
+        anchored_vwap=107,
+        rolling_high_20=110,
+        rolling_low_20=104,
+        ema9=109,
+        ema20=108,
+        relative_volume=2.0,
+        relative_strength_pct=1.0,
+        close_position=0.8,
+    )
+    result = PostListingOpportunityEngine().evaluate(calendar, snapshot)
+    assert result.action == "WAIT"
+    assert result.reasons == ("OFFICIAL_CALENDAR_NOT_READY",)
