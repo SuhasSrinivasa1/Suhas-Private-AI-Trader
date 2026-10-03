@@ -50,7 +50,8 @@ data class StrategySummary(
 data class LiveStateStatus(
     val enabled: Boolean = false,
     val budgetRupees: Int = 100_000,
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val eventId: Long = 0L
 )
 
 data class OrderLifecycleEvent(
@@ -171,7 +172,8 @@ class BackendApi {
         return result to LiveStateStatus(
             enabled = json.optBoolean("enabled", false),
             budgetRupees = json.optInt("budget_rupees", 100_000),
-            updatedAt = json.optString("updated_at").ifBlank { null }
+            updatedAt = json.optString("updated_at").ifBlank { null },
+            eventId = json.optLong("event_id", 0L)
         )
     }
 
@@ -186,7 +188,8 @@ class BackendApi {
         return result to LiveStateStatus(
             enabled = json.optBoolean("enabled", false),
             budgetRupees = json.optInt("budget_rupees", budgetRupees),
-            updatedAt = json.optString("updated_at").ifBlank { null }
+            updatedAt = json.optString("updated_at").ifBlank { null },
+            eventId = json.optLong("event_id", 0L)
         )
     }
 
