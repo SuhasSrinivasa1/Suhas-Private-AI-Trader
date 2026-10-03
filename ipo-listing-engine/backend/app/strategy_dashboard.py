@@ -26,6 +26,9 @@ class FamilyEvidence:
     gross_loss_bps: float = 0.0
     max_drawdown_bps: float = 0.0
     last_20_net_bps: float = 0.0
+    out_of_sample_trades: int = 0
+    out_of_sample_net_pnl_bps: float = 0.0
+    walk_forward_windows: int = 0
 
     @property
     def win_rate_pct(self) -> float:
@@ -116,6 +119,9 @@ def promotion_status(e: FamilyEvidence) -> str:
         and e.profit_factor >= 1.15
         and e.max_drawdown_bps <= 900
         and e.last_20_net_bps >= 0
+        and e.out_of_sample_trades >= 10
+        and e.out_of_sample_net_pnl_bps > 0
+        and e.walk_forward_windows >= 2
     ):
         return "CHAMPION"
     return "CHALLENGER"
@@ -166,6 +172,9 @@ def strategy_summary(store: StrategyEvidenceStore) -> dict:
                 "profit_factor": e.profit_factor,
                 "max_drawdown_bps": round(e.max_drawdown_bps, 2),
                 "last_20_net_bps": round(e.last_20_net_bps, 2),
+                "out_of_sample_trades": e.out_of_sample_trades,
+                "out_of_sample_net_pnl_bps": round(e.out_of_sample_net_pnl_bps, 2),
+                "walk_forward_windows": e.walk_forward_windows,
                 "status": status,
                 "ranking_score": ranking_score(e),
             }
@@ -186,5 +195,5 @@ def strategy_summary(store: StrategyEvidenceStore) -> dict:
         "untested_families": len(STRATEGY_FAMILIES) - tested,
         "top_five": top_five,
         "families": rows,
-        "ranking_note": "Top families are ranked only from recorded replay evidence after costs; untested families are never presented as working.",
+        "ranking_note": "Top families are ranked only from recorded replay evidence after costs. CHAMPION additionally requires positive held-out out-of-sample evidence across at least two walk-forward windows; untested families are never presented as working.",
     }
