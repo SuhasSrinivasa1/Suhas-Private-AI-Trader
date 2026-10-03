@@ -10,17 +10,17 @@ Daemon will be stopped at the end of the build
 > Task :app:generateReleaseResources
 > Task :app:createReleaseCompatibleScreenManifests
 > Task :app:extractDeepLinksRelease
-> Task :app:mergeReleaseResources
 > Task :app:processReleaseMainManifest
-> Task :app:packageReleaseResources
-> Task :app:parseReleaseLocalResources
+> Task :app:mergeReleaseResources
 > Task :app:processReleaseManifest
+> Task :app:packageReleaseResources
+> Task :app:processReleaseManifestForPackage
 > Task :app:preReleaseUnitTestBuild UP-TO-DATE
 > Task :app:javaPreCompileReleaseUnitTest
-> Task :app:processReleaseManifestForPackage
 > Task :app:processReleaseJavaRes NO-SOURCE
 > Task :app:processReleaseUnitTestJavaRes NO-SOURCE
 > Task :app:extractProguardFiles
+> Task :app:parseReleaseLocalResources
 > Task :app:mergeReleaseJniLibFolders
 > Task :app:mergeReleaseNativeLibs NO-SOURCE
 > Task :app:stripReleaseDebugSymbols NO-SOURCE
@@ -35,13 +35,14 @@ Daemon will be stopped at the end of the build
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets
-> Task :app:processReleaseResources
 > Task :app:compressReleaseAssets
+> Task :app:processReleaseResources
+> Task :app:extractReleaseVersionControlInfo
 
 > Task :app:compileReleaseJavaWithJavac
 
-> Task :app:bundleReleaseClassesToRuntimeJar
 > Task :app:bundleReleaseClassesToCompileJar
+> Task :app:bundleReleaseClassesToRuntimeJar
 > Task :app:compileReleaseUnitTestJavaWithJavac
 > Task :app:testReleaseUnitTest
 > Task :app:generateReleaseLintVitalReportModel
@@ -49,7 +50,6 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeDexRelease
 > Task :app:mergeReleaseGlobalSynthetics
 > Task :app:compileReleaseArtProfile
-> Task :app:extractReleaseVersionControlInfo
 > Task :app:mergeReleaseJavaResource
 > Task :app:optimizeReleaseResources
 > Task :app:collectReleaseDependencies
@@ -62,7 +62,7 @@ Daemon will be stopped at the end of the build
 > Task :app:lintVitalReportRelease
 > Task :app:lintVitalRelease
 > Task :app:assembleRelease
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1790877449212.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1791005351152.json
 
-BUILD SUCCESSFUL in 35s
+BUILD SUCCESSFUL in 24s
 48 actionable tasks: 47 executed, 1 up-to-date
