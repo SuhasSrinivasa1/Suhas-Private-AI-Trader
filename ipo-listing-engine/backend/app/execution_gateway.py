@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .live_pnl import live_ledger
 from .order_events import order_events
 
 
@@ -145,6 +146,12 @@ class GrowwExecutionGateway:
             message=str(response.get("remark") or "").strip() or None,
         )
         if order_id:
+            live_ledger.register_order(
+                order_id=order_id,
+                symbol=order.trading_symbol,
+                side=order.transaction_type,
+                reference_id=order.order_reference_id,
+            )
             self._last_status[order_id] = status
         return response
 
@@ -162,6 +169,20 @@ class GrowwExecutionGateway:
             segment=self.groww.SEGMENT_CASH,
         )
         status = str(response.get("order_status") or "UNKNOWN").upper()
+        filled = int(response.get("filled_quantity") or 0)
+        average = response.get("average_fill_price")
+        try:
+            fill_price = float(average) if average not in (None, "") else None
+        except (TypeError, ValueError):
+            fill_price = None
+        if filled > 0 and fill_price and fill_price > 0:
+            live_ledger.record_cumulative_fill(
+                order_id=groww_order_id,
+                symbol=symbol,
+                side=side,
+                cumulative_quantity=filled,
+                average_price=fill_price,
+            )
         previous = self._last_status.get(groww_order_id)
         if status != previous:
             self._emit_status(
