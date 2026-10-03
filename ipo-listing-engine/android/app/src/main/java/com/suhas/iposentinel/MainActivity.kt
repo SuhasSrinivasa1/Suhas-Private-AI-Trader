@@ -46,6 +46,13 @@ private fun IpoSentinelApp() {
     var lastValidation by remember { mutableStateOf<ValidationStatus?>(null) }
     var growwConfigured by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        val (_, savedStatus) = BackendApi().fetchStatus()
+        if (savedStatus != null) {
+            growwConfigured = savedStatus.growwConfigured
+        }
+    }
+
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Teal,
