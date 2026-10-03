@@ -311,60 +311,123 @@ private fun DashboardScreen(
         val nextDay = researchPlan?.nextTradingDay
         val nextCandidates = researchPlan?.nextTradingDayCandidates.orEmpty()
         val weekCandidates = researchPlan?.weekCandidates.orEmpty()
-        val resolvedCount = nextCandidates.count { it.symbolResolved }
+        val knownCandidates = researchPlan?.allKnownCandidates.orEmpty()
+        val researchFailed = researchPlan != null && (
+            researchPlan.researchHealth == "FAILED" || !researchPlan.sourceReady
+        )
+
+        StatusCard(
+            title = "Daily research plan",
+            primary = when {
+                researchPlan == null -> "NOT SYNCED"
+                researchFailed -> "RESEARCH SERVICE FAILED"
+                researchPlan.researchHealth == "DEGRADED" -> "DEGRADED"
+                else -> "HEALTHY"
+            },
+            secondary = when {
+                researchPlan == null -> "Waiting for the backend research snapshot"
+                researchFailed -> researchPlan.errors.joinToString(" • ").ifBlank {
+                    "Official IPO source is unavailable; live execution remains blocked."
+                }
+                else -> "Generated " + (researchPlan.generatedAt ?: "timestamp unavailable") +
+                    " • Known " + researchPlan.candidateCount +
+                    " • NSE confirmed " + researchPlan.nseIdentityConfirmedCount +
+                    " • Groww resolved " + researchPlan.growwResolvedCount +
+                    " • Groww pending " + researchPlan.growwPendingCount
+            },
+            primaryColor = when {
+                researchFailed -> Danger
+                researchPlan?.researchHealth == "DEGRADED" -> Amber
+                researchPlan?.sourceReady == true -> Teal
+                else -> Amber
+            }
+        )
 
         StatusCard(
             title = "Next trading day",
             primary = when {
-                nextDay == null -> "Research queue not synced"
-                nextCandidates.isEmpty() -> nextDay + " • No confirmed NSE listing candidates"
+                nextDay == null -> "Official calendar not ready"
+                researchFailed -> nextDay + " • Research unavailable"
+                nextCandidates.isEmpty() -> nextDay + " • No confirmed listing"
                 else -> nextDay + " • " + nextCandidates.size + " candidate" +
                     if (nextCandidates.size == 1) "" else "s"
             },
             secondary = when {
+                researchFailed -> "Do not interpret this as no listings; the research source failed."
                 nextCandidates.isEmpty() && nextDay != null ->
-                    "Weekend/after-market research is active. NSE issue feed will be rechecked automatically."
-                nextCandidates.isEmpty() ->
-                    "Syncs official NSE calendar + issue feed"
+                    "No currently confirmed NSE IPO listings for the selected period"
                 else ->
                     nextCandidates.joinToString(" • ") { candidate ->
-                        candidate.symbol + if (candidate.symbolResolved) " ✓" else " ⏳"
-                    } + "  |  Groww resolved " + resolvedCount + "/" + nextCandidates.size
+                        (candidate.symbol ?: "Symbol Pending") + " [" + candidate.lifecycleState + "]"
+                    }
             },
-            primaryColor = if (researchPlan?.sourceReady == true) Teal else Amber
+            primaryColor = when {
+                researchFailed -> Danger
+                researchPlan?.calendarReady == true -> Teal
+                else -> Amber
+            }
         )
 
-        if (weekCandidates.isNotEmpty()) {
-            ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
-                Column(
-                    Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Next-week IPO research", color = Muted, fontSize = 12.sp)
-                    weekCandidates.take(8).forEach { candidate ->
+        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
+            Column(
+                Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Next-week IPO research", color = Muted, fontSize = 12.sp)
+                val displayCandidates = if (weekCandidates.isNotEmpty()) weekCandidates else knownCandidates
+                if (researchFailed) {
+                    Text(
+                        "Research service failed — candidate list is not authoritative.",
+                        color = Danger,
+                        fontSize = 12.sp
+                    )
+                } else if (displayCandidates.isEmpty()) {
+                    Text(
+                        "No currently confirmed NSE IPO listings for the selected period",
+                        color = Muted,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    displayCandidates.take(10).forEach { candidate ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(candidate.symbol, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    (candidate.listingDate ?: "Date pending") + " • " + candidate.companyName,
+                                    candidate.symbol ?: "Symbol Pending",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    (candidate.listingDate ?: "Listing date pending") +
+                                        " • " + candidate.companyName +
+                                        " • " + if (candidate.isSme) "SME" else "Mainboard",
                                     color = Muted,
                                     fontSize = 11.sp
                                 )
+                                Text(
+                                    candidate.lifecycleState +
+                                        (candidate.isin?.let { " • ISIN " + it } ?: ""),
+                                    color = Muted,
+                                    fontSize = 10.sp
+                                )
                             }
                             Text(
-                                if (candidate.symbolResolved) "RESOLVED" else "VERIFY",
+                                when {
+                                    candidate.symbolResolved -> "RESOLVED"
+                                    candidate.nseListingConfirmed -> "GROWW PENDING"
+                                    candidate.symbol == null -> "RESEARCHING"
+                                    else -> "NSE PENDING"
+                                },
                                 color = if (candidate.symbolResolved) Teal else Amber,
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                    Text(
-                        "Trade gate: exact NSE symbol + Groww instrument + listing-day live quote/depth must all agree.",
-                        color = Muted,
-                        fontSize = 11.sp
-                    )
                 }
+                Text(
+                    "Live trade gate: final NSE identity + exact Groww NSE/CASH instrument + valid listing-session quote/depth/liquidity/risk checks.",
+                    color = Muted,
+                    fontSize = 11.sp
+                )
             }
         }
 
