@@ -1,9 +1,10 @@
 name: Research360 v1.5 Snapshot Kick
 
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/research360-v15-snapshot-kick.yml']
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

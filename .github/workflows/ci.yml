@@ -4,8 +4,25 @@ on:
   workflow_dispatch:
   push:
     branches: [main, feature/mac-local-llm]
+    paths-ignore:
+      - 'ps-scanner/**'
+      - 'android-stable/**'
+      - 'research360-build/**'
+      - 'UnivestAutoTrade/**'
+      - '.release/**'
+      - '.signing/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'ps-scanner/**'
+      - 'android-stable/**'
+      - 'research360-build/**'
+      - 'UnivestAutoTrade/**'
+      - '.release/**'
+      - '.signing/**'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

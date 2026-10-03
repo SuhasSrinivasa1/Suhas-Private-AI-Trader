@@ -1,46 +1,61 @@
 name: PS Scanner CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main, ps-scanner-v660-architecture, ps-scanner-v661-frozen-identity, ps-scanner-v670-production-integrity, ps-scanner-v671-health-reliability, ps-scanner-v672-bounded-sanity, ps-scanner-v673-execution-readiness, ps-scanner-v680-evidence-fabric-algorithm, release/ps-scanner-v6.8.1-performance]
+    branches:
+      - main
+      - 'release/**'
     paths:
-      - "ps-scanner/**"
-      - ".github/workflows/ps-scanner-ci.yml"
+      - 'ps-scanner/**'
+      - '.github/workflows/ps-scanner-ci.yml'
   pull_request:
+    branches: [main]
     paths:
-      - "ps-scanner/**"
-      - ".github/workflows/ps-scanner-ci.yml"
+      - 'ps-scanner/**'
+      - '.github/workflows/ps-scanner-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Regression (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  regression:
+    name: Regression (ubuntu-latest)
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-14]
-        python-version: ["3.12"]
     defaults:
       run:
         working-directory: ps-scanner
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: ps-scanner/requirements.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install zsh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
       - name: Compile Python
         run: python -m compileall -q psscanner_quant tests tools
+      - name: Initialize isolated database
+        run: python -c "from psscanner_quant.db import init_db; init_db()"
       - name: Unit/regression suite
-        run: |
-          python -c "from psscanner_quant.db import init_db; init_db()"
-          python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -v
       - name: Validate UI JavaScript syntax
         run: |
           python - <<'PY'
@@ -50,31 +65,51 @@ jobs:
           Path("/tmp/ps-scanner-ui.js").write_text(js)
           PY
           node --check /tmp/ps-scanner-ui.js
-      - name: Validate shell syntax where zsh exists
+      - name: Validate shell syntax
         run: |
-          if command -v zsh >/dev/null 2>&1; then
-            zsh -n install.sh
-            zsh -n run.sh
-          fi
+          zsh -n install.sh
+          zsh -n run.sh
+          zsh -n tools/local_release_validate.sh
 
   package:
     name: Build installable ZIP
-    needs: test
-    if: github.event_name == 'push'
+    needs: regression
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Package PS Scanner
+      - name: Resolve release version
+        id: version
+        working-directory: ps-scanner
+        shell: bash
         run: |
-          rm -rf /tmp/PS_Scanner_Quant_v6.8.1
-          cp -R ps-scanner /tmp/PS_Scanner_Quant_v6.8.1
-          find /tmp/PS_Scanner_Quant_v6.8.1 -name '__pycache__' -type d -prune -exec rm -rf {} +
-          cd /tmp
-          zip -qr "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.1.zip" PS_Scanner_Quant_v6.8.1
-          unzip -t "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.1.zip"
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          VERSION="$(python3 -c 'from psscanner_quant.constants import VERSION; print(str(VERSION).lstrip("v"))')"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Build tracked-source package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          NAME="PS_Scanner_Quant_v$VERSION"
+          STAGE="$RUNNER_TEMP/$NAME"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          git archive HEAD:ps-scanner | tar -x -C "$STAGE"
+          find "$STAGE" -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find "$STAGE" -type f -name '*.pyc' -delete
+          (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/$NAME.zip" "$NAME")
+          unzip -t "$GITHUB_WORKSPACE/$NAME.zip"
+          sha256sum "$GITHUB_WORKSPACE/$NAME.zip" | tee "$GITHUB_WORKSPACE/$NAME.zip.sha256"
+      - name: Upload installable package
+        uses: actions/upload-artifact@v4
         with:
-          name: PS_Scanner_Quant_v6.8.1
-          path: PS_Scanner_Quant_v6.8.1.zip
+          name: PS_Scanner_Quant_v${{ steps.version.outputs.version }}
+          path: |
+            PS_Scanner_Quant_v${{ steps.version.outputs.version }}.zip
+            PS_Scanner_Quant_v${{ steps.version.outputs.version }}.zip.sha256
           if-no-files-found: error
           retention-days: 30

@@ -1,8 +1,10 @@
 name: Direct NSE Intraday Momentum v1.9.0 verified build
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -1,11 +1,10 @@
 name: UC Sentinel v1.3 Android Build
 
 on:
-  push:
-    paths:
-      - 'android-stable/uc-sentinel-v130-build/**'
-      - '.github/workflows/uc-sentinel-v130-build.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
