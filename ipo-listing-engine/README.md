@@ -97,3 +97,39 @@ The TOTP token and secret are never returned by the settings APIs. They are encr
 5. Tap **Save Groww Settings**.
 6. Tap **Validate Groww + Static IP**.
 7. Live auto-trading remains locked until Groww authentication and the static-IP checks pass.
+
+
+## Stable Android behavior (v1.0.0)
+
+IPO Sentinel v1.0.0 consolidates the control application into three tabs: **Dashboard**, **Strategies**, and **Settings**.
+
+### Notifications
+
+- Android 13+ requests the standard `POST_NOTIFICATIONS` permission on first launch.
+- IPO Sentinel does **not** request Notification Listener access and does not read notifications from other applications.
+- Live mode starts a foreground order-event monitor so the user can receive order lifecycle notifications while the market session is active.
+- Supported lifecycle notifications include order submission, broker acknowledgement, partial/complete fill, exit submission, position closed, rejection/cancellation, force-flat, and risk halt.
+- A **Send Test Notification** button is available in Settings.
+- The backend order gateway emits lifecycle events before submission and as Groww order state changes.
+
+### Weekly audit export
+
+Settings includes **Export Weekly Logs**. It creates a ZIP containing:
+
+- `app-audit.jsonl` — Android-side state changes and validation events.
+- `backend-audit.jsonl` — server-side decisions, Groww validation, live-state changes, order lifecycle events and related audit entries when the service is reachable.
+- `metadata.json` — version, export time and audit period.
+
+Groww TOTP/API secrets are intentionally excluded from audit exports.
+
+### Strategies offline behavior
+
+The APK contains the registered 19-family strategy catalog. If the static-IP trading service has not yet been provisioned, the Strategies tab remains usable and shows the catalog with zero tested/champion counts rather than showing the whole screen as unavailable. Replay evidence replaces the local zero-state automatically when the backend becomes reachable.
+
+### Live state
+
+Live trading state is server-authoritative. Enabling live mode requires Groww authentication and static-IP validation to pass. The selected budget is locked while live mode is armed. The Android foreground monitor is started only after the server acknowledges the live state.
+
+### Build validation
+
+The stable GitHub workflow compiles and tests the IPO backend, runs its pytest suite and dependency check, runs Android lint, and only then builds the APK artifact.
