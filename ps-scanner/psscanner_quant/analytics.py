@@ -10,7 +10,9 @@ trading P/L metrics.
 
 import json
 import math
+import sqlite3
 import statistics
+import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -200,12 +202,14 @@ def _group_keys(row: Dict[str, Any], group_by: str, family_map: Dict[str, str]) 
     return [str(row.get("book") or "UNKNOWN")]
 
 
-def _group_stats(key: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _group_stats(key: str, rows: List[Dict[str, Any]], deadline: Optional[float] = None) -> Dict[str, Any]:
     wins = losses = misses = voids = other = 0
     returns: List[float] = []
     rvals: List[float] = []
     chronological: List[Tuple[datetime, float]] = []
-    for r in rows:
+    for i, r in enumerate(rows):
+        if deadline is not None and i % 128 == 0 and time.monotonic() > deadline:
+            raise TimeoutError("performance aggregation wall-clock budget exceeded")
         result = str(r.get("result") or "").upper()
         if result == "VOID":
             voids += 1
@@ -268,47 +272,150 @@ def _group_stats(key: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def performance(book: Optional[str] = None, group_by: str = "book", limit: int = 10000) -> Dict[str, Any]:
-    limit = max(100, min(int(limit or 10000), 50000))
-    where = ["state='CLOSED'"]
-    args: List[Any] = []
-    if book:
-        where.append("book=?")
-        args.append(str(book).upper())
-    sql = (
-        "SELECT * FROM recommendations WHERE " + " AND ".join(where) +
-        " ORDER BY COALESCE(closed_at,updated_at,created_at) ASC LIMIT ?"
-    )
-    args.append(limit)
-    with db() as con:
-        rows = [decode_recommendation(dict(r)) for r in con.execute(sql, tuple(args)).fetchall()]
-    family_map = _strategy_family_map() if str(group_by).lower() == "family" else {}
-    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        for key in _group_keys(row, group_by, family_map):
-            grouped[key].append(row)
-    groups = [_group_stats(key, values) for key, values in grouped.items()]
-    if str(group_by).lower() in {"time_bucket","behavior_cluster"}:
-        settings=load_settings();min_n=int(settings.get("cohort_min_samples_for_live_use",50) or 50);max_width=float(settings.get("cohort_max_wilson_width_for_live_use",.30) or .30)
-        for g in groups:
-            width=g.get("win_rate_wilson_width");expectancy=g.get("expectancy_pct");pf=g.get("profit_factor")
-            eligible=bool((g.get("trading_count") or 0)>=min_n and width is not None and width<=max_width and expectancy is not None and expectancy>0 and pf is not None and pf>1.0)
-            g["live_use_eligible"]=eligible
-            g["live_use_gate"]={"minimum_samples":min_n,"maximum_wilson_width":max_width,"positive_expectancy_required":True,"profit_factor_gt_1_required":True,"automatic_activation":False}
-    groups.sort(key=lambda x: (x.get("trading_count") or 0, x.get("group") or ""), reverse=True)
-    total = _group_stats("ALL", rows)
+def _performance_select_columns(group_by: str) -> List[str]:
+    """Read only columns required for the selected aggregation.
+
+    Large point-in-time JSON envelopes remain in the immutable ledger but ordinary
+    book/symbol/day performance requests must not deserialize them unnecessarily.
+    """
+    g=str(group_by or "book").lower()
+    cols=[
+        "book","symbol","side","regime","horizon","period_key","result","close_reason",
+        "entry_price","current_price","stop_price","created_at","updated_at","closed_at",
+    ]
+    if g in {"strategy","family"}:
+        cols.append("strategy_ids_json")
+    if g=="behavior_cluster":
+        cols.extend(["rationale_json","feature_snapshot_json"])
+    return cols
+
+
+def _performance_outcome_policy() -> Dict[str, Any]:
+    return {
+        "trading_results": sorted(VALID_TRADING_RESULTS),
+        "voids": "counted separately and excluded from P/L, expectancy, profit factor and win-rate denominator",
+        "confidence": "Wilson 95% interval on WIN / (WIN+LOSS+MISS)",
+        "max_drawdown": "cumulative directional-return percentage points in close-time order; descriptive, not portfolio NAV",
+    }
+
+
+def _performance_degraded(book: Optional[str], group_by: str, limit: int, started: float,
+                          reason: str, detail: str, budget: Optional[float],
+                          db_timeout_seconds: float, columns: List[str]) -> Dict[str, Any]:
     return {
         "generated_at": now_iso(),
         "book": str(book).upper() if book else None,
         "group_by": str(group_by).lower(),
+        "requested_limit": int(limit),
+        "rows_scanned": 0,
+        "total": None,
+        "groups": [],
+        "status": "DEGRADED",
+        "complete": False,
+        "degraded": {"reason": reason, "detail": str(detail)[:180]},
+        "outcome_policy": _performance_outcome_policy(),
+        "performance_contract": {
+            "passive": True,
+            "network_calls": False,
+            "bounded": budget is not None,
+            "query_budget_seconds": budget,
+            "db_timeout_seconds": float(db_timeout_seconds),
+            "db_snapshot_connections": 1,
+            "projection_columns": list(columns),
+            "elapsed_ms": round((time.monotonic()-started)*1000.0, 1),
+        },
+    }
+
+
+def performance(book: Optional[str] = None, group_by: str = "book", limit: int = 10000,
+                query_budget_seconds: Optional[float] = None,
+                db_timeout_seconds: float = 10.0) -> Dict[str, Any]:
+    """Compute truthful ledger analytics.
+
+    Background learning callers use the default unbounded mode so evidence is never
+    silently dropped. Passive HTTP callers provide a finite budget and short SQLite
+    busy timeout; if that budget cannot be met, the endpoint returns explicit degraded
+    telemetry rather than hanging or fabricating partial statistics.
+    """
+    started=time.monotonic()
+    limit=max(100,min(int(limit or 10000),50000))
+    g=str(group_by or "book").lower()
+    budget=None if query_budget_seconds is None else max(.05,float(query_budget_seconds))
+    deadline=None if budget is None else started+budget
+    columns=_performance_select_columns(g)
+    where=["state='CLOSED'"]
+    args:List[Any]=[]
+    if book:
+        where.append("book=?")
+        args.append(str(book).upper())
+    sql=(
+        "SELECT "+",".join(columns)+" FROM recommendations WHERE "+" AND ".join(where)+
+        " ORDER BY COALESCE(closed_at,updated_at,created_at) ASC LIMIT ?"
+    )
+    args.append(limit)
+    rows:List[Dict[str,Any]]=[]
+    family_map:Dict[str,str]={}
+    try:
+        with db(timeout_seconds=db_timeout_seconds) as con:
+            if deadline is not None:
+                con.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0,200)
+            for raw in con.execute(sql,tuple(args)):
+                if deadline is not None and time.monotonic()>deadline:
+                    raise TimeoutError("performance row materialization wall-clock budget exceeded")
+                rows.append(decode_recommendation(dict(raw)))
+            if g=="family":
+                family_map={str(r[0]):str(r[1] or "UNKNOWN") for r in con.execute(
+                    "SELECT strategy_id,family FROM strategies"
+                ).fetchall()}
+            if deadline is not None:
+                con.set_progress_handler(None,0)
+
+        grouped:Dict[str,List[Dict[str,Any]]]=defaultdict(list)
+        for i,row in enumerate(rows):
+            if deadline is not None and i%128==0 and time.monotonic()>deadline:
+                raise TimeoutError("performance grouping wall-clock budget exceeded")
+            for key in _group_keys(row,g,family_map):
+                grouped[key].append(row)
+        groups=[_group_stats(key,values,deadline) for key,values in grouped.items()]
+        if g in {"time_bucket","behavior_cluster"}:
+            settings=load_settings();min_n=int(settings.get("cohort_min_samples_for_live_use",50) or 50);max_width=float(settings.get("cohort_max_wilson_width_for_live_use",.30) or .30)
+            for item in groups:
+                if deadline is not None and time.monotonic()>deadline:
+                    raise TimeoutError("performance cohort-gate wall-clock budget exceeded")
+                width=item.get("win_rate_wilson_width");expectancy=item.get("expectancy_pct");pf=item.get("profit_factor")
+                eligible=bool((item.get("trading_count") or 0)>=min_n and width is not None and width<=max_width and expectancy is not None and expectancy>0 and pf is not None and pf>1.0)
+                item["live_use_eligible"]=eligible
+                item["live_use_gate"]={"minimum_samples":min_n,"maximum_wilson_width":max_width,"positive_expectancy_required":True,"profit_factor_gt_1_required":True,"automatic_activation":False}
+        groups.sort(key=lambda x:(x.get("trading_count") or 0,x.get("group") or ""),reverse=True)
+        total=_group_stats("ALL",rows,deadline)
+    except TimeoutError as exc:
+        return _performance_degraded(book,g,limit,started,"WALL_CLOCK_BUDGET_EXCEEDED",str(exc),budget,db_timeout_seconds,columns)
+    except sqlite3.OperationalError as exc:
+        msg=str(exc).lower()
+        reason="SQL_BUDGET_EXCEEDED" if "interrupted" in msg else ("DB_BUSY_BOUNDED" if ("locked" in msg or "busy" in msg) else "SQL_OPERATIONAL_ERROR")
+        return _performance_degraded(book,g,limit,started,reason,str(exc),budget,db_timeout_seconds,columns)
+
+    return {
+        "generated_at": now_iso(),
+        "book": str(book).upper() if book else None,
+        "group_by": g,
+        "requested_limit": limit,
         "rows_scanned": len(rows),
         "total": total,
         "groups": groups,
-        "outcome_policy": {
-            "trading_results": sorted(VALID_TRADING_RESULTS),
-            "voids": "counted separately and excluded from P/L, expectancy, profit factor and win-rate denominator",
-            "confidence": "Wilson 95% interval on WIN / (WIN+LOSS+MISS)",
-            "max_drawdown": "cumulative directional-return percentage points in close-time order; descriptive, not portfolio NAV",
+        "status": "READY",
+        "complete": True,
+        "degraded": None,
+        "outcome_policy": _performance_outcome_policy(),
+        "performance_contract": {
+            "passive": True,
+            "network_calls": False,
+            "bounded": budget is not None,
+            "query_budget_seconds": budget,
+            "db_timeout_seconds": float(db_timeout_seconds),
+            "db_snapshot_connections": 1,
+            "projection_columns": list(columns),
+            "elapsed_ms": round((time.monotonic()-started)*1000.0,1),
         },
     }
 

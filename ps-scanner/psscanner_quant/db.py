@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS recommendations (
 );
 CREATE INDEX IF NOT EXISTS idx_recs_book_state ON recommendations(book,state,score DESC);
 CREATE INDEX IF NOT EXISTS idx_recs_period ON recommendations(book,period_key,state);
+CREATE INDEX IF NOT EXISTS idx_recs_state_closed_time ON recommendations(state,COALESCE(closed_at,updated_at,created_at));
+CREATE INDEX IF NOT EXISTS idx_recs_book_state_closed_time ON recommendations(book,state,COALESCE(closed_at,updated_at,created_at));
 
 -- Defense-in-depth frozen-identity interlock. Early close does not release a frozen
 -- Weekly/Monthly symbol while the two calendar periods overlap.
