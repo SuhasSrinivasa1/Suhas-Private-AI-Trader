@@ -74,6 +74,16 @@ class PostListingOpportunityEngine:
     max_trading_days = 30
 
     def evaluate(self, calendar: ExchangeCalendar, s: PostListingSnapshot) -> PostListingDecision:
+        if not calendar.source_ready:
+            return PostListingDecision(
+                s.symbol,
+                0,
+                False,
+                "WAIT",
+                OpportunityType.NONE,
+                0.0,
+                ("OFFICIAL_CALENDAR_NOT_READY",),
+            )
         d = trading_day_number(calendar, s.listing_date, s.as_of)
         if d <= 0:
             return PostListingDecision(s.symbol, d, False, "WAIT", OpportunityType.NONE, 0.0, ("NOT_LISTED_YET",))
