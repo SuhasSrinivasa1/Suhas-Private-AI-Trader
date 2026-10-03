@@ -1,8 +1,14 @@
 package com.suhas.iposentinel
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,12 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
@@ -32,24 +40,54 @@ private val Amber = Color(0xFFFFC857)
 private enum class AppScreen { DASHBOARD, STRATEGIES, SETTINGS }
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.createChannels(this)
+
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         setContent { IpoSentinelApp() }
     }
 }
 
 @Composable
 private fun IpoSentinelApp() {
+    val context = LocalContext.current
     var screen by rememberSaveable { mutableStateOf(AppScreen.DASHBOARD) }
     var liveEnabled by rememberSaveable { mutableStateOf(false) }
     var budget by rememberSaveable { mutableFloatStateOf(100_000f) }
     var lastValidation by remember { mutableStateOf<ValidationStatus?>(null) }
     var growwConfigured by remember { mutableStateOf(false) }
+    val appScope = rememberCoroutineScope()
+    val backendApi = remember { BackendApi() }
+
+    LaunchedEffect(liveEnabled) {
+        val serviceIntent = Intent(context, TradeEventService::class.java)
+        if (liveEnabled) {
+            ContextCompat.startForegroundService(context, serviceIntent)
+        } else {
+            context.stopService(serviceIntent)
+        }
+    }
 
     LaunchedEffect(Unit) {
-        val (_, savedStatus) = BackendApi().fetchStatus()
+        val (_, savedStatus) = backendApi.fetchStatus()
         if (savedStatus != null) {
             growwConfigured = savedStatus.growwConfigured
+        }
+        val (_, liveState) = backendApi.fetchLiveState()
+        if (liveState != null) {
+            liveEnabled = liveState.enabled
+            budget = liveState.budgetRupees.toFloat()
         }
     }
 
@@ -92,7 +130,17 @@ private fun IpoSentinelApp() {
                     modifier = Modifier.padding(padding),
                     liveEnabled = liveEnabled,
                     onLiveEnabledChange = { requested ->
-                        liveEnabled = requested && (lastValidation?.liveExecutionReady == true)
+                        if (requested && lastValidation?.liveExecutionReady != true) {
+                            liveEnabled = false
+                        } else {
+                            appScope.launch {
+                                val (result, state) = backendApi.setLiveState(
+                                    requested,
+                                    budget.toInt()
+                                )
+                                liveEnabled = result.ok && state?.enabled == true
+                            }
+                        }
                     },
                     budget = budget,
                     onBudgetChange = { budget = it },
@@ -294,6 +342,16 @@ private fun StrategiesScreen(modifier: Modifier) {
         }
 
         summary?.let { data ->
+            StatusCard(
+                title = "Evidence source",
+                primary = if (data.evidenceSource == "REMOTE") "REPLAY SYNCED" else "LOCAL CATALOG",
+                secondary = if (data.evidenceSource == "REMOTE")
+                    "Rankings use recorded replay evidence after trading costs."
+                else
+                    "All registered strategy families are visible now. Tested/champion metrics populate after replay evidence sync.",
+                primaryColor = if (data.evidenceSource == "REMOTE") Teal else Amber
+            )
+
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactMetricCard("Total", data.totalStrategyFamilies.toString(), Modifier.weight(1f))
                 CompactMetricCard("Tested", data.testedFamilies.toString(), Modifier.weight(1f))
@@ -474,6 +532,8 @@ private fun GrowwSettingsScreen(
     var validation by remember { mutableStateOf<ValidationStatus?>(null) }
     val scope = rememberCoroutineScope()
     val client = remember { BackendApi() }
+    val context = LocalContext.current
+    var notificationsAllowed by remember { mutableStateOf(NotificationHelper.notificationsAllowed(context)) }
 
     fun refreshStatus(showMessage: Boolean) {
         if (busy) return
@@ -514,10 +574,50 @@ private fun GrowwSettingsScreen(
     ) {
         Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Groww credentials and the whitelisted static public IP are managed here.",
+            "Groww credentials, trade notifications and the whitelisted static public IP are managed here.",
             color = Muted,
             fontSize = 13.sp
         )
+
+        SettingsSection("Notifications") {
+            CheckRow("Order and execution notifications", notificationsAllowed)
+            Text(
+                "IPO Sentinel asks for Android notification permission on first launch. It does not need permission to read notifications from Groww or any other app; Groww API order status is the source of truth.",
+                color = Muted,
+                fontSize = 12.sp,
+                lineHeight = 18.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        }
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Notification Settings")
+                }
+                OutlinedButton(
+                    onClick = {
+                        notificationsAllowed = NotificationHelper.notificationsAllowed(context)
+                        if (notificationsAllowed) NotificationHelper.showTest(context)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Test")
+                }
+            }
+            TextButton(
+                onClick = {
+                    notificationsAllowed = NotificationHelper.notificationsAllowed(context)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Refresh notification status")
+            }
+        }
 
         SettingsSection("Groww TOTP") {
             OutlinedTextField(
