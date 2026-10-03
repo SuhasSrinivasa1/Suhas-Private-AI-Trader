@@ -113,7 +113,7 @@ class ShadowLedger:
             sold = abs(signed)
             if qty > 0:
                 closed = min(qty, sold)
-                self.realized_gross_pnl += closed * (fill.price - avg) - fill.charges
+                self.realized_gross_pnl += closed * (fill.price - avg)
             elif qty <= 0:
                 gross_qty = abs(qty) + sold
                 avg = ((abs(qty) * avg) + (sold * fill.price)) / gross_qty if gross_qty else 0.0
