@@ -21,6 +21,32 @@ data class ConnectionStatus(
     val error: String? = null
 )
 
+data class StrategyFamilyStats(
+    val familyId: String,
+    val name: String,
+    val phase: String,
+    val description: String,
+    val trades: Int,
+    val winRatePct: Double,
+    val expectancyBps: Double,
+    val profitFactor: Double,
+    val maxDrawdownBps: Double,
+    val last20NetBps: Double,
+    val status: String,
+    val rankingScore: Double
+)
+
+data class StrategySummary(
+    val totalStrategyFamilies: Int = 0,
+    val testedFamilies: Int = 0,
+    val champions: Int = 0,
+    val challengers: Int = 0,
+    val untestedFamilies: Int = 0,
+    val topFive: List<StrategyFamilyStats> = emptyList(),
+    val families: List<StrategyFamilyStats> = emptyList(),
+    val rankingNote: String = ""
+)
+
 data class ValidationStatus(
     val growwAuthOk: Boolean = false,
     val detectedEgressIp: String? = null,
@@ -62,6 +88,56 @@ class BackendApi {
             expectedStaticIp = json.optString("expected_static_ip").ifBlank { null },
             staticIpConfirmed = json.optBoolean("static_ip_confirmed", false),
             error = json.optString("error").ifBlank { null }
+        )
+    }
+
+    suspend fun fetchStrategySummary(): Pair<ApiResult, StrategySummary?> {
+        val result = request("GET", "/strategies/summary", null)
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+
+        fun parseFamily(obj: JSONObject): StrategyFamilyStats =
+            StrategyFamilyStats(
+                familyId = obj.optString("family_id"),
+                name = obj.optString("name"),
+                phase = obj.optString("phase"),
+                description = obj.optString("description"),
+                trades = obj.optInt("trades", 0),
+                winRatePct = obj.optDouble("win_rate_pct", 0.0),
+                expectancyBps = obj.optDouble("expectancy_bps", 0.0),
+                profitFactor = obj.optDouble("profit_factor", 0.0),
+                maxDrawdownBps = obj.optDouble("max_drawdown_bps", 0.0),
+                last20NetBps = obj.optDouble("last_20_net_bps", 0.0),
+                status = obj.optString("status", "RESEARCH"),
+                rankingScore = obj.optDouble("ranking_score", 0.0)
+            )
+
+        val topFiveJson = json.optJSONArray("top_five")
+        val familiesJson = json.optJSONArray("families")
+        val topFive = buildList {
+            if (topFiveJson != null) {
+                for (i in 0 until topFiveJson.length()) {
+                    add(parseFamily(topFiveJson.getJSONObject(i)))
+                }
+            }
+        }
+        val families = buildList {
+            if (familiesJson != null) {
+                for (i in 0 until familiesJson.length()) {
+                    add(parseFamily(familiesJson.getJSONObject(i)))
+                }
+            }
+        }
+
+        return result to StrategySummary(
+            totalStrategyFamilies = json.optInt("total_strategy_families", 0),
+            testedFamilies = json.optInt("tested_families", 0),
+            champions = json.optInt("champions", 0),
+            challengers = json.optInt("challengers", 0),
+            untestedFamilies = json.optInt("untested_families", 0),
+            topFive = topFive,
+            families = families,
+            rankingNote = json.optString("ranking_note")
         )
     }
 
