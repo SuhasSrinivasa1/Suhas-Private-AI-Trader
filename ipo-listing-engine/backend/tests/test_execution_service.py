@@ -22,6 +22,19 @@ class FakeGroww:
     def __init__(self):
         self.placed = []
 
+    def get_instrument_by_exchange_and_trading_symbol(self, **kwargs):
+        return {
+            "exchange": "NSE",
+            "segment": "CASH",
+            "trading_symbol": kwargs["trading_symbol"],
+            "lot_size": 1,
+            "buy_allowed": 1,
+            "sell_allowed": 1,
+        }
+
+    def get_quote(self, **kwargs):
+        return {"last_price": 100.0}
+
     def place_order(self, **kwargs):
         self.placed.append(kwargs)
         return {"groww_order_id": "G123", "order_status": "OPEN"}
@@ -84,3 +97,35 @@ def test_reconcile_emits_fill(monkeypatch):
     )
     assert published[-1][0] == "ORDER_FILLED"
     assert published[-1][1]["price"] == 101.5
+
+
+def test_submit_blocks_order_above_budget(monkeypatch):
+    fake = FakeGroww()
+    monkeypatch.setattr(
+        "app.execution_service.live_state_store.load",
+        lambda: LiveState(enabled=True, budget_rupees=10_000),
+    )
+    monkeypatch.setattr(
+        GrowwExecutionService,
+        "_session",
+        lambda self: SimpleNamespace(api=fake),
+    )
+    service = GrowwExecutionService()
+    with pytest.raises(RuntimeError, match="exceeds live budget"):
+        service.submit(ExecutionRequest("ABC", "BUY", 101, "CNC", "MARKET"))
+
+
+def test_submit_blocks_fresh_short_without_shortability(monkeypatch):
+    fake = FakeGroww()
+    monkeypatch.setattr(
+        "app.execution_service.live_state_store.load",
+        lambda: LiveState(enabled=True, budget_rupees=100_000),
+    )
+    monkeypatch.setattr(
+        GrowwExecutionService,
+        "_session",
+        lambda self: SimpleNamespace(api=fake),
+    )
+    service = GrowwExecutionService()
+    with pytest.raises(RuntimeError, match="short is not confirmed eligible"):
+        service.submit(ExecutionRequest("ABC", "SELL", 10, "MIS", "MARKET", shortable=False))
