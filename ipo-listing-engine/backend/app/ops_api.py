@@ -25,6 +25,7 @@ def get_live_state() -> dict:
         "enabled": state.enabled,
         "budget_rupees": state.budget_rupees,
         "updated_at": state.updated_at,
+        "event_id": order_events.latest_id(),
     }
 
 
@@ -63,6 +64,7 @@ async def set_live_state(payload: LiveStateRequest) -> dict:
         "enabled": state.enabled,
         "budget_rupees": state.budget_rupees,
         "updated_at": state.updated_at,
+        "event_id": event.id,
     }
 
 
