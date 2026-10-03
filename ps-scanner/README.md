@@ -1,3 +1,18 @@
+# PS Scanner Quant v6.8.1 — Bounded Performance Analytics Reliability
+
+v6.8.1 is a narrow reliability release over v6.8.0. It fixes the production Mac timeout on `GET /api/performance?group_by=book&limit=1000` without weakening historical evidence or increasing the validator timeout.
+
+- **Root cause:** the passive route used the normal 10-second SQLite timeout, selected full recommendation rows (including large evidence/audit JSON), and ordered CLOSED rows by an unindexed `COALESCE(closed_at,updated_at,created_at)` expression before applying the limit.
+- **Bounded passive contract:** the API uses one short-lived WAL snapshot with a 0.5-second busy timeout and a 2.5-second end-to-end SQL/CPU budget.
+- **Truthful degradation:** if a passive request cannot complete inside its budget, it returns `DEGRADED_BOUNDED` with no partial statistics. It never drops rows and presents the remainder as complete.
+- **Full learning preserved:** internal learning/decay calls still use the complete analytics path with no passive API budget.
+- **Narrow projection:** ordinary book/symbol/side/date aggregations do not load or decode feature, rationale, or audit-envelope JSON that is irrelevant to the requested grouping.
+- **Indexed CLOSED ordering:** expression indexes cover global and per-book CLOSED-outcome chronology while preserving SQLite WAL and the no-process-wide-lock policy.
+- **No network calls:** passive performance analytics remain broker/internet-free.
+- **No trading-policy changes:** scanner cadence, recommendation gates, frozen identities, Static-IP scope, broker reconciliation, risk limits, strategy promotion, point-in-time semantics and the v6.8 evidence fabric are unchanged.
+
+See `ARCHITECTURE_AUDIT_v6.8.1.md` and `RELEASE_v6.8.1.md`.
+
 # PS Scanner Quant v6.8.0 — Shared Evidence Fabric & Adaptive Trading Algorithm
 
 v6.8.0 is a major orchestration release. It keeps the existing high-frequency scanner cadences while changing how evidence is acquired and reused.

@@ -1,8 +1,16 @@
 # PS Scanner handoff
 
-Current source version: **6.8.0**.
+Current source version: **6.8.1**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
+
+## v6.8.1 bounded performance analytics reliability
+
+v6.8.1 is a narrow reliability patch for the production Mac timeout on `/api/performance?group_by=book&limit=1000`. The root cause was an unbounded passive analytics design: normal 10-second SQLite lock waiting, a full-row CLOSED scan ordered by an unindexed close-time expression, and unnecessary decoding of large feature/rationale/audit JSON before grouping.
+
+The passive API now uses one bounded WAL snapshot, a short busy timeout, a SQLite progress handler plus CPU deadline, narrow SQL projection, and CLOSED-order indexes. If the complete requested aggregation cannot finish inside the passive budget, it returns explicit `DEGRADED_BOUNDED` telemetry with no partial statistics. Internal learning analytics remain complete and are not put on the passive API budget. No network calls or global database locks were added.
+
+The v6.8 producer/consumer evidence fabric, scanner cadences, lifecycle policy, point-in-time semantics, Champion/Challenger contract, risk and execution gates are unchanged. Circuit continues to use exact Groww quotes only after cached full-market coarse screening identifies evidence-triggered candidates.
 
 ## v6.8.0 shared evidence fabric / adaptive algorithm
 
@@ -64,4 +72,4 @@ python -m unittest discover -s tests -v
 python3 tools/post_install_validate.py
 ```
 
-The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.7.3.zip` only after tests pass.
+The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.8.1.zip` only after tests pass.
