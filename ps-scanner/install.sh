@@ -16,7 +16,7 @@ MODE="migration"
 cleanup(){ rm -f "$TMPSECRET" "$OLD_STATUS" "$NEW_HEALTH" "$NEW_GROWW" "$PLIST_BACKUP" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "PS Scanner Quant v6.8.1 safe install / in-place upgrade"
+echo "PS Scanner Quant v6.8.2 safe install / in-place upgrade"
 echo "Target: $APP"
 echo
 
@@ -178,7 +178,31 @@ else
 fi
 
 cd "$APP"
-python3 -m venv .venv
+
+select_runtime_python() {
+  local candidate version_ok
+  for candidate in "${PS_SCANNER_PYTHON:-}" python3.12 python3.11 python3.10 python3; do
+    [[ -n "$candidate" ]] || continue
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    version_ok="$("$candidate" - <<'PYVER'
+import sys
+print("1" if sys.version_info >= (3,9) else "0")
+PYVER
+)"
+    [[ "$version_ok" == "1" ]] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+RUNTIME_PYTHON="$(select_runtime_python)" || {
+  echo "Python 3.9+ is required. Prefer Python 3.12 for the cleanest macOS TLS/runtime baseline." >&2
+  exit 1
+}
+echo "Runtime Python: $("$RUNTIME_PYTHON" -c 'import platform,sys; print(sys.version.split()[0], platform.python_implementation())')"
+# The venv is disposable; runtime data/credentials live outside it. Rebuild it so
+# upgrades can move off an older system Python without mixing site-packages.
+rm -rf .venv
+"$RUNTIME_PYTHON" -m venv .venv
 ./.venv/bin/python -m pip install --upgrade pip setuptools wheel
 ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python -m compileall -q psscanner_quant
@@ -217,7 +241,7 @@ PYH
   sleep 2
 done
 if [[ $ok -ne 1 ]]; then
-  echo "v6.8.1 service did not pass application health check. See $APP/logs/service-error.log" >&2
+  echo "v6.8.2 service did not pass application health check. See $APP/logs/service-error.log" >&2
   exit 20
 fi
 
@@ -248,7 +272,7 @@ PYA
 done
 
 if [[ $groww_ok -ne 1 ]]; then
-  echo "v6.8.1 application started, but Groww connectivity could not be verified after explicit probes." >&2
+  echo "v6.8.2 application started, but Groww connectivity could not be verified after explicit probes." >&2
   if [[ $groww_auth_required -gt 0 ]]; then
     echo "Groww returned AUTH_REQUIRED during verification." >&2
   else
@@ -276,7 +300,7 @@ trap cleanup EXIT
 
 echo
 echo "============================================================"
-echo "PS Scanner Quant v6.8.1 INSTALLED"
+echo "PS Scanner Quant v6.8.2 INSTALLED"
 echo "UI: http://127.0.0.1:8765"
 echo "Groww authentication: VERIFIED"
 echo "v6 runtime data/ledger: PRESERVED"
