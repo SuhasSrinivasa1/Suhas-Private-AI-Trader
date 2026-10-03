@@ -31,24 +31,33 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: ps-scanner/requirements.txt
+      - name: Initialize CI diagnostic
+        run: echo "runner=${{ matrix.os }}" > "$RUNNER_TEMP/ps-scanner-ci.log"
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          set -o pipefail
+          echo "=== install dependencies ===" | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          python -m pip install --upgrade pip 2>&1 | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          pip install -r requirements.txt 2>&1 | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
       - name: Compile Python
-        run: python -m compileall -q psscanner_quant tests tools
+        run: |
+          set -o pipefail
+          echo "=== compile ===" | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          python -m compileall -q psscanner_quant tests tools 2>&1 | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
       - name: Unit/regression suite
         run: |
           set -o pipefail
-          python -c "from psscanner_quant.db import init_db; init_db()"
-          python -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/ps-scanner-tests.log"
-      - name: Upload regression failure log
-        if: failure()
+          echo "=== init db ===" | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          python -c "from psscanner_quant.db import init_db; init_db()" 2>&1 | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          echo "=== unittest ===" | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+          python -m unittest discover -s tests -v 2>&1 | tee -a "$RUNNER_TEMP/ps-scanner-ci.log"
+      - name: Upload regression diagnostic
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ps-scanner-regression-log-${{ matrix.os }}
-          path: ${{ runner.temp }}/ps-scanner-tests.log
-          if-no-files-found: warn
+          path: ${{ runner.temp }}/ps-scanner-ci.log
+          if-no-files-found: error
           retention-days: 1
       - name: Validate UI JavaScript syntax
         run: |
