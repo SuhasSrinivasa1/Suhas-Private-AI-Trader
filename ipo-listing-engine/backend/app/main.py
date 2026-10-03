@@ -5,16 +5,20 @@ from datetime import date, datetime, timezone
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from .audit import audit_log
+
 from .connection_api import router as connection_router
 from .domain import LiveFeatures
 from .post_listing_monitor import PostListingOpportunityEngine, PostListingSnapshot
+from .ops_api import router as ops_router
 from .services import ExchangeCalendar, OwnedPositionRegistry, ShadowLedger
 from .strategy import ListingDecisionEngine
 from .strategy_api import router as strategy_router
 
-app = FastAPI(title="IPO Sentinel", version="0.5.0")
+app = FastAPI(title="IPO Sentinel", version="1.0.0")
 app.include_router(connection_router)
 app.include_router(strategy_router)
+app.include_router(ops_router)
 
 calendar = ExchangeCalendar()
 registry = OwnedPositionRegistry()
@@ -67,7 +71,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "ipo-sentinel",
-        "version": "0.5.0",
+        "version": "1.0.0",
         "shadow_capital": shadow.starting_capital,
         "live_execution": False,
         "calendar_ready": calendar.source_ready,
@@ -107,6 +111,15 @@ def decision(payload: DecisionRequest) -> dict:
         data_fresh=payload.data_fresh,
     )
     result = engine.decide(features, payload.budget_rupees)
+    audit_log.append(
+        "DECISION_EVALUATED",
+        symbol=features.symbol,
+        action=str(result.action),
+        score=result.score,
+        confidence=result.confidence,
+        budget_rupees=result.budget_rupees,
+        reason_codes=list(result.reason_codes),
+    )
     return {
         "symbol": features.symbol,
         "action": result.action,
@@ -139,6 +152,15 @@ def post_listing_evaluate(payload: PostListingRequest) -> dict:
         data_fresh=payload.data_fresh,
     )
     result = post_listing_engine.evaluate(calendar, snapshot)
+    audit_log.append(
+        "POST_LISTING_EVALUATED",
+        symbol=result.symbol,
+        trading_day=result.trading_day,
+        action=result.action,
+        opportunity=str(result.opportunity),
+        score=result.score,
+        reasons=list(result.reasons),
+    )
     return {
         "symbol": result.symbol,
         "trading_day": result.trading_day,
