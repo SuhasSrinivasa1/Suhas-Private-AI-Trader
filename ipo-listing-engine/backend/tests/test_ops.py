@@ -14,8 +14,8 @@ def test_live_state_defaults_off(monkeypatch, tmp_path: Path):
 def test_live_state_budget_is_bounded(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("IPO_SENTINEL_LIVE_STATE_FILE", str(tmp_path / "state.json"))
     store = LiveStateStore()
-    assert store.save(True, 999_999).budget_rupees == 100_000
-    assert store.save(True, 1).budget_rupees == 10_000
+    assert store.save(False, 999_999).budget_rupees == 100_000
+    assert store.save(False, 1).budget_rupees == 10_000
 
 
 def test_order_events_are_monotonic(monkeypatch, tmp_path: Path):
