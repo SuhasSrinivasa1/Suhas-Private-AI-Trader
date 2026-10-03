@@ -73,3 +73,18 @@ python3 tools/post_install_validate.py
 ```
 
 The dedicated `.github/workflows/ps-scanner-ci.yml` runs the regression suite on Ubuntu and macOS, validates embedded UI JavaScript and zsh syntax, and builds `PS_Scanner_Quant_v6.8.1.zip` only after tests pass.
+
+
+## v6.8.1 final production validation
+
+Real-Mac validation completed successfully on 2026-10-03 after installation of the final CI artifact.
+
+- 269 local tests passed.
+- `tools/post_install_validate.py` returned `ok=true`.
+- Runtime and deep restored-database checks passed.
+- Groww remained connected and the existing v6 ledger/state was preserved.
+- `/api/performance?group_by=book&limit=1000` returned a complete bounded result over 196 CLOSED rows using `idx_recs_state_closed_perf_cover`; observed internal elapsed time was about 11 ms on the direct check.
+- Static-IP execution state was unavailable during the check and the market was closed, so order execution remained fail-closed as designed. Research/publication remained independent of Static IP.
+- Monthly, ETF, and International shortage/recovery telemetry remained explicit; no quota fabrication or frozen-book replacement was performed.
+
+The Mac runtime currently uses Python 3.9 linked to LibreSSL 2.8.3, which causes a non-fatal urllib3 v2 compatibility warning. No observed Groww/test/validator failure resulted from it in this release.

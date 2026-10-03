@@ -86,3 +86,23 @@ No recommendation or execution rule changes in this release. The following remai
 - WAL + NORMAL SQLite policy and no process-wide Python database lock.
 
 The lifecycle/evidence policy identifiers remain v6.8 because v6.8.1 is additive reliability hardening, not a lifecycle migration.
+
+
+## Production Mac validation — 2026-10-03
+
+The final v6.8.1 installable artifact was validated on the preserved production Mac installation.
+
+Observed results:
+- archive integrity check passed and the v6.8.1 installer completed in upgrade mode;
+- existing v6 runtime data, credentials, settings, recommendation ledger, and strategy state were preserved;
+- Groww authentication remained connected after installation;
+- the local regression suite completed successfully: 269 tests passed;
+- post-install validation returned `ok=true`, `version=6.8.1`, lifecycle `V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM`, runtime database check `ok`, deep backup/restore verification `ok`, and 25 workers;
+- the bounded performance validation scanned 196 CLOSED rows and completed in about 6.3 ms internally;
+- a direct request to `/api/performance?group_by=book&limit=1000` returned `status=COMPLETE`, `complete=true`, used `idx_recs_state_closed_perf_cover`, and completed in about 11 ms internally, well inside the unchanged 6-second HTTP validation budget.
+
+Execution readiness remained correctly fail-closed during this validation because the cached Static-IP observation was unavailable, the NSE market was closed, and the daily order count was unavailable. This did not block research/analytics validation and is consistent with the execution-only Static-IP contract.
+
+The validator also reported frozen-book recovery shortages for Monthly, ETF, and International. These remain explicit recovery states; no recommendation quota was fabricated and no frozen identity was replaced.
+
+The installation emitted an urllib3 warning because the existing Python 3.9 runtime is linked against Apple LibreSSL 2.8.3 while urllib3 v2 prefers OpenSSL 1.1.1+. Groww connectivity, tests, and validation all succeeded, so no dependency-policy change is included in v6.8.1. A future runtime-baseline upgrade can move the Mac installation to a modern OpenSSL-backed Python without changing this release's trading semantics.
