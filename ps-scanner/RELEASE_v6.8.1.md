@@ -22,11 +22,14 @@ That combination allowed a grown production ledger to:
 
 No network/broker call was found in the performance route.
 
+The first v6.8.1 production candidate exposed a second-order SQLite storage cost: although the SELECT was narrow, the chronology index was not covering. Ordinary performance statistics still had to revisit full recommendation table rows, and needed scalar columns such as created/updated/closed timestamps and result occur after large JSON payload fields in the record layout. On the preserved production ledger, those row visits exhausted the 2.5-second passive budget.
+
 ## Fix
 
 v6.8.1:
-- adds CLOSED chronology expression indexes for global and per-book analytics;
+- adds CLOSED chronology expression indexes plus compact covering indexes for global and per-book passive analytics;
 - projects only columns required by the requested grouping;
+- forces ordinary non-JSON performance modes onto the covering index so SQLite does not revisit large recommendation rows merely to reach scalar columns stored after audit/evidence JSON payloads;
 - reuses one SQLite snapshot for family metadata when needed;
 - gives the passive API a 0.5-second SQLite busy timeout and 2.5-second SQL/CPU wall-clock budget;
 - uses SQLite's progress handler and explicit Python deadline checks;
@@ -37,7 +40,7 @@ v6.8.1:
 ## Regression coverage
 
 `tests/test_v681_performance_reliability.py` verifies:
-- the CLOSED chronology query uses `idx_recs_state_closed_order`;
+- the CLOSED chronology query uses `idx_recs_state_closed_perf_cover` as a SQLite COVERING INDEX;
 - book analytics do not decode large JSON evidence columns;
 - busy/aborted bounded reads return explicit degraded telemetry with no partial statistics;
 - internal learning does not silently degrade;

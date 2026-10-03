@@ -15,6 +15,7 @@ v6.8.1 aligns performance with the bounded health/sanity philosophy:
 - SQLite progress interruption;
 - narrow projection by grouping;
 - CLOSED chronology expression indexes;
+- compact covering indexes for ordinary non-JSON performance groupings, avoiding full recommendation-row visits on large preserved ledgers;
 - explicit degraded telemetry instead of a hung request or fabricated partial statistics.
 
 Internal learning keeps the complete analytics path and is not forced through the passive budget.
@@ -57,7 +58,7 @@ The release preserves:
 - no process-wide Python database lock;
 - external/network work outside performance reads.
 
-The new performance indexes reduce scan/sort pressure without changing recommendation data or write semantics.
+The new performance indexes reduce scan/sort pressure without changing recommendation data or write semantics. The first v6.8.1 production candidate still exhausted its 2.5-second passive budget because the chronology index was not covering: SQLite had to revisit table rows containing large audit/evidence payloads to retrieve later scalar columns. The covering-index path removes those table-row reads for ordinary performance modes.
 
 ## No release-scope changes
 

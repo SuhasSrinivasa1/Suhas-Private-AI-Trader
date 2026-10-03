@@ -42,19 +42,19 @@ class V681PerformanceReliabilityTests(unittest.TestCase):
                 rows,
             )
 
-    def test_closed_performance_query_uses_order_index(self):
+    def test_closed_performance_query_uses_covering_index(self):
         with dbmod.db() as con:
             plan = con.execute(
                 """EXPLAIN QUERY PLAN
                    SELECT book,period_key,symbol,side,regime,horizon,result,close_reason,
                           entry_price,current_price,stop_price,created_at,updated_at,closed_at
-                   FROM recommendations
+                   FROM recommendations INDEXED BY idx_recs_state_closed_perf_cover
                    WHERE state='CLOSED'
                    ORDER BY COALESCE(closed_at,updated_at,created_at) ASC
                    LIMIT 1000"""
             ).fetchall()
         detail = " ".join(str(r[3]) for r in plan)
-        self.assertIn("idx_recs_state_closed_order", detail)
+        self.assertIn("COVERING INDEX idx_recs_state_closed_perf_cover", detail)
 
     def test_book_performance_avoids_wide_json_decode(self):
         self._closed_rows()
@@ -68,6 +68,7 @@ class V681PerformanceReliabilityTests(unittest.TestCase):
         contract = out["performance_contract"]
         self.assertTrue(contract["passive_bounded"])
         self.assertTrue(contract["narrow_projection"])
+        self.assertEqual(contract["selected_index"], "idx_recs_state_closed_perf_cover")
         self.assertNotIn("feature_snapshot_json", contract["selected_columns"])
         self.assertNotIn("audit_envelope_json", contract["selected_columns"])
         self.assertFalse(contract["network_calls"])

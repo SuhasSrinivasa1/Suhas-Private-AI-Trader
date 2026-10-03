@@ -54,6 +54,16 @@ CREATE INDEX IF NOT EXISTS idx_recs_book_state ON recommendations(book,state,sco
 CREATE INDEX IF NOT EXISTS idx_recs_period ON recommendations(book,period_key,state);
 CREATE INDEX IF NOT EXISTS idx_recs_state_closed_order ON recommendations(state, COALESCE(closed_at,updated_at,created_at));
 CREATE INDEX IF NOT EXISTS idx_recs_book_state_closed_order ON recommendations(book,state,COALESCE(closed_at,updated_at,created_at));
+CREATE INDEX IF NOT EXISTS idx_recs_state_closed_perf_cover ON recommendations(
+  state, COALESCE(closed_at,updated_at,created_at),
+  book, period_key, symbol, side, regime, horizon, result, close_reason,
+  entry_price, current_price, stop_price, created_at, updated_at, closed_at
+);
+CREATE INDEX IF NOT EXISTS idx_recs_book_state_closed_perf_cover ON recommendations(
+  book, state, COALESCE(closed_at,updated_at,created_at),
+  period_key, symbol, side, regime, horizon, result, close_reason,
+  entry_price, current_price, stop_price, created_at, updated_at, closed_at
+);
 
 -- Defense-in-depth frozen-identity interlock. Early close does not release a frozen
 -- Weekly/Monthly symbol while the two calendar periods overlap.

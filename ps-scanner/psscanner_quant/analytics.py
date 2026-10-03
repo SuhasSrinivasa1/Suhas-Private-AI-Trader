@@ -355,8 +355,18 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
         where.append("book=?")
         args.append(str(book).upper())
     columns = _performance_projection(group_by)
+    needs_payload_json = group_by in {"strategy", "family", "behavior_cluster"}
+    performance_index = None
+    if not needs_payload_json:
+        performance_index = (
+            "idx_recs_book_state_closed_perf_cover"
+            if book else "idx_recs_state_closed_perf_cover"
+        )
+    from_clause = "recommendations" + (
+        f" INDEXED BY {performance_index}" if performance_index else ""
+    )
     sql = (
-        "SELECT " + ",".join(columns) + " FROM recommendations WHERE " + " AND ".join(where) +
+        "SELECT " + ",".join(columns) + " FROM " + from_clause + " WHERE " + " AND ".join(where) +
         " ORDER BY COALESCE(closed_at,updated_at,created_at) ASC LIMIT ?"
     )
     args.append(limit)
@@ -436,6 +446,7 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
             "elapsed_ms": round((time.monotonic() - started) * 1000.0, 1),
             "narrow_projection": True,
             "selected_columns": columns,
+            "selected_index": performance_index,
             "partial_rows_published": False,
             "deep_learning_uses_passive_budget": False,
         },
