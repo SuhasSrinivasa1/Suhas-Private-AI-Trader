@@ -70,9 +70,23 @@ class GrowwExecutionGateway:
             return self.groww.TRANSACTION_TYPE_SELL
         raise ValueError(f"Unsupported transaction type: {side}")
 
-    def place(self, order: ExecutionOrder, *, is_exit: bool = False) -> dict[str, Any]:
+    def _validate_order(self, order: ExecutionOrder) -> None:
         if order.quantity <= 0:
             raise ValueError("Order quantity must be positive")
+        ref = order.order_reference_id.strip()
+        if not (8 <= len(ref) <= 20):
+            raise ValueError("Groww order reference ID must be 8 to 20 characters")
+        if ref.count("-") > 2 or any(not (ch.isalnum() or ch == "-") for ch in ref):
+            raise ValueError("Groww order reference ID must be alphanumeric with at most two hyphens")
+        if order.order_type.upper() == "LIMIT" and (order.price is None or order.price <= 0):
+            raise ValueError("Limit order requires a positive price")
+        if order.order_type.upper() in {"SL", "SL_M"} and (
+            order.trigger_price is None or order.trigger_price <= 0
+        ):
+            raise ValueError("Stop order requires a positive trigger price")
+
+    def place(self, order: ExecutionOrder, *, is_exit: bool = False) -> dict[str, Any]:
+        self._validate_order(order)
         event_type = "EXIT_PLACING" if is_exit else "ORDER_PLACING"
         order_events.publish(
             event_type,
