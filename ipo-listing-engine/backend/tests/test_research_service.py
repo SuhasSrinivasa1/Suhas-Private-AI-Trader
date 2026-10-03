@@ -78,6 +78,42 @@ def test_listing_session_allows_after_10_when_all_checks_pass():
         nse_symbol_confirmed=True,
         groww_instrument_resolved=True,
         live_quote_available=True,
+        buy_allowed=True,
+        lot_size=1,
+        live_price=100.0,
+        budget_rupees=100_000,
     )
     assert result.can_submit_continuous_order is True
     assert result.state == "CONTINUOUS_TRADING"
+
+
+def test_listing_session_blocks_sme_lot_above_budget():
+    result = listing_session_gate(
+        now=datetime(2026, 10, 5, 10, 1, tzinfo=IST),
+        listing_date=date(2026, 10, 5),
+        nse_symbol_confirmed=True,
+        groww_instrument_resolved=True,
+        live_quote_available=True,
+        buy_allowed=True,
+        lot_size=1200,
+        live_price=110.0,
+        budget_rupees=100_000,
+    )
+    assert result.can_submit_continuous_order is False
+    assert result.state == "WAIT_MIN_LOT_ABOVE_BUDGET"
+
+
+def test_listing_session_blocks_when_groww_buy_not_allowed():
+    result = listing_session_gate(
+        now=datetime(2026, 10, 5, 10, 1, tzinfo=IST),
+        listing_date=date(2026, 10, 5),
+        nse_symbol_confirmed=True,
+        groww_instrument_resolved=True,
+        live_quote_available=True,
+        buy_allowed=False,
+        lot_size=1,
+        live_price=100.0,
+        budget_rupees=100_000,
+    )
+    assert result.can_submit_continuous_order is False
+    assert result.state == "WAIT_BUY_NOT_ALLOWED"
