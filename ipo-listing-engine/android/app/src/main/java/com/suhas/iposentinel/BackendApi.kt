@@ -47,6 +47,29 @@ data class StrategySummary(
     val rankingNote: String = ""
 )
 
+data class LiveStateStatus(
+    val enabled: Boolean = false,
+    val budgetRupees: Int = 100_000,
+    val updatedAt: String? = null
+)
+
+data class OrderLifecycleEvent(
+    val id: Long,
+    val timestamp: String,
+    val eventType: String,
+    val symbol: String? = null,
+    val side: String? = null,
+    val quantity: Int? = null,
+    val price: Double? = null,
+    val orderId: String? = null,
+    val message: String? = null
+)
+
+data class OrderEventBatch(
+    val events: List<OrderLifecycleEvent>,
+    val lastId: Long
+)
+
 data class ValidationStatus(
     val growwAuthOk: Boolean = false,
     val detectedEgressIp: String? = null,
@@ -139,6 +162,67 @@ class BackendApi {
             families = families,
             rankingNote = json.optString("ranking_note")
         )
+    }
+
+    suspend fun fetchLiveState(): Pair<ApiResult, LiveStateStatus?> {
+        val result = request("GET", "/live/state", null)
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+        return result to LiveStateStatus(
+            enabled = json.optBoolean("enabled", false),
+            budgetRupees = json.optInt("budget_rupees", 100_000),
+            updatedAt = json.optString("updated_at").ifBlank { null }
+        )
+    }
+
+    suspend fun setLiveState(enabled: Boolean, budgetRupees: Int): Pair<ApiResult, LiveStateStatus?> {
+        val payload = JSONObject()
+            .put("enabled", enabled)
+            .put("budget_rupees", budgetRupees)
+            .toString()
+        val result = request("POST", "/live/state", payload)
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+        return result to LiveStateStatus(
+            enabled = json.optBoolean("enabled", false),
+            budgetRupees = json.optInt("budget_rupees", budgetRupees),
+            updatedAt = json.optString("updated_at").ifBlank { null }
+        )
+    }
+
+    suspend fun fetchOrderEvents(afterId: Long): Pair<ApiResult, OrderEventBatch?> {
+        val result = request("GET", "/events/orders?after_id=" + afterId + "&limit=100", null)
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+        val arr = json.optJSONArray("events")
+        val events = buildList {
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    add(
+                        OrderLifecycleEvent(
+                            id = obj.optLong("id", 0L),
+                            timestamp = obj.optString("timestamp"),
+                            eventType = obj.optString("event_type"),
+                            symbol = obj.optString("symbol").ifBlank { null },
+                            side = obj.optString("side").ifBlank { null },
+                            quantity = if (obj.isNull("quantity")) null else obj.optInt("quantity"),
+                            price = if (obj.isNull("price")) null else obj.optDouble("price"),
+                            orderId = obj.optString("order_id").ifBlank { null },
+                            message = obj.optString("message").ifBlank { null }
+                        )
+                    )
+                }
+            }
+        }
+        return result to OrderEventBatch(
+            events = events,
+            lastId = json.optLong("last_id", afterId)
+        )
+    }
+
+    suspend fun exportAudit(days: Int = 7): ApiResult {
+        return request("GET", "/audit/export?days=" + days.coerceIn(1, 31), null)
     }
 
     suspend fun validate(): Pair<ApiResult, ValidationStatus?> {
