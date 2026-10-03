@@ -1,11 +1,11 @@
-name: Build IPO Sentinel APK
+name: Build IPO Sentinel Stable
 
 on:
   push:
     branches:
       - feature/ipo-listing-engine-bootstrap
     paths:
-      - "ipo-listing-engine/android/**"
+      - "ipo-listing-engine/**"
       - ".github/workflows/ipo-sentinel-apk.yml"
   workflow_dispatch:
 
@@ -13,9 +13,39 @@ permissions:
   contents: read
 
 jobs:
-  build-apk:
+  backend-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ipo-listing-engine/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend + tests
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile backend
+        run: python -m compileall -q app scripts tests
+
+      - name: Run backend tests
+        run: python -m pytest -q
+
+      - name: Dependency check
+        run: python -m pip check
+
+  build-apk:
+    needs: backend-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
     env:
       IPO_SENTINEL_API_URL: ${{ secrets.IPO_SENTINEL_API_URL }}
       IPO_SENTINEL_DEVICE_KEY: ${{ secrets.IPO_SENTINEL_DEVICE_KEY }}
@@ -44,21 +74,22 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Build debug APK
+      - name: Android lint
+        run: gradle :app:lintDebug --stacktrace
+
+      - name: Build stable debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Prepare artifact
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/IPO-Sentinel-v0.5.0-debug.apk
-          sha256sum release/IPO-Sentinel-v0.5.0-debug.apk > release/SHA256SUMS.txt
+          cp app/build/outputs/apk/debug/app-debug.apk release/IPO-Sentinel-v1.0.0-debug.apk
+          sha256sum release/IPO-Sentinel-v1.0.0-debug.apk > release/SHA256SUMS.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: IPO-Sentinel-v0.5.0-apk
+          name: IPO-Sentinel-v1.0.0-stable
           path: ipo-listing-engine/android/release/*
           if-no-files-found: error
           retention-days: 30
-
-# v0.5.0 settings build
