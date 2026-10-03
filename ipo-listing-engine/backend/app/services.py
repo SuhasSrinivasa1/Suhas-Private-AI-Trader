@@ -86,7 +86,8 @@ class ShadowLedger:
         self.starting_capital = float(capital)
         self.cash = float(capital)
         self.positions: dict[str, tuple[int, float]] = {}
-        self.realized_pnl = 0.0
+        self.realized_gross_pnl = 0.0
+        self.charges_total = 0.0
 
     def apply(self, fill: ShadowFill) -> None:
         symbol = fill.symbol.upper()
@@ -96,6 +97,7 @@ class ShadowLedger:
 
         self.cash -= signed * fill.price
         self.cash -= fill.charges
+        self.charges_total += fill.charges
 
         if qty and (qty > 0) != (new_qty > 0) and new_qty != 0:
             raise ValueError("Shadow ledger does not allow crossing through flat in one fill")
@@ -106,12 +108,12 @@ class ShadowLedger:
                 avg = ((qty * avg) + (signed * fill.price)) / gross_qty if gross_qty else 0.0
             else:
                 covered = min(abs(qty), signed)
-                self.realized_pnl += covered * (avg - fill.price) - fill.charges
+                self.realized_gross_pnl += covered * (avg - fill.price)
         else:
             sold = abs(signed)
             if qty > 0:
                 closed = min(qty, sold)
-                self.realized_pnl += closed * (fill.price - avg) - fill.charges
+                self.realized_gross_pnl += closed * (fill.price - avg) - fill.charges
             elif qty <= 0:
                 gross_qty = abs(qty) + sold
                 avg = ((abs(qty) * avg) + (sold * fill.price)) / gross_qty if gross_qty else 0.0
@@ -127,11 +129,15 @@ class ShadowLedger:
                 continue
             mark = float(prices.get(symbol, avg))
             unrealized += qty * (mark - avg)
+        realized_net = self.realized_gross_pnl - self.charges_total
+        net_pnl = realized_net + unrealized
         return {
             "starting_capital": round(self.starting_capital, 2),
             "cash": round(self.cash, 2),
-            "realized_pnl": round(self.realized_pnl, 2),
+            "realized_gross_pnl": round(self.realized_gross_pnl, 2),
+            "charges": round(self.charges_total, 2),
+            "realized_pnl": round(realized_net, 2),
             "unrealized_pnl": round(unrealized, 2),
-            "net_pnl": round(self.realized_pnl + unrealized, 2),
-            "net_return_pct": round((self.realized_pnl + unrealized) / self.starting_capital * 100, 4),
+            "net_pnl": round(net_pnl, 2),
+            "net_return_pct": round(net_pnl / self.starting_capital * 100, 4),
         }
