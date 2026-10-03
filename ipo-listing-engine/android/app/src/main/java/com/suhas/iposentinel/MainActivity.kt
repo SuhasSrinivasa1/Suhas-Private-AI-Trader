@@ -583,6 +583,29 @@ private fun GrowwSettingsScreen(
                 ) {
                     Text("Open Notification Settings")
                 }
+            } else {
+                OutlinedButton(
+                    onClick = {
+                        NotificationHelper.showOrderEvent(
+                            context,
+                            OrderLifecycleEvent(
+                                id = System.currentTimeMillis(),
+                                timestamp = java.time.Instant.now().toString(),
+                                eventType = "ORDER_FILLED",
+                                symbol = "TEST",
+                                side = "BUY",
+                                quantity = 1,
+                                price = 100.0,
+                                orderId = "TEST",
+                                message = "Notification test only — no order was placed"
+                            )
+                        )
+                        AppAudit.log(context, "TEST_NOTIFICATION_SENT")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Send Test Notification")
+                }
             }
         }
 
