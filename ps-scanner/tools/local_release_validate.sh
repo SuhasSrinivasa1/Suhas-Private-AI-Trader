@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="6.8.1"
-EXPECTED_BRANCH="release/ps-scanner-v6.8.1-performance"
+VERSION="6.8.2"
+EXPECTED_BRANCH="release/ps-scanner-v6.8.2-performance"
 LINUX_PLATFORM="${LINUX_PLATFORM:-linux/amd64}"
 PYTHON_BIN="${PYTHON_BIN:-python3.12}"
 
@@ -12,7 +12,7 @@ REPO_ROOT="$(git -C "$PS_DIR" rev-parse --show-toplevel)"
 BRANCH="$(git -C "$REPO_ROOT" branch --show-current)"
 HEAD_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 DIST_DIR="$REPO_ROOT/dist"
-TMP_ROOT="$(mktemp -d "$REPO_ROOT/.psscanner-v681.XXXXXX")"
+TMP_ROOT="$(mktemp -d "$REPO_ROOT/.psscanner-v682.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 fail() {
@@ -66,9 +66,9 @@ run_native() {
 from pathlib import Path
 html=Path("static/index.html").read_text()
 js=html.rsplit("<script>",1)[1].split("</script>",1)[0]
-Path("/tmp/ps-scanner-ui-v681.js").write_text(js)
+Path("/tmp/ps-scanner-ui-v682.js").write_text(js)
 PY
-    node --check /tmp/ps-scanner-ui-v681.js
+    node --check /tmp/ps-scanner-ui-v682.js
     zsh -n install.sh
     zsh -n run.sh
   )
@@ -109,9 +109,9 @@ run_linux() {
 from pathlib import Path
 html=Path("static/index.html").read_text()
 js=html.rsplit("<script>",1)[1].split("</script>",1)[0]
-Path("/tmp/ps-scanner-ui-v681.js").write_text(js)
+Path("/tmp/ps-scanner-ui-v682.js").write_text(js)
 PY
-      node --check /tmp/ps-scanner-ui-v681.js
+      node --check /tmp/ps-scanner-ui-v682.js
       zsh -n install.sh
       zsh -n run.sh
     '
