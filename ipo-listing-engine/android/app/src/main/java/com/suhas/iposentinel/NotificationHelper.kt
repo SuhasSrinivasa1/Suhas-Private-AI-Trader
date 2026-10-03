@@ -1,5 +1,6 @@
 package com.suhas.iposentinel
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -57,6 +58,7 @@ object NotificationHelper {
             .build()
     }
 
+    @SuppressLint("MissingPermission")
     fun showOrderEvent(context: Context, event: OrderLifecycleEvent) {
         if (!notificationsAllowed(context)) return
 
