@@ -389,11 +389,16 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
         for key in _group_keys(row, group_by, family_map):
             grouped[key].append(row)
     groups: List[Dict[str, Any]] = []
-    for idx, (key, values) in enumerate(grouped.items()):
-        if deadline is not None and idx % 32 == 0 and time.monotonic() > deadline:
-            return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
-                                         "performance statistics budget exceeded", len(rows))
-        groups.append(_group_stats(key, values, deadline))
+    try:
+        for idx, (key, values) in enumerate(grouped.items()):
+            if deadline is not None and idx % 32 == 0 and time.monotonic() > deadline:
+                raise TimeoutError("performance statistics budget exceeded")
+            groups.append(_group_stats(key, values, deadline))
+    except TimeoutError as exc:
+        if not bounded:
+            raise
+        return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
+                                     str(exc), len(rows))
     if group_by in {"time_bucket","behavior_cluster"}:
         settings=load_settings();min_n=int(settings.get("cohort_min_samples_for_live_use",50) or 50);max_width=float(settings.get("cohort_max_wilson_width_for_live_use",.30) or .30)
         for g in groups:
