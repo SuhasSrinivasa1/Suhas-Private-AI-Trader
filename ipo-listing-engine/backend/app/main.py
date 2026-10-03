@@ -15,17 +15,43 @@ from .ops_api import router as ops_router
 from .services import ExchangeCalendar, OwnedPositionRegistry, ShadowLedger
 from .strategy import ListingDecisionEngine
 from .strategy_api import router as strategy_router
+from .research_api import router as research_router, bind_service as bind_research_api
+from .research_service import bind_research_service
+from .scheduler import ResearchScheduler
 
 app = FastAPI(title="IPO Sentinel", version="1.0.0")
 app.include_router(connection_router)
 app.include_router(strategy_router)
 app.include_router(ops_router)
+app.include_router(research_router)
 
 calendar = ExchangeCalendar()
 registry = OwnedPositionRegistry()
 shadow = ShadowLedger(100_000)
 engine = ListingDecisionEngine()
 post_listing_engine = PostListingOpportunityEngine()
+research_service = bind_research_service(calendar)
+bind_research_api(research_service)
+research_scheduler = ResearchScheduler(research_service.refresh).build()
+
+
+@app.on_event("startup")
+def _start_background_research() -> None:
+    if not research_scheduler.running:
+        research_scheduler.start()
+    # Immediate startup refresh means a weekend/service restart does not wait until 16:05.
+    research_scheduler.add_job(
+        lambda: research_service.refresh(trigger="startup"),
+        id="ipo_research_startup_once",
+        replace_existing=True,
+    )
+
+
+@app.on_event("shutdown")
+def _stop_background_research() -> None:
+    if research_scheduler.running:
+        research_scheduler.shutdown(wait=False)
+
 
 
 class DecisionRequest(BaseModel):
