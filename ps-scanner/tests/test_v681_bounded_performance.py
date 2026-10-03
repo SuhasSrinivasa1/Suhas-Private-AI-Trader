@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 
 from psscanner_quant import analytics, db as dbmod, main
+from psscanner_quant.constants import VERSION
+from psscanner_quant.lifecycle import lifecycle_payload
 
 
 class V681BoundedPerformanceTests(unittest.TestCase):
@@ -36,6 +38,11 @@ class V681BoundedPerformanceTests(unittest.TestCase):
                     created_at,updated_at,closed_at,result,close_reason,audit_envelope_json
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",rows
             )
+
+    def test_version_and_lifecycle_policy(self):
+        self.assertEqual(VERSION,"6.8.1")
+        self.assertEqual(lifecycle_payload()["policy_version"],
+                         "V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM")
 
     def test_schema_indexes_closed_ledger_chronology(self):
         with dbmod.db() as con:
