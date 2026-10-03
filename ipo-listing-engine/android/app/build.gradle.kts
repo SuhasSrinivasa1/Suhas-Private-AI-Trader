@@ -24,12 +24,12 @@ android {
         buildConfigField(
             "String",
             "IPO_SENTINEL_API_URL",
-            "\"\${escapedBuildConfig(ipoSentinelApiUrl)}\""
+            "\"${escapedBuildConfig(ipoSentinelApiUrl)}\""
         )
         buildConfigField(
             "String",
             "IPO_SENTINEL_DEVICE_KEY",
-            "\"\${escapedBuildConfig(ipoSentinelDeviceKey)}\""
+            "\"${escapedBuildConfig(ipoSentinelDeviceKey)}\""
         )
     }
 
