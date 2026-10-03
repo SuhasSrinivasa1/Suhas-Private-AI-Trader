@@ -110,6 +110,45 @@ class AttributableLiveLedger:
         }
         state["realized_gross_pnl"] = float(state.get("realized_gross_pnl") or 0.0) + realized
 
+    def register_order(
+        self,
+        *,
+        order_id: str,
+        symbol: str,
+        side: str,
+        reference_id: str,
+    ) -> None:
+        oid = order_id.strip()
+        ticker = symbol.upper().strip()
+        direction = side.upper().strip()
+        ref = reference_id.strip()
+        if not oid or not ticker or not ref.startswith("IPO"):
+            raise ValueError("Only explicitly identified IPO Sentinel orders may enter the live ledger")
+        if direction not in {"BUY", "SELL"}:
+            raise ValueError("Live ledger side must be BUY or SELL")
+        with self._lock:
+            state = self._read()
+            orders = state.setdefault("orders", {})
+            existing = orders.get(oid)
+            if existing:
+                if (
+                    str(existing.get("symbol")) != ticker
+                    or str(existing.get("side")) != direction
+                    or str(existing.get("reference_id")) != ref
+                ):
+                    raise ValueError("Broker order ID is already registered with a different identity")
+                return
+            orders[oid] = {
+                "symbol": ticker,
+                "side": direction,
+                "reference_id": ref,
+                "cumulative_quantity": 0,
+                "average_price": 0.0,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            state["updated_at"] = orders[oid]["updated_at"]
+            self._write(state)
+
     def record_cumulative_fill(
         self,
         *,
@@ -133,7 +172,11 @@ class AttributableLiveLedger:
         with self._lock:
             state = self._read()
             orders = state.setdefault("orders", {})
-            previous = orders.get(oid) or {}
+            previous = orders.get(oid)
+            if not isinstance(previous, dict):
+                raise ValueError("Broker order is not registered as an IPO Sentinel order")
+            if str(previous.get("symbol") or "") != ticker or str(previous.get("side") or "") != direction:
+                raise ValueError("Broker fill identity does not match the registered IPO Sentinel order")
             prior_qty = int(previous.get("cumulative_quantity") or 0)
             prior_avg = float(previous.get("average_price") or 0.0)
             if cumulative_quantity <= prior_qty:
@@ -171,6 +214,7 @@ class AttributableLiveLedger:
             orders[oid] = {
                 "symbol": ticker,
                 "side": direction,
+                "reference_id": str(previous.get("reference_id") or ""),
                 "cumulative_quantity": cumulative_quantity,
                 "average_price": average_price,
                 "updated_at": timestamp,
