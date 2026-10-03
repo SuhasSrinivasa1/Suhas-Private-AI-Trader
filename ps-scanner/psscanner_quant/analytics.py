@@ -10,7 +10,9 @@ trading P/L metrics.
 
 import json
 import math
+import sqlite3
 import statistics
+import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -21,6 +23,67 @@ from .config import load_settings
 
 VALID_TRADING_RESULTS = {"WIN", "LOSS", "MISS"}
 NON_TRADING_RESULTS = {"VOID"}
+
+PERFORMANCE_API_QUERY_BUDGET_SECONDS = 2.5
+PERFORMANCE_API_DB_TIMEOUT_SECONDS = 0.5
+_PERFORMANCE_BASE_COLUMNS = (
+    "book", "period_key", "symbol", "side", "regime", "horizon", "result", "close_reason",
+    "entry_price", "current_price", "stop_price", "created_at", "updated_at", "closed_at",
+)
+
+
+def _performance_projection(group_by: str) -> List[str]:
+    """Select only fields needed for the requested aggregation.
+
+    Large audit/evidence JSON columns are deliberately excluded from passive performance
+    reads unless a grouping actually needs the relevant strategy/behavior context.
+    """
+    g = str(group_by or "book").lower()
+    cols = list(_PERFORMANCE_BASE_COLUMNS)
+    if g in {"strategy", "family"}:
+        cols.append("strategy_ids_json")
+    if g == "behavior_cluster":
+        cols.extend(("feature_snapshot_json", "rationale_json"))
+    return cols
+
+
+def _outcome_policy() -> Dict[str, Any]:
+    return {
+        "trading_results": sorted(VALID_TRADING_RESULTS),
+        "voids": "counted separately and excluded from P/L, expectancy, profit factor and win-rate denominator",
+        "confidence": "Wilson 95% interval on WIN / (WIN+LOSS+MISS)",
+        "max_drawdown": "cumulative directional-return percentage points in close-time order; descriptive, not portfolio NAV",
+    }
+
+
+def _degraded_performance(book: Optional[str], group_by: str, limit: int, started: float,
+                          budget_seconds: Optional[float], db_timeout_seconds: float,
+                          reason: str, rows_loaded: int = 0) -> Dict[str, Any]:
+    return {
+        "generated_at": now_iso(),
+        "book": str(book).upper() if book else None,
+        "group_by": str(group_by).lower(),
+        "status": "DEGRADED_BOUNDED",
+        "complete": False,
+        "rows_scanned": 0,
+        "rows_loaded_before_abort": int(rows_loaded),
+        "requested_limit": int(limit),
+        "total": _group_stats("ALL", []),
+        "groups": [],
+        "degraded_reason": str(reason)[:180],
+        "outcome_policy": _outcome_policy(),
+        "performance_contract": {
+            "passive_bounded": True,
+            "network_calls": False,
+            "db_connections": 1,
+            "db_timeout_seconds": float(db_timeout_seconds),
+            "query_budget_seconds": float(budget_seconds or 0),
+            "elapsed_ms": round((time.monotonic() - started) * 1000.0, 1),
+            "narrow_projection": True,
+            "partial_rows_published": False,
+            "deep_learning_uses_passive_budget": False,
+        },
+    }
 
 
 def _decode_json(raw: Any, default: Any) -> Any:
@@ -160,10 +223,12 @@ def _behavior_cluster(row: Dict[str, Any]) -> str:
     return f"{regime}|{vol}|{sector}"
 
 
-def _strategy_family_map() -> Dict[str, str]:
+def _strategy_family_map(con=None) -> Dict[str, str]:
     try:
-        with db() as con:
+        if con is not None:
             return {str(r[0]): str(r[1] or "UNKNOWN") for r in con.execute("SELECT strategy_id,family FROM strategies").fetchall()}
+        with db() as own:
+            return {str(r[0]): str(r[1] or "UNKNOWN") for r in own.execute("SELECT strategy_id,family FROM strategies").fetchall()}
     except Exception:
         return {}
 
@@ -268,27 +333,66 @@ def _group_stats(key: str, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def performance(book: Optional[str] = None, group_by: str = "book", limit: int = 10000) -> Dict[str, Any]:
+def performance(book: Optional[str] = None, group_by: str = "book", limit: int = 10000,
+                budget_seconds: Optional[float] = None, db_timeout_seconds: float = 10.0) -> Dict[str, Any]:
+    """Aggregate immutable CLOSED recommendation evidence.
+
+    Internal learning calls remain complete/unbounded by default. Passive API callers can
+    pass a wall-clock budget; if SQLite or CPU work cannot finish inside it, the function
+    returns explicit degraded telemetry and never publishes partial statistics.
+    """
+    started = time.monotonic()
     limit = max(100, min(int(limit or 10000), 50000))
+    group_by = str(group_by or "book").lower()
+    bounded = budget_seconds is not None
+    budget = max(0.05, float(budget_seconds)) if bounded else None
+    deadline = started + budget if budget is not None else None
     where = ["state='CLOSED'"]
     args: List[Any] = []
     if book:
         where.append("book=?")
         args.append(str(book).upper())
+    columns = _performance_projection(group_by)
     sql = (
-        "SELECT * FROM recommendations WHERE " + " AND ".join(where) +
+        "SELECT " + ",".join(columns) + " FROM recommendations WHERE " + " AND ".join(where) +
         " ORDER BY COALESCE(closed_at,updated_at,created_at) ASC LIMIT ?"
     )
     args.append(limit)
-    with db() as con:
-        rows = [decode_recommendation(dict(r)) for r in con.execute(sql, tuple(args)).fetchall()]
-    family_map = _strategy_family_map() if str(group_by).lower() == "family" else {}
+    rows: List[Dict[str, Any]] = []
+    family_map: Dict[str, str] = {}
+    try:
+        with db(timeout_seconds=db_timeout_seconds) as con:
+            if deadline is not None:
+                con.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 1000)
+            cursor = con.execute(sql, tuple(args))
+            for raw in cursor:
+                if deadline is not None and time.monotonic() > deadline:
+                    raise TimeoutError("performance CPU/decode budget exceeded")
+                rows.append(decode_recommendation(dict(raw)))
+            if group_by == "family":
+                family_map = _strategy_family_map(con)
+            if deadline is not None:
+                con.set_progress_handler(None, 0)
+    except (sqlite3.OperationalError, TimeoutError) as exc:
+        if not bounded:
+            raise
+        return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
+                                     f"{type(exc).__name__}: {exc}", len(rows))
+
     grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    for row in rows:
+    for idx, row in enumerate(rows):
+        if deadline is not None and idx % 64 == 0 and time.monotonic() > deadline:
+            return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
+                                         "performance grouping budget exceeded", len(rows))
         for key in _group_keys(row, group_by, family_map):
             grouped[key].append(row)
-    groups = [_group_stats(key, values) for key, values in grouped.items()]
-    if str(group_by).lower() in {"time_bucket","behavior_cluster"}:
+    groups: List[Dict[str, Any]] = []
+    for idx, (key, values) in enumerate(grouped.items()):
+        if deadline is not None and idx % 32 == 0 and time.monotonic() > deadline:
+            return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
+                                         "performance statistics budget exceeded", len(rows))
+        groups.append(_group_stats(key, values))
+    if group_by in {"time_bucket","behavior_cluster"}:
         settings=load_settings();min_n=int(settings.get("cohort_min_samples_for_live_use",50) or 50);max_width=float(settings.get("cohort_max_wilson_width_for_live_use",.30) or .30)
         for g in groups:
             width=g.get("win_rate_wilson_width");expectancy=g.get("expectancy_pct");pf=g.get("profit_factor")
@@ -296,19 +400,31 @@ def performance(book: Optional[str] = None, group_by: str = "book", limit: int =
             g["live_use_eligible"]=eligible
             g["live_use_gate"]={"minimum_samples":min_n,"maximum_wilson_width":max_width,"positive_expectancy_required":True,"profit_factor_gt_1_required":True,"automatic_activation":False}
     groups.sort(key=lambda x: (x.get("trading_count") or 0, x.get("group") or ""), reverse=True)
+    if deadline is not None and time.monotonic() > deadline:
+        return _degraded_performance(book, group_by, limit, started, budget, db_timeout_seconds,
+                                     "performance finalization budget exceeded", len(rows))
     total = _group_stats("ALL", rows)
     return {
         "generated_at": now_iso(),
         "book": str(book).upper() if book else None,
-        "group_by": str(group_by).lower(),
+        "group_by": group_by,
+        "status": "COMPLETE",
+        "complete": True,
         "rows_scanned": len(rows),
         "total": total,
         "groups": groups,
-        "outcome_policy": {
-            "trading_results": sorted(VALID_TRADING_RESULTS),
-            "voids": "counted separately and excluded from P/L, expectancy, profit factor and win-rate denominator",
-            "confidence": "Wilson 95% interval on WIN / (WIN+LOSS+MISS)",
-            "max_drawdown": "cumulative directional-return percentage points in close-time order; descriptive, not portfolio NAV",
+        "outcome_policy": _outcome_policy(),
+        "performance_contract": {
+            "passive_bounded": bounded,
+            "network_calls": False,
+            "db_connections": 1,
+            "db_timeout_seconds": float(db_timeout_seconds),
+            "query_budget_seconds": budget,
+            "elapsed_ms": round((time.monotonic() - started) * 1000.0, 1),
+            "narrow_projection": True,
+            "selected_columns": columns,
+            "partial_rows_published": False,
+            "deep_learning_uses_passive_budget": False,
         },
     }
 
