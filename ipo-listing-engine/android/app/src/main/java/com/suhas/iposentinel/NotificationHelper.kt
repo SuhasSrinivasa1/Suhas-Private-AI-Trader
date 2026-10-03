@@ -39,6 +39,9 @@ object NotificationHelper {
     }
 
     fun notificationsAllowed(context: Context): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            return false
+        }
         return Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(
                 context,
@@ -98,9 +101,13 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
-        NotificationManagerCompat.from(context).notify(
-            2000 + (event.id % 100000).toInt(),
-            notification
-        )
+        try {
+            NotificationManagerCompat.from(context).notify(
+                2000 + (event.id % 100000).toInt(),
+                notification
+            )
+        } catch (_: SecurityException) {
+            // Permission can be revoked while the live monitor is running.
+        }
     }
 }
