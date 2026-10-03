@@ -246,6 +246,7 @@ class ResearchCandidate:
     symbol_resolved: bool
     groww_resolution_status: str
     resolution_status: str
+    trading_day_number: int | None = None
 
 
 @dataclass(frozen=True)
@@ -582,6 +583,16 @@ class DailyResearchService:
                     def allowed(name: str) -> bool:
                         return str((row or {}).get(name) or "").strip().lower() in {"1", "true", "yes"}
 
+                    trading_day_no: int | None = None
+                    if item["listing_date"] and self.calendar.source_ready and item["listing_date"] <= now.date():
+                        cursor = item["listing_date"]
+                        count = 0
+                        while cursor <= now.date():
+                            if self.calendar.is_trading_day(cursor):
+                                count += 1
+                            cursor += timedelta(days=1)
+                        trading_day_no = count
+
                     if not item["symbol"]:
                         lifecycle = "RESEARCHED_NO_SYMBOL"
                         status = "RESEARCH_CONTINUES_SYMBOL_PENDING"
@@ -598,8 +609,15 @@ class DailyResearchService:
                         lifecycle = "LISTING_DAY_WATCH"
                         status = "WAIT_LISTING_SESSION_AND_LIVE_DATA"
                     elif item["listing_date"] < now.date():
-                        lifecycle = "D1_D30_MONITOR"
-                        status = "POST_LISTING_MONITOR"
+                        if trading_day_no is None:
+                            lifecycle = "D1_D30_MONITOR"
+                            status = "WAIT_OFFICIAL_TRADING_DAY_COUNT"
+                        elif trading_day_no <= 30:
+                            lifecycle = "D1_D30_MONITOR"
+                            status = f"POST_LISTING_MONITOR_D{trading_day_no}"
+                        else:
+                            lifecycle = "COMPLETE"
+                            status = "D30_WINDOW_COMPLETE"
                     else:
                         lifecycle = "GROWW_INSTRUMENT_RESOLVED"
                         status = "RESOLVED_PRE_LISTING"
@@ -647,6 +665,7 @@ class DailyResearchService:
                             symbol_resolved=final_listing_confirmed and resolution.status == "RESOLVED",
                             groww_resolution_status=resolution.status,
                             resolution_status=status,
+                            trading_day_number=trading_day_no,
                         )
                     )
 
@@ -671,7 +690,27 @@ class DailyResearchService:
                             pass
                     if keep:
                         try:
-                            candidates.append(ResearchCandidate(**saved))
+                            restored = dict(saved)
+                            listing_date_value = None
+                            try:
+                                listing_date_value = date.fromisoformat(str(restored.get("listing_date")))
+                            except (TypeError, ValueError):
+                                pass
+                            if listing_date_value and listing_date_value < now.date() and self.calendar.source_ready:
+                                cursor = listing_date_value
+                                count = 0
+                                while cursor <= now.date():
+                                    if self.calendar.is_trading_day(cursor):
+                                        count += 1
+                                    cursor += timedelta(days=1)
+                                restored["trading_day_number"] = count
+                                if count <= 30:
+                                    restored["lifecycle_state"] = "D1_D30_MONITOR"
+                                    restored["resolution_status"] = f"POST_LISTING_MONITOR_D{count}"
+                                else:
+                                    restored["lifecycle_state"] = "COMPLETE"
+                                    restored["resolution_status"] = "D30_WINDOW_COMPLETE"
+                            candidates.append(ResearchCandidate(**restored))
                             current_ids.add(saved_id)
                         except TypeError:
                             pass
@@ -704,6 +743,7 @@ class DailyResearchService:
                     "generated_at": now.isoformat(),
                     "trigger": trigger,
                     "source_ready": source_ready,
+                    "nse_identity_source_ready": nse.forthcoming_ready,
                     "research_health": research_health,
                     "calendar_ready": self.calendar.source_ready,
                     "calendar_holidays": sorted(day.isoformat() for day in self.calendar.holidays),
