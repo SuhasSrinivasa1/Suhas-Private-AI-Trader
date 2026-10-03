@@ -1,3 +1,11 @@
+# PS Scanner Quant v6.8.2
+
+v6.8.2 is the clean public-repository baseline. It carries forward the production-validated v6.8.1 bounded performance fix and adds indexed, execution-critical-first health snapshots plus Mac runtime compatibility hardening. No trading threshold, risk gate, frozen-book identity, evidence rule, or Static-IP scope is loosened.
+
+See:
+- `RELEASE_v6.8.2.md`
+- `ARCHITECTURE_AUDIT_v6.8.2.md`
+
 # PS Scanner Quant v6.8.1 — Bounded Performance Analytics Reliability
 
 v6.8.1 is a narrow reliability release over v6.8.0. It fixes the production Mac timeout on `GET /api/performance?group_by=book&limit=1000` without weakening historical evidence or increasing the validator timeout.
