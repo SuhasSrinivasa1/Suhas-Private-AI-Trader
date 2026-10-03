@@ -706,6 +706,7 @@ class DailyResearchService:
                     "source_ready": source_ready,
                     "research_health": research_health,
                     "calendar_ready": self.calendar.source_ready,
+                    "calendar_holidays": sorted(day.isoformat() for day in self.calendar.holidays),
                     "next_trading_day": next_trading_day.isoformat() if next_trading_day else None,
                     "candidate_count": len(candidates),
                     "nse_identity_confirmed_count": sum(1 for c in candidates if c.nse_listing_confirmed),
