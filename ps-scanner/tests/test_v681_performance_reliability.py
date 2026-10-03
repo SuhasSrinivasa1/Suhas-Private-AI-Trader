@@ -28,7 +28,7 @@ class V681PerformanceReliabilityTests(unittest.TestCase):
                 f"R{i}", "INTRADAY", ts[:10], f"S{i}", "NSE", "LONG", "CLOSED",
                 80.0, .8, 100.0, 102.0, 102.0, 99.0, 2.0, "INTRADAY", "RANGE",
                 '["S1"]', blob, blob, .9, ts, ts, ts, "WIN", "TEST", 2.0, -1.0,
-                "6.8.1", "cfg", f"D{i}", blob,
+                "6.8.2", "cfg", f"D{i}", blob,
             ))
         with dbmod.db() as con:
             con.executemany(
