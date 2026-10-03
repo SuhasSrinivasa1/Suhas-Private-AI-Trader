@@ -40,36 +40,68 @@ class PositionRecord:
 
 
 class OwnedPositionRegistry:
-    """Only IPO Sentinel-tagged exposure can be mutated by this application."""
+    """Separates IPO Sentinel-owned exposure from unrelated broker positions."""
 
     def __init__(self) -> None:
         self._lock = RLock()
-        self._records: dict[str, PositionRecord] = {}
+        self._records: dict[str, list[PositionRecord]] = {}
 
     def reconcile(self, broker_positions: Iterable[dict]) -> None:
+        rebuilt: dict[str, list[PositionRecord]] = {}
+        for raw in broker_positions:
+            symbol = str(raw.get("symbol") or raw.get("trading_symbol") or "").upper().strip()
+            if not symbol:
+                continue
+            tag = str(raw.get("strategy_id") or raw.get("tag") or "")
+            ownership = Ownership.IPO_SENTINEL if tag.startswith("IPO_SENTINEL") else Ownership.EXTERNAL
+            record = PositionRecord(
+                symbol=symbol,
+                quantity=int(raw.get("quantity") or 0),
+                product=str(raw.get("product") or ""),
+                ownership=ownership,
+                strategy_id=tag or None,
+                broker_order_ids=tuple(raw.get("broker_order_ids") or ()),
+            )
+            rebuilt.setdefault(symbol, []).append(record)
+
         with self._lock:
-            for raw in broker_positions:
-                symbol = str(raw.get("symbol") or raw.get("trading_symbol") or "").upper().strip()
-                if not symbol:
-                    continue
-                tag = str(raw.get("strategy_id") or raw.get("tag") or "")
-                ownership = Ownership.IPO_SENTINEL if tag.startswith("IPO_SENTINEL") else Ownership.EXTERNAL
-                self._records[symbol] = PositionRecord(
-                    symbol=symbol,
-                    quantity=int(raw.get("quantity") or 0),
-                    product=str(raw.get("product") or ""),
-                    ownership=ownership,
-                    strategy_id=tag or None,
-                    broker_order_ids=tuple(raw.get("broker_order_ids") or ()),
-                )
+            self._records = rebuilt
+
+    def records(self, symbol: str) -> tuple[PositionRecord, ...]:
+        with self._lock:
+            return tuple(self._records.get(symbol.upper(), ()))
 
     def owned(self, symbol: str) -> PositionRecord | None:
-        record = self._records.get(symbol.upper())
-        return record if record and record.ownership is Ownership.IPO_SENTINEL else None
+        owned_records = [r for r in self.records(symbol) if r.ownership is Ownership.IPO_SENTINEL]
+        if not owned_records:
+            return None
+        products = {r.product for r in owned_records if r.product}
+        return PositionRecord(
+            symbol=symbol.upper(),
+            quantity=sum(r.quantity for r in owned_records),
+            product=products.pop() if len(products) == 1 else "MIXED",
+            ownership=Ownership.IPO_SENTINEL,
+            strategy_id="IPO_SENTINEL:AGGREGATED",
+            broker_order_ids=tuple(
+                order_id
+                for record in owned_records
+                for order_id in record.broker_order_ids
+            ),
+        )
+
+    def external_quantity(self, symbol: str) -> int:
+        return sum(
+            r.quantity
+            for r in self.records(symbol)
+            if r.ownership is Ownership.EXTERNAL
+        )
 
     def may_mutate(self, symbol: str) -> bool:
-        record = self._records.get(symbol.upper())
-        return record is None or record.ownership is Ownership.IPO_SENTINEL
+        records = self.records(symbol)
+        if not records:
+            return True
+        # Any unrelated exposure on the same symbol makes generic symbol-level mutation unsafe.
+        return all(r.ownership is Ownership.IPO_SENTINEL for r in records)
 
 
 @dataclass
