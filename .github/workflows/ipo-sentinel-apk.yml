@@ -16,6 +16,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      IPO_SENTINEL_API_URL: ${{ secrets.IPO_SENTINEL_API_URL }}
+      IPO_SENTINEL_DEVICE_KEY: ${{ secrets.IPO_SENTINEL_DEVICE_KEY }}
     defaults:
       run:
         working-directory: ipo-listing-engine/android
@@ -47,15 +50,15 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/IPO-Sentinel-v0.3.0-debug.apk
-          sha256sum release/IPO-Sentinel-v0.3.0-debug.apk > release/SHA256SUMS.txt
+          cp app/build/outputs/apk/debug/app-debug.apk release/IPO-Sentinel-v0.4.0-debug.apk
+          sha256sum release/IPO-Sentinel-v0.4.0-debug.apk > release/SHA256SUMS.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: IPO-Sentinel-v0.3.0-apk
+          name: IPO-Sentinel-v0.4.0-apk
           path: ipo-listing-engine/android/release/*
           if-no-files-found: error
           retention-days: 30
 
-# v0.3.0 settings build
+# v0.4.0 settings build
