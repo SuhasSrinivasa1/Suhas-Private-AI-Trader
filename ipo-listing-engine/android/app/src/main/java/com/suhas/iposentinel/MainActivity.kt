@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.text.NumberFormat
@@ -101,6 +102,23 @@ private fun IpoSentinelApp() {
                 ContextCompat.startForegroundService(
                     context,
                     Intent(context, LiveNotificationService::class.java)
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            val (result, plan) = BackendApi().fetchResearchPlan()
+            if (result.ok && plan != null) {
+                researchPlan = plan
+                AppAudit.log(
+                    context,
+                    "RESEARCH_PLAN_UI_SYNC",
+                    JSONObject()
+                        .put("next_trading_day", plan.nextTradingDay ?: "")
+                        .put("candidate_count", plan.nextTradingDayCandidates.size)
                 )
             }
         }
