@@ -60,43 +60,40 @@ IPO Sentinel must treat the listing session as a special market state. For NSE I
 See `docs/ARCHITECTURE.md` and `docs/RESEARCH_PLAN.md`.
 
 
-## Groww connection setup (v0.3)
+## Groww settings (v0.4)
 
-The APK now has a dedicated **Settings > Groww & Backend** screen. The user supplies:
+The Android UI deliberately hides service-transport details. There is no user-facing backend URL, HTTP/HTTPS field, or admin-key field.
 
-- Backend HTTPS URL
-- Backend admin key
-- Groww TOTP token
+The Settings tab contains only the trading inputs the user actually needs:
+
+- Groww TOTP token / API key
 - Groww TOTP secret
-- Expected/whitelisted static public IP
-- Confirmation that the IP has been whitelisted in Groww
+- Whitelisted static public IP
+- Confirmation that the static IP has been whitelisted in Groww
 
-The TOTP token and secret are submitted to the backend and are **not persisted by the APK**. The backend stores them encrypted at rest.
+The Dashboard no longer duplicates Settings with a separate "Configure Groww Connection" button.
 
-The backend host must define two deployment secrets:
+### Internal service configuration
 
-- `IPO_SENTINEL_ADMIN_KEY` — protects the settings endpoints
-- `IPO_SENTINEL_MASTER_KEY` — Fernet key used to encrypt Groww credentials at rest
+The static-IP trading service remains part of the architecture because API order placement must originate from the fixed whitelisted public IP. Its endpoint and device key are deployment/build configuration, not user settings.
 
-A Fernet key can be generated once on the backend with:
+Android build variables:
+- `IPO_SENTINEL_API_URL`
+- `IPO_SENTINEL_DEVICE_KEY`
 
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+Trading-service environment:
+- `IPO_SENTINEL_DEVICE_KEY`
+- `IPO_SENTINEL_MASTER_KEY`
+- optional `IPO_SENTINEL_SETTINGS_FILE`
 
-Optional:
+The TOTP token and secret are never returned by the settings APIs. They are encrypted at rest using the master key.
 
-- `IPO_SENTINEL_SETTINGS_FILE` — defaults to `.runtime/groww-settings.enc`
+### User flow
 
-Connection flow:
-
-1. Open **Settings** in the APK.
-2. Enter the backend HTTPS URL and admin key.
-3. Enter Groww TOTP token + TOTP secret.
-4. Enter the static public IP that has been whitelisted with Groww.
-5. Enable **I have whitelisted this IP in Groww**.
-6. Tap **Save encrypted configuration**.
-7. Tap **Validate Groww + Static IP**.
-8. Live execution readiness is true only when authentication succeeds, the detected backend egress IP matches the expected static IP, and the user confirmed the whitelist.
-
-The backend never returns the TOTP token or secret through its status APIs.
+1. Open **Settings**.
+2. Enter Groww TOTP token/API key and TOTP secret.
+3. Enter the fixed static public IP whitelisted in Groww.
+4. Confirm the Groww whitelist checkbox.
+5. Tap **Save Groww Settings**.
+6. Tap **Validate Groww + Static IP**.
+7. Live auto-trading remains locked until Groww authentication and the static-IP checks pass.
