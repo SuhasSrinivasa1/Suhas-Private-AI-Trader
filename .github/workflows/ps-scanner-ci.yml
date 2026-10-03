@@ -2,7 +2,7 @@ name: PS Scanner CI
 
 on:
   push:
-    branches: [main, ps-scanner-v660-architecture, ps-scanner-v661-frozen-identity, ps-scanner-v670-production-integrity, ps-scanner-v671-health-reliability, ps-scanner-v672-bounded-sanity, ps-scanner-v673-execution-readiness, ps-scanner-v680-evidence-fabric-algorithm]
+    branches: [main, ps-scanner-v660-architecture, ps-scanner-v661-frozen-identity, ps-scanner-v670-production-integrity, ps-scanner-v671-health-reliability, ps-scanner-v672-bounded-sanity, ps-scanner-v673-execution-readiness, ps-scanner-v680-evidence-fabric-algorithm, ps-scanner-v681-performance-reliability]
     paths:
       - "ps-scanner/**"
       - ".github/workflows/ps-scanner-ci.yml"
@@ -66,15 +66,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Package PS Scanner
         run: |
-          rm -rf /tmp/PS_Scanner_Quant_v6.8.0
-          cp -R ps-scanner /tmp/PS_Scanner_Quant_v6.8.0
-          find /tmp/PS_Scanner_Quant_v6.8.0 -name '__pycache__' -type d -prune -exec rm -rf {} +
+          rm -rf /tmp/PS_Scanner_Quant_v6.8.1
+          cp -R ps-scanner /tmp/PS_Scanner_Quant_v6.8.1
+          find /tmp/PS_Scanner_Quant_v6.8.1 -name '__pycache__' -type d -prune -exec rm -rf {} +
           cd /tmp
-          zip -qr "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.0.zip" PS_Scanner_Quant_v6.8.0
-          unzip -t "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.0.zip"
+          zip -qr "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.1.zip" PS_Scanner_Quant_v6.8.1
+          unzip -t "$GITHUB_WORKSPACE/PS_Scanner_Quant_v6.8.1.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: PS_Scanner_Quant_v6.8.0
-          path: PS_Scanner_Quant_v6.8.0.zip
+          name: PS_Scanner_Quant_v6.8.1
+          path: PS_Scanner_Quant_v6.8.1.zip
           if-no-files-found: error
           retention-days: 30

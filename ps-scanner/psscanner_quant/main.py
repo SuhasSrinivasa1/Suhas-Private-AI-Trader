@@ -204,6 +204,8 @@ def health():
             "inline_quick_check":False,"runtime_query_budget_seconds":1.5,"deep_verification":"SQLITE_BACKUP_RESTORE_QUICK_CHECK"},
         "execution_cache_patch":{"version":"6.7.3","background_static_ip_probe":True,"public_ip_fallback":True,
             "health_single_db_snapshot":True,"position_mismatch_fail_closed":True},
+        "performance_reliability_patch":{"version":"6.8.1","name":"BOUNDED_INDEXED_PERFORMANCE_ANALYTICS",
+            "passive_budget_seconds":2.5,"network_calls":False,"single_sqlite_snapshot":True,"degraded_is_explicit":True},
         "orchestration_patch":{"version":"6.8.0","policy":"V680_ONE_OBSERVATION_MANY_CONSUMERS",
             "scanner_frequency_reduced":False,"shared_priority_quotes":True,"shared_news":True,
             "shared_events":True,"shared_institutional":True,"shared_international_transport":True},
@@ -323,7 +325,7 @@ def performance(book:Optional[str]=None,group_by:str="book",limit:int=10000):
     allowed={"book","strategy","family","symbol","side","regime","horizon","period_key","result","close_reason","day","week","month","time_bucket","behavior_cluster"}
     if book and book.upper() not in BOOKS:raise HTTPException(404,"Unknown book")
     if group_by.lower() not in allowed:raise HTTPException(400,"Unsupported group_by")
-    return performance_stats(book,group_by,limit)
+    return performance_stats(book,group_by,limit,query_budget_seconds=2.5,db_timeout_seconds=.25)
 
 
 @app.get("/api/diagnostics/no-trade")

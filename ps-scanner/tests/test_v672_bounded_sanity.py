@@ -30,7 +30,7 @@ class V672BoundedSanityTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_version_and_policy(self):
-        self.assertEqual(VERSION,"6.8.0")
+        self.assertEqual(VERSION,"6.8.1")
         self.assertEqual(lifecycle_payload()["policy_version"],
                          "V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM")
 
