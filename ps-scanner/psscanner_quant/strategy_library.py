@@ -19,6 +19,7 @@ FAMILIES = [
     # Handbook-derived concepts that can be represented safely by the local feature stack.
     "QUALITY_MOMENTUM", "VALUE_QUALITY", "LOW_VOL_QUALITY", "EARNINGS_EVENT",
     "VWAP_MEAN_REVERSION", "OPENING_RANGE_BREAKOUT", "NEWS_MOMENTUM",
+    "INSTITUTIONAL_ACCUMULATION",
 ]
 HORIZONS = ["INTRADAY", "WEEKLY"]
 SIDES = ["LONG", "SHORT"]
@@ -95,7 +96,9 @@ def seed_library() -> int:
         for s in specs:
             # Existing deterministic templates remain probationary until the chronological
             # Champion contract has enough evidence to replace seeds.
-            status = "SEED_CHAMPION" if s.params["level"] in (2, 4) else "CHALLENGER"
+            # New institutional-accumulation logic must earn promotion from chronological
+            # OOS + live-shadow evidence; it is never introduced as a seed Champion.
+            status = "CHALLENGER" if s.family=="INSTITUTIONAL_ACCUMULATION" else ("SEED_CHAMPION" if s.params["level"] in (2, 4) else "CHALLENGER")
             con.execute(
                 "INSERT INTO strategies(strategy_id,name,family,horizon,side,params_json,status,source,version,created_at,updated_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(strategy_id) DO NOTHING",
@@ -216,6 +219,14 @@ def score_strategy(spec: Dict[str, Any], f: Dict[str, Any], regime: str, fundame
         # Material-news verification is applied later by Trade Intelligence. This template
         # only measures the price/volume continuation component so news cannot be fabricated.
         add(sign*ret1>0,20,"immediate reaction persists"); add(sign*ret5>0,22,"continuation momentum"); add(vr>=min_vr,28,"abnormal participation"); add(abs(gap)>=max(.3,gt*.5),14,"repricing magnitude")
+    elif family=="INSTITUTIONAL_ACCUMULATION":
+        cmf=_f(f.get("cmf20"));mfi=_f(f.get("mfi14"),50);obvt=_f(f.get("obv_trend5"))
+        add((cmf>=.08 if side=="LONG" else cmf<=-.08),28,"Chaikin money-flow alignment")
+        add((mfi>=58 if side=="LONG" else mfi<=42),22,"money-flow index alignment")
+        add((obvt>=.08 if side=="LONG" else obvt<=-.08),22,"OBV trend alignment")
+        add(vr>=max(1.05,min_vr*.85),14,"relative-volume participation")
+        inst=_f((fundamentals or {}).get("heldPercentInstitutions"),-1)
+        add(inst>=.05,6,"institutional ownership context")
 
     # Regime is a hard influence, not an afterthought.
     if regime in ("TREND_UP","HIGH_VOL_TREND_UP"):

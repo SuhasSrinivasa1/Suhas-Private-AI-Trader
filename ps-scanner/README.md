@@ -1,3 +1,22 @@
+# PS Scanner Quant v6.8.0 — Shared Evidence Fabric & Adaptive Trading Algorithm
+
+v6.8.0 is a major orchestration release. It keeps the existing high-frequency scanner cadences while changing how evidence is acquired and reused.
+
+- **One observation, many consumers:** shared producers own broker/internet observations; Intraday, Weekly, Monthly, ETF, Circuit, International and Global→India scanners consume the same timestamped caches.
+- **No frequency reduction:** Intraday, horizon, Circuit, International, ETF and Global→India worker intervals are preserved. Redundant fetching is removed, not scanner activity.
+- **Priority quotes:** live/current recommendations and high-information names have a dedicated 60-second producer; lifecycle workers are cache-only.
+- **News and event producers:** cached news and prospective earnings-event evidence are now actively refreshed in background workers instead of existing as dormant cache-only modules.
+- **Shared international transport:** U.S. weekly selection and live weekly repricing reuse the same bounded batch transport within freshness windows.
+- **Institutional intelligence:** official NSE FII/FPI–DII market flow and large-deal disclosures are combined with point-in-time ownership and CMF/MFI/OBV/RVOL. Direct disclosures remain explicitly separate from inferred accumulation/distribution.
+- **Institutional strategy governance:** the new `INSTITUTIONAL_ACCUMULATION` family starts as CHALLENGER only. It cannot become a Champion without the existing chronological OOS, holdout, cost, parameter-stability and live-shadow evidence contract.
+- **Adaptive Trading Algorithm page/API:** the current algorithm version is derived from the validated Champion/seed manifest and changes automatically as validated strategies are promoted/suspended. It exposes every live output lane and evidence-fabric freshness.
+- **80% is an evidence target, never a guarantee:** the UI/API shows the actual resolved target-hit rate, directional accuracy and Wilson 95% interval. Confidence-supported 80% requires sufficient sample size and a Wilson lower bound of at least 80%.
+- **Transparent remaining gaps:** authoritative per-stock delivery percentage, direct promoter/pledge/insider disclosures, derivatives OI/PCR/IV/skew and full Level-2 market-impact history remain UNKNOWN until reliable point-in-time sources are wired.
+
+No Static-IP, broker-position, risk, reward/risk, horizon-side, frozen-identity, no-fabrication or manual execution safety invariant is loosened.
+
+See `ARCHITECTURE_AUDIT_v6.8.0.md` and `RELEASE_v6.8.0.md`.
+
 # PS Scanner Quant v6.7.3 — Execution Cache & Health Latency Hardening
 
 v6.7.3 closes the remaining operational gaps observed after v6.7.2 passed production validation.

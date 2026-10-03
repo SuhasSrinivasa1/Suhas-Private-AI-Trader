@@ -10,6 +10,9 @@ from .config import load_settings
 from .data import universe, history, liquidity_rank, full_nse_symbols
 from .db import db, get_state, now_iso, set_state, health
 from .features import latest_features
+from .fundamentals import get as fundamentals_get
+from .trade_intelligence import evaluate as evaluate_trade_intelligence
+from .evidence_fabric import symbol_context as fabric_symbol_context
 from .trading_calendar import is_regular_trading_day, next_trading_day
 
 # Sector/global-driver mapping. Matching is intentionally broad because the NIFTY500
@@ -105,9 +108,22 @@ def build_global_india_board() -> Dict[str,Any]:
             if score<78:continue
             target_pct=max(.55,min(3.0,atr*1.15+min(1.0,abs(combined))*.35))
             stop_pct=max(.35,min(1.8,target_pct/1.6))
-            candidates.append({'symbol':sym,'side':side,'score':round(score,2),'confidence':round(max(.52,min(.84,.55+abs(combined)*.08+min(20,len(evidence))*0.005)),3),'price':px,'features':f,'industry':row.get('industry') or 'UNKNOWN','driver_cue_pct':round(cue,3),'combined_cue_pct':round(combined,3),'drivers':evidence,'target_pct':round(target_pct,4),'stop_pct':round(stop_pct,4),'target_date':target.isoformat()})
+            fund=fundamentals_get(sym,allow_refresh=False)
+            shared=fabric_symbol_context(sym,book='GLOBAL_INDIA',side=side,features=f,fundamentals=fund)
+            ti=evaluate_trade_intelligence(
+                book='GLOBAL_INDIA',symbol=sym,side=side,features=f,fundamentals=fund,
+                regime_state={'regime':'GLOBAL_OVERNIGHT','trend_vote':0.0,'breadth_up_pct':50.0,'breadth_down_pct':50.0},
+                candle_info={},news=shared['news'],global_ctx=g,portfolio={},
+                sector_ctx=shared['sector'],event_ctx=shared['events'],institutional_ctx=shared['institutional'],
+                target_pct=target_pct,stop_pct=stop_pct,
+                strategy_ids=['GLOBAL_SECTOR_CUE','GLOBAL_CROSS_ASSET','INDIA_DAILY_CONFIRM'],
+                data_confidence=max(.55,min(.90,.60+min(20,len(evidence))*.01)),
+            )
+            if ti.get('decision')=='NO_TRADE':continue
+            score=.80*score+.20*float(ti.get('score') or 0)
+            candidates.append({'symbol':sym,'side':side,'score':round(score,2),'confidence':round(max(.52,min(.84,.55+abs(combined)*.08+min(20,len(evidence))*0.005)),3),'price':px,'features':f,'fundamentals':fund,'industry':row.get('industry') or 'UNKNOWN','driver_cue_pct':round(cue,3),'combined_cue_pct':round(combined,3),'drivers':evidence,'target_pct':round(target_pct,4),'stop_pct':round(stop_pct,4),'target_date':target.isoformat(),'trade_intelligence':ti,'institutional_context':shared['institutional'],'evidence_fabric_policy':shared['fabric_policy']})
     candidates.sort(key=lambda x:x['score'],reverse=True)
-    board={'generated_at':now_iso(),'target_session':target.isoformat(),'freeze_time_ist':'09:00','state':'FROZEN' if is_regular_trading_day(now.date()) and now.date()==target and now.time().replace(tzinfo=None)>=GLOBAL_INDIA_FREEZE_TIME else 'PROVISIONAL_OVERNIGHT','long':[x for x in candidates if x['side']=='LONG'][:max_side],'short':[x for x in candidates if x['side']=='SHORT'][:max_side],'global_context_generated_at':g.get('generated_at'),'global_coverage':g.get('coverage',len(moves)),'policy':'GLOBAL_MARKETS_TO_INDIA_OVERNIGHT_CUE_FULL_NSE_V640','universe_scanned':len(syms)}
+    board={'generated_at':now_iso(),'target_session':target.isoformat(),'freeze_time_ist':'09:00','state':'FROZEN' if is_regular_trading_day(now.date()) and now.date()==target and now.time().replace(tzinfo=None)>=GLOBAL_INDIA_FREEZE_TIME else 'PROVISIONAL_OVERNIGHT','long':[x for x in candidates if x['side']=='LONG'][:max_side],'short':[x for x in candidates if x['side']=='SHORT'][:max_side],'global_context_generated_at':g.get('generated_at'),'global_coverage':g.get('coverage',len(moves)),'policy':'GLOBAL_MARKETS_TO_INDIA_OVERNIGHT_SHARED_EVIDENCE_V680','universe_scanned':len(syms)}
     set_state('global_india_board',board)
     return board
 
@@ -126,7 +142,7 @@ def freeze_global_india_board() -> int:
             exists=con.execute("SELECT COUNT(*) FROM recommendations WHERE book=? AND period_key=?",(book,target.isoformat())).fetchone()[0]
         if exists:continue
         for c in board.get(key) or []:
-            rationale={'reasons':['major global-market overnight alignment','industry-driver mapping','Indian stock daily-trend confirmation'],'mapping_type':'SECTOR_AND_CROSS_ASSET_NOT_NAIVE_EQUIVALENT','industry':c.get('industry'),'global_drivers':c.get('drivers'),'driver_cue_pct':c.get('driver_cue_pct'),'combined_cue_pct':c.get('combined_cue_pct'),'target_session':target.isoformat(),'freeze_time_ist':'09:00','data_confidence':c.get('confidence'),'deadline':'15:00 IST same session','learning_policy':'US/global outcomes are research evidence only; no direct Champion promotion without Indian OOS validation.'}
+            rationale={'reasons':['major global-market overnight alignment','industry-driver mapping','Indian stock daily-trend confirmation','shared institutional/technical evidence'],'mapping_type':'SECTOR_AND_CROSS_ASSET_NOT_NAIVE_EQUIVALENT','industry':c.get('industry'),'global_drivers':c.get('drivers'),'driver_cue_pct':c.get('driver_cue_pct'),'combined_cue_pct':c.get('combined_cue_pct'),'target_session':target.isoformat(),'freeze_time_ist':'09:00','data_confidence':c.get('confidence'),'deadline':'15:00 IST same session','learning_policy':'US/global outcomes are research evidence only; no direct Champion promotion without Indian OOS validation.','trade_intelligence':c.get('trade_intelligence'),'institutional_context':c.get('institutional_context'),'evidence_fabric_policy':c.get('evidence_fabric_policy')}
             _insert_rec(book,c['symbol'],side,c['score'],c['confidence'],c['price'],c['features'],'GLOBAL_OVERNIGHT',['GLOBAL_SECTOR_CUE','GLOBAL_CROSS_ASSET','INDIA_DAILY_CONFIRM'],rationale,exchange='NSE',target_pct_override=c['target_pct'],stop_pct_override=c['stop_pct'],period_key_override=target.isoformat());made+=1
     if made:
         board=dict(board);board['state']='FROZEN';board['frozen_at']=now_iso();set_state('global_india_board',board)

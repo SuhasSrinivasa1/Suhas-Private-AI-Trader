@@ -27,11 +27,30 @@ from .portfolio_risk import recommendation_cluster
 from .trading_calendar import is_regular_trading_day, next_trading_day
 from .sector_context import context as sector_context, context_cached as sector_context_cached
 from .event_calendar import risk_context as event_risk_context
+from .evidence_fabric import publish as fabric_publish, symbol_context as fabric_symbol_context
 from .config import load_settings
 
 NY = ZoneInfo("America/New_York")
 US_OPEN = dtime(9, 30)
 US_CLOSE = dtime(16, 0)
+
+_INTL_SHARED:Dict[str,Any]={}
+
+
+def _shared_international_history(symbols:List[str],period:str,interval:str,ttl_seconds:float)->Dict[str,Any]:
+    """One yfinance transport observation, reused by weekly selection and lifecycle updates."""
+    key=f"{period}|{interval}"
+    now=time.time();entry=_INTL_SHARED.get(key) or {}
+    data=entry.get("data") if isinstance(entry,dict) else None
+    if isinstance(data,dict) and now-float(entry.get("at") or 0)<=float(ttl_seconds):
+        if all(s in data for s in symbols):
+            return {s:data.get(s) for s in symbols if s in data}
+    fresh=international_batch_history(symbols,period,interval,chunk_size=20,timeout_seconds=12.0)
+    merged=dict(data or {});merged.update(fresh or {})
+    _INTL_SHARED[key]={"at":now,"data":merged}
+    domain="international_intraday" if interval!="1d" else "international_daily"
+    fabric_publish(domain,source="YFINANCE_BATCHED_SHARED_TRANSPORT",consumers=("INTERNATIONAL","LIVE_UPDATE","ALGORITHM"),payload={"period":period,"interval":interval,"symbols":len(fresh or {})},network_fetch=True,symbols=len(fresh or {}),ttl_seconds=ttl_seconds)
+    return {s:merged.get(s) for s in symbols if s in merged}
 
 
 def _is_etf(r:Dict[str,str])->bool:
@@ -90,7 +109,8 @@ def scan_etfs(sides: Optional[tuple]=None, target_now: Optional[datetime]=None)-
                 stats['capacity_prefilter_reject']+=1
                 continue
             portfolio=recommendation_cluster(s,side)
-            ti=evaluate_trade_intelligence(book='ETF',symbol=s,side=side,features=f,fundamentals={},regime_state=regime_state,candle_info=candles,global_ctx=g,portfolio=portfolio,target_pct=5.0,stop_pct=max(.7,min(4,float(f.get('atr_pct') or 1.5))),strategy_ids=['ETF_TREND','ETF_MOMENTUM','ETF_VOLUME'],data_confidence=data_conf)
+            shared_ctx=fabric_symbol_context(s,book='ETF',side=side,features=f,fundamentals={})
+            ti=evaluate_trade_intelligence(book='ETF',symbol=s,side=side,features=f,fundamentals={},regime_state=regime_state,candle_info=candles,news=shared_ctx['news'],global_ctx=g,portfolio=portfolio,sector_ctx=shared_ctx['sector'],event_ctx=shared_ctx['events'],institutional_ctx=shared_ctx['institutional'],target_pct=5.0,stop_pct=max(.7,min(4,float(f.get('atr_pct') or 1.5))),strategy_ids=['ETF_TREND','ETF_MOMENTUM','ETF_VOLUME'],data_confidence=data_conf)
             if ti['decision']!='ELIGIBLE':
                 stats['intelligence_reject']+=1
                 continue
@@ -98,7 +118,7 @@ def scan_etfs(sides: Optional[tuple]=None, target_now: Optional[datetime]=None)-
             tf=_target_feasibility('ETF',side,f,final,min(1,.45+(score-68)/50),data_conf,None,now=target_now)
             if not tf['target_qualified']:continue
             stats['eligible']+=1
-            out.append({'symbol':s,'side':side,'score':final,'confidence':min(1,.45+(score-68)/50),'price':px,'features':f,'regime':regime,'strategies':['ETF_TREND','ETF_MOMENTUM','ETF_VOLUME'],'target_feasibility':tf,'rationale':{'reasons':['ETF trend alignment','20-session momentum','volume/liquidity confirmation'],'data_confidence':data_conf,'candlestick_context':candles,'trade_intelligence':ti,'target_feasibility':tf,'global_context':g,'portfolio_fit':portfolio}})
+            out.append({'symbol':s,'side':side,'score':final,'confidence':min(1,.45+(score-68)/50),'price':px,'features':f,'regime':regime,'strategies':['ETF_TREND','ETF_MOMENTUM','ETF_VOLUME'],'target_feasibility':tf,'rationale':{'reasons':['ETF trend alignment','20-session momentum','volume/liquidity confirmation'],'data_confidence':data_conf,'candlestick_context':candles,'trade_intelligence':ti,'target_feasibility':tf,'global_context':g,'portfolio_fit':portfolio,'institutional_context':shared_ctx['institutional'],'evidence_fabric_policy':shared_ctx['fabric_policy']}})
     out.sort(key=lambda x:x['score'],reverse=True)
     stats.update({'candidates':len(out),'completed_at':now_iso(),'duration_seconds':round(time.monotonic()-started,2)})
     set_state('scan_detail_ETF',stats)
@@ -350,7 +370,8 @@ def run_circuit_cycle(max_symbols:int=120):
             with db() as con:
                 if con.execute("SELECT 1 FROM recommendations WHERE book='CIRCUIT' AND period_key=? AND symbol=? AND side=?",(pk,s,side)).fetchone():continue
             f=dict(basef);f.update({'close':px,'atr_pct':max(.5,float(basef.get('atr_pct') or dist/2)),'circuit_limit':limit,'circuit_distance_pct':dist,'order_imbalance':imbalance,'volume':vol,'live_turnover':px*vol,'deadline_capacity_pct':capacity,'deadline_remaining_minutes':remaining})
-            ti=evaluate_trade_intelligence(book='CIRCUIT',symbol=s,side=side,features=f,fundamentals={},regime_state=regime_state,candle_info=candles,global_ctx=g,portfolio=recommendation_cluster(s,side),sector_ctx=sector_context_cached(s,side),event_ctx=event_risk_context(s,'CIRCUIT'),target_pct=dist,stop_pct=max(.35,min(dist/1.6,1.8)),strategy_ids=['CIRCUIT_DISTANCE','CIRCUIT_ORDER_IMBALANCE','1500_DEADLINE_CAPACITY'],data_confidence=.9)
+            shared_ctx=fabric_symbol_context(s,book='CIRCUIT',side=side,features=f,fundamentals={})
+            ti=evaluate_trade_intelligence(book='CIRCUIT',symbol=s,side=side,features=f,fundamentals={},regime_state=regime_state,candle_info=candles,news=shared_ctx['news'],global_ctx=g,portfolio=recommendation_cluster(s,side),sector_ctx=shared_ctx['sector'],event_ctx=shared_ctx['events'],institutional_ctx=shared_ctx['institutional'],target_pct=dist,stop_pct=max(.35,min(dist/1.6,1.8)),strategy_ids=['CIRCUIT_DISTANCE','CIRCUIT_ORDER_IMBALANCE','1500_DEADLINE_CAPACITY'],data_confidence=.9)
             filter_by_rank={int(x.get('rank') or 0):x for x in (ti.get('filters') or [])}
             liquidity_status=str((filter_by_rank.get(41) or {}).get('status') or 'UNKNOWN')
             volume_status=str((filter_by_rank.get(35) or {}).get('status') or 'UNKNOWN')
@@ -373,7 +394,7 @@ def run_circuit_cycle(max_symbols:int=120):
                 watch['actionable']=False;watch['evidence_status']='WATCH_ONLY';watch['evidence_reasons']=evidence_reasons[:6]
                 watch['intraday_age_minutes']=intraday_age;watch['live_turnover']=round(live_turnover,2)
                 continue
-            final=.80*min(100,score)+.20*ti['score'];rationale={'reasons':['verified Groww circuit band',f'{dist:.2f}% from circuit','order-book imbalance',f'modeled capacity {capacity:.2f}% before 15:00','fresh current-session intraday evidence','liquidity and execution permission confirmed'],'circuit_limit':limit,'data_confidence':.9,'candlestick_context':candles,'trade_intelligence':ti,'global_context':g,'deadline_policy':'SAME_SESSION_TARGET_BY_15_00_IST','deadline_remaining_minutes':remaining,'deadline_capacity_pct':round(capacity,3),'target_is_not_guaranteed':True,'universe_policy':'FULL_NSE_BREADTH','actionable_evidence_policy':'V642_FRESH_INTRADAY_LIQUIDITY_EXECUTION','intraday_age_minutes':intraday_age,'live_turnover':round(live_turnover,2),'execution_permission':permission_reason}
+            final=.80*min(100,score)+.20*ti['score'];rationale={'reasons':['verified Groww circuit band',f'{dist:.2f}% from circuit','order-book imbalance',f'modeled capacity {capacity:.2f}% before 15:00','fresh current-session intraday evidence','liquidity and execution permission confirmed'],'circuit_limit':limit,'data_confidence':.9,'candlestick_context':candles,'trade_intelligence':ti,'global_context':g,'deadline_policy':'SAME_SESSION_TARGET_BY_15_00_IST','deadline_remaining_minutes':remaining,'deadline_capacity_pct':round(capacity,3),'target_is_not_guaranteed':True,'universe_policy':'FULL_NSE_BREADTH','actionable_evidence_policy':'V642_FRESH_INTRADAY_LIQUIDITY_EXECUTION','intraday_age_minutes':intraday_age,'live_turnover':round(live_turnover,2),'execution_permission':permission_reason,'institutional_context':shared_ctx['institutional'],'evidence_fabric_policy':shared_ctx['fabric_policy']}
             _insert_rec('CIRCUIT',s,side,final,.75,px,f,reg,['CIRCUIT_DISTANCE','CIRCUIT_ORDER_IMBALANCE','1500_DEADLINE_CAPACITY'],rationale,target_pct_override=dist,stop_pct_override=max(.35,min(dist/1.6,1.8)));made+=1;live_counts[side]=live_counts.get(side,0)+1
     stats.update({'running':False,'inserted':made,'completed_at':now_iso(),'duration_seconds':round(time.monotonic()-started,2),'status':'OK' if made else 'NO_ACTIONABLE_CANDIDATES','reason':None if made else 'ALL_NEAR_BAND_NAMES_FAILED_FRESH_INTRADAY_LIQUIDITY_EXECUTION_OR_DEADLINE_GATES','calibration':_circuit_calibration()});set_state('scan_status_CIRCUIT',stats);return made
 
@@ -430,7 +451,7 @@ def update_international_books(intraday_map:Optional[Dict[str,Any]]=None)->int:
     session=_us_session();now=datetime.now(IST);local=now.astimezone(NY);week_key=_us_week_key(local.date());closed=0
     with db() as con:rows=[dict(r) for r in con.execute("SELECT * FROM recommendations WHERE book='INTERNATIONAL' AND state='LIVE'").fetchall()]
     if not rows:return 0
-    symbols=sorted({r['symbol'] for r in rows});imap=intraday_map if intraday_map is not None else international_batch_history(symbols,'5d','5m')
+    symbols=sorted({r['symbol'] for r in rows});imap=intraday_map if intraday_map is not None else _shared_international_history(symbols,'5d','5m',90.0)
     week_over=bool(local.weekday()>4 or (local.weekday()==4 and local.time().replace(tzinfo=None)>=US_CLOSE))
     with db() as con:
         for r in rows:
@@ -504,7 +525,7 @@ def run_international_cycle():
     recovery=(week_key==current_week and not preweek)
     stats.update({'status':'FETCHING_BOUNDED_DAILY_RECOVERY_DATA','preweek_window':preweek,'recovery_mode':recovery})
     set_state('scan_status_INTERNATIONAL',stats)
-    daily=international_batch_history(US_WEEKLY_UNIVERSE,'1y','1d',chunk_size=20,timeout_seconds=12.0)
+    daily=_shared_international_history(US_WEEKLY_UNIVERSE,'1y','1d',600.0)
     stats['daily_symbols']=len(daily)
     stats['transport']=get_state('international_batch_transport',{}) or {}
     stats['status']='SCORING_BOUNDED_DAILY_RECOVERY_DATA'

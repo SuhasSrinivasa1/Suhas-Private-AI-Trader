@@ -58,7 +58,7 @@ class V671HealthReliabilityTests(unittest.TestCase):
             out=main.health()
             elapsed=time.monotonic()-started
             self.assertLess(elapsed,2.0)
-            self.assertEqual(out["version"],"6.7.3")
+            self.assertEqual(out["version"],"6.8.0")
             self.assertFalse(out["health_contract"]["network_calls"])
             self.assertTrue(out["health_contract"]["history_pacer_nonblocking"])
             self.assertTrue(out["evidence"]["history_control"]["pacer_busy"])
@@ -80,7 +80,7 @@ class V671HealthReliabilityTests(unittest.TestCase):
         self.assertIn('diag=get("/api/diagnostics/no-trade?limit=4"',src)
         self.assertIn('execution=get("/api/execution/analytics?limit=20"',src)
         self.assertIn('backups=get("/api/maintenance/backups"',src)
-        self.assertIn('"V673_EXECUTION_CACHE_AND_HEALTH_LATENCY"',src)
+        self.assertIn('"V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM"',src)
 
 
 if __name__=="__main__":

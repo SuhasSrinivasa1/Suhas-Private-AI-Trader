@@ -45,10 +45,11 @@ def evaluate(*, book:str, symbol:str, side:str, features:Dict[str,Any], fundamen
              regime_state:Dict[str,Any], candle_info:Optional[Dict[str,Any]]=None, news:Optional[Dict[str,Any]]=None,
              global_ctx:Optional[Dict[str,Any]]=None, portfolio:Optional[Dict[str,Any]]=None,
              sector_ctx:Optional[Dict[str,Any]]=None, event_ctx:Optional[Dict[str,Any]]=None,
+             institutional_ctx:Optional[Dict[str,Any]]=None,
              target_pct:float=0.0, stop_pct:float=0.0, strategy_ids:Optional[List[str]]=None,
              suspended_strategy_ids:Optional[List[str]]=None, data_confidence:float=1.0)->Dict[str,Any]:
     book=book.upper();side=side.upper();sign=1 if side=='LONG' else -1
-    fundamentals=fundamentals or {}; candle_info=candle_info or {};news=news or {};global_ctx=global_ctx or {};portfolio=portfolio or {};sector_ctx=sector_ctx or {};event_ctx=event_ctx or {}
+    fundamentals=fundamentals or {}; candle_info=candle_info or {};news=news or {};global_ctx=global_ctx or {};portfolio=portfolio or {};sector_ctx=sector_ctx or {};event_ctx=event_ctx or {};institutional_ctx=institutional_ctx or {}
     strategy_ids=strategy_ids or []; suspended=set(suspended_strategy_ids or [])
     f=features; filters=[]
     catalog={int(x['rank']):x for x in filter_catalog()}
@@ -109,7 +110,14 @@ def evaluate(*, book:str, symbol:str, side:str, features:Dict[str,Any], fundamen
     add(13,'UNKNOWN' if abs(rs)<1e-9 else ('PASS' if sign*rs>0 else 'FAIL'),f'relative strength20={rs:.2f}' if abs(rs)>=1e-9 else 'benchmark-relative series not supplied')
     add(15,'PASS' if ret20>0 and ret60>=0 else ('WARN' if ret20>0 else 'FAIL'),f'directional ret20={ret20:.2f}, ret60={ret60:.2f}')
     inst=_f(fundamentals.get('heldPercentInstitutions'),-1)
-    add(18,'PASS' if inst>=.05 else ('WARN' if inst>=0 else 'UNKNOWN'),f'institutional ownership={inst:.3f}' if inst>=0 else 'not available')
+    inst_flow=_f(institutional_ctx.get('score'));inst_conf=_f(institutional_ctx.get('confidence'));inst_dir=str(institutional_ctx.get('direction') or 'UNKNOWN')
+    if inst_conf>0:
+        aligned=(side=='LONG' and inst_flow>=18) or (side=='SHORT' and inst_flow<=-18)
+        opposed=(side=='LONG' and inst_flow<=-35) or (side=='SHORT' and inst_flow>=35)
+        add(18,'PASS' if aligned else ('FAIL' if opposed else 'WARN'),
+            f"institutional/accumulation={inst_dir} score={inst_flow:.1f} confidence={inst_conf:.2f}")
+    else:
+        add(18,'PASS' if inst>=.05 else ('WARN' if inst>=0 else 'UNKNOWN'),f'institutional ownership={inst:.3f}' if inst>=0 else 'not available')
 
     # 19-30 fundamentals/catalysts. Low direct weight intraday, high weight monthly.
     rev=_f(fundamentals.get('revenueGrowth'),999);earn=_f(fundamentals.get('earningsGrowth'),999);margin=_f(fundamentals.get('profitMargins'),999);opm=_f(fundamentals.get('operatingMargins'),999)
@@ -224,5 +232,6 @@ def evaluate(*, book:str, symbol:str, side:str, features:Dict[str,Any], fundamen
         'filters':filters,'evaluated_filters':sum(1 for r in filters if r['status']!='UNKNOWN'),
         'unknown_filters':sum(1 for r in filters if r['status']=='UNKNOWN'),
         'hard_fail_count':len(hard_blockers),'aligned_candlestick_quality':round(candle_quality,1),
+        'institutional_context':institutional_ctx,
         'principle':'A strategy/candle signal cannot override a failed liquidity, reward-risk, portfolio, execution or strategy-decay hard gate.',
     }

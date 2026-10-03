@@ -1,8 +1,16 @@
 # PS Scanner handoff
 
-Current source version: **6.7.3**.
+Current source version: **6.8.0**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
+
+## v6.8.0 shared evidence fabric / adaptive algorithm
+
+v6.8.0 changes orchestration from independent evidence fetching toward shared external-data producers plus independent cache-only scanner consumers. It preserves existing scanner cadences while centralizing priority quotes, global context, fundamentals, sector breadth, news, earnings events, institutional data and bounded U.S. transport. The adaptive algorithm surface is a versioned view of the validated strategy manifest plus all current recommendation books; daily Champion promotion/decay changes the manifest automatically.
+
+Institutional intelligence adds official NSE FII/FPI–DII market activity and large-deal observations plus CMF/MFI/OBV/RVOL and point-in-time ownership. Direct disclosure and inferred accumulation are kept semantically separate. The new institutional strategy family is seeded CHALLENGER-only.
+
+The 80% accuracy requirement is represented as an evidence target, not a promise. Actual resolved target-hit/directional rates and Wilson 95% intervals are exposed. The application never manufactures an 80% value.
 
 ## v6.7.3 execution-cache / health-latency hardening
 
@@ -39,7 +47,7 @@ Weekly/Monthly symbol mutual exclusion is enforced both by the application trans
 
 Performance and learning treat WIN/LOSS/MISS as trading evidence and report VOID/data-integrity rows separately. Wilson confidence intervals are exposed so tiny samples cannot masquerade as established edge. Daily strategy decay excludes VOID rows.
 
-Workers remain independent domain threads. Health/sanity use bounded snapshots; worker telemetry exposes state, timing, stage, progress, rejection counters, timeout/hung state, recovery state and watchdog restart count.
+Scanner workers remain independent domain threads, while external observations are owned by shared evidence producers and reused across lanes. Health/sanity use bounded snapshots; worker telemetry exposes state, timing, stage, progress, rejection counters, timeout/hung state, recovery state and watchdog restart count.
 
 ## Safety contract
 

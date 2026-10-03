@@ -76,6 +76,25 @@ def enrich(df: pd.DataFrame, benchmark: Optional[pd.Series] = None) -> pd.DataFr
     x["adx14"] = adx(x, 14)
     x["vol20"] = x["volume"].rolling(20, min_periods=5).mean()
     x["volume_ratio"] = x["volume"] / x["vol20"].replace(0, np.nan)
+
+    # Accumulation/distribution features. These measure price/volume behavior only; they
+    # never claim the identity of the buyer/seller. Direct institutional disclosures are
+    # joined separately by institutional_intelligence.py.
+    direction=np.sign(close.diff()).fillna(0.0)
+    x["obv"]=(direction*x["volume"].fillna(0.0)).cumsum()
+    obv_denom=x["volume"].abs().rolling(5,min_periods=2).sum().replace(0,np.nan)
+    x["obv_trend5"]=(x["obv"]-x["obv"].shift(5))/obv_denom
+    typical=(x["high"]+x["low"]+x["close"])/3.0
+    raw_flow=typical*x["volume"].fillna(0.0)
+    tdir=typical.diff()
+    pos_flow=raw_flow.where(tdir>0,0.0).rolling(14,min_periods=5).sum()
+    neg_flow=raw_flow.where(tdir<0,0.0).rolling(14,min_periods=5).sum().abs()
+    money_ratio=pos_flow/neg_flow.replace(0,np.nan)
+    x["mfi14"]=(100.0-(100.0/(1.0+money_ratio))).fillna(50.0)
+    mf_multiplier=((x["close"]-x["low"])-(x["high"]-x["close"]))/(x["high"]-x["low"]).replace(0,np.nan)
+    mf_volume=mf_multiplier*x["volume"].fillna(0.0)
+    x["cmf20"]=mf_volume.rolling(20,min_periods=5).sum()/x["volume"].rolling(20,min_periods=5).sum().replace(0,np.nan)
+
     x["std20"] = close.rolling(20, min_periods=8).std()
     x["z20"] = (close - x["sma20"]) / x["std20"].replace(0, np.nan)
     x["high20"] = x["high"].rolling(20, min_periods=5).max()
@@ -153,6 +172,7 @@ def latest_features(df: pd.DataFrame, fundamentals: Optional[Dict[str, Any]] = N
         "volume_ratio","z20","high20","low20","high55","low55","range20_pos","gap_pct","body_frac","upper_wick_frac",
         "lower_wick_frac","bull_engulf","bear_engulf","inside_bar","trend","turnover20","relative_strength20",
         "vwap","opening_range_high","opening_range_low","opening_range_position",
+        "obv","obv_trend5","mfi14","cmf20",
     ]
     out = {k: _safe(r.get(k), 0.0) for k in keys}
     out["open_observed"] = bool(pd.notna(r.get("open")))

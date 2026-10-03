@@ -51,3 +51,24 @@ def context(symbol:str, allow_refresh:bool=False)->Dict[str,Any]:
     with db() as con:
         con.execute('INSERT INTO news_cache(symbol,asof,payload_json) VALUES(?,?,?) ON CONFLICT(symbol) DO UPDATE SET asof=excluded.asof,payload_json=excluded.payload_json',(symbol.upper(),now_iso(),json.dumps(payload,separators=(',',':'))))
     return payload
+
+
+def refresh_batch(symbols, limit:int=12)->Dict[str,Any]:
+    """Refresh a bounded shared priority batch; scanners themselves stay cache-only."""
+    unique=[]
+    for raw in symbols or []:
+        sym=str(raw or "").upper()
+        if sym and sym not in unique:unique.append(sym)
+    chosen=unique[:max(0,min(int(limit),len(unique)))]
+    ready=0;errors=0
+    for sym in chosen:
+        try:
+            out=context(sym,allow_refresh=True)
+            if out.get("status") in ("READY","NO_RECENT_NEWS"):ready+=1
+            if out.get("status")=="UNKNOWN":errors+=1
+        except Exception:
+            errors+=1
+    result={"attempted":len(chosen),"ready":ready,"errors":errors,"at":now_iso(),
+            "policy":"V680_SHARED_PRIORITY_NEWS_PRODUCER_SCANNERS_CACHE_ONLY"}
+    set_state("last_news_batch",result)
+    return result

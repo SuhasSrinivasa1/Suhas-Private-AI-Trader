@@ -35,6 +35,9 @@ from .production_integrity import (
 )
 from .data import liquidity_rank, cached_history_coverage, full_nse_symbols, universe_status
 from .cross_market import board_payload as global_india_board_payload
+from .evidence_fabric import status as evidence_fabric_status
+from .institutional_intelligence import cached_status as institutional_status, point_in_time_history as institutional_history
+from .trading_algorithm import status as algorithm_status, history as algorithm_history
 
 app=FastAPI(title=APP_NAME,version=VERSION)
 
@@ -185,12 +188,14 @@ def health():
         "nse_universe":_cached_universe_health(state),
     }
     return {"app":APP_NAME,"version":VERSION,
-        "architecture_patch":{"version":"6.7.3","name":"EXECUTION_CACHE_AND_HEALTH_LATENCY_HARDENING",
+        "architecture_patch":{"version":"6.8.0","name":"SHARED_EVIDENCE_FABRIC_AND_ADAPTIVE_TRADING_ALGORITHM",
             "current_period_ui":True,"history_performance_api":True,"family_diversity_advisory":True,
             "database_horizon_exclusivity_trigger":True,"late_horizon_recovery":True,"worker_hung_telemetry":True,
             "dynamic_mis_permission":True,"broker_position_reconciliation":True,"decision_to_fill_attribution":True,
             "point_in_time_audit_envelope":True,"production_contract_replay":True,"verified_database_backups":True,
-            "experiment_governance":True,"evidence_gated_cohorts":True,"nonblocking_health":True},
+            "experiment_governance":True,"evidence_gated_cohorts":True,"nonblocking_health":True,
+            "shared_evidence_fabric":True,"institutional_intelligence":True,"adaptive_algorithm":True,
+            "accuracy_target_is_evidence_gated_not_guaranteed":True},
         "reliability_patch":{"version":"6.4.9","name":"RECOVERY_EXECUTION_AND_PREPERIOD_FREEZE","five_pick_contract_books":["WEEKLY","MONTHLY","ETF","INTERNATIONAL"],
             "worker_watchdog":True,"staged_recovery":True,"preperiod_freeze":True,"intraday_bootstrap":True,"bounded_international_transport":True},
         "health_reliability_patch":{"version":"6.7.1","name":"NONBLOCKING_HEALTH_AND_VALIDATION","health_network_calls":False,
@@ -199,6 +204,9 @@ def health():
             "inline_quick_check":False,"runtime_query_budget_seconds":1.5,"deep_verification":"SQLITE_BACKUP_RESTORE_QUICK_CHECK"},
         "execution_cache_patch":{"version":"6.7.3","background_static_ip_probe":True,"public_ip_fallback":True,
             "health_single_db_snapshot":True,"position_mismatch_fail_closed":True},
+        "orchestration_patch":{"version":"6.8.0","policy":"V680_ONE_OBSERVATION_MANY_CONSUMERS",
+            "scanner_frequency_reduced":False,"shared_priority_quotes":True,"shared_news":True,
+            "shared_events":True,"shared_institutional":True,"shared_international_transport":True},
         "generated_at":now_iso(),"market_open":market,"engine_alive":bool(engine.thread and engine.thread.is_alive()),"engine_last_error":engine.last_error,
         "workers":workers,"groww":broker.status_cached(),"static_ip":broker.static_ip_status_cached(),
         "research":{"recommendations_require_static_ip":False,"static_ip_scope":"ORDER_EXECUTION_ONLY","status":"ACTIVE" if bool(engine.thread and engine.thread.is_alive()) else "ENGINE_STOPPED"},
@@ -501,11 +509,18 @@ def research_framework():
             "PRIORITY_HISTORY_WARMUP_AND_CACHED_ONLY_LOW_PRIORITY_RESEARCH",
             "FULL_GROWW_NSE_CASH_EQUITY_MASTER_WITH_MAINBOARD_TRADE_FOR_TRADE_AND_SME_DISCOVERY",
             "FULL_BREADTH_BATCHED_LTP_DISCOVERY_WITH_NEW_LISTING_PRIORITY",
+            "SHARED_MARKET_EVIDENCE_FABRIC_ONE_OBSERVATION_MANY_CONSUMERS",
+            "NSE_FII_DII_AND_LARGE_DEAL_POINT_IN_TIME_INSTITUTIONAL_CONTEXT",
+            "OBV_CMF_MFI_ACCUMULATION_DISTRIBUTION_FEATURES",
+            "BACKGROUND_PRIORITY_NEWS_AND_EARNINGS_EVENT_PRODUCERS",
+            "ADAPTIVE_DAILY_ALGORITHM_VERSIONED_FROM_VALIDATED_CHAMPION_MANIFEST",
         ],
         "remaining_data_gaps":[
             "FULL_HISTORICAL_POINT_IN_TIME_FUNDAMENTALS_BEFORE_V620_CAPTURE_DATE",
             "AUTHORITATIVE_CPI_GDP_AND_OTHER_INDIA_MACRO_RELEASES_BEYOND_SEEDED_RBI_MPC_EVENTS",
-            "PROMOTER_PLEDGE_AND_GOVERNANCE_POINT_IN_TIME_FEED",
+            "PROMOTER_PLEDGE_GOVERNANCE_AND_DIRECT_INSIDER_TRANSACTION_POINT_IN_TIME_FEED",
+            "AUTHORITATIVE_PER_STOCK_DELIVERABLE_VOLUME_PERCENTAGE_HISTORY",
+            "DERIVATIVES_POSITIONING_OI_PCR_IV_SKEW_WHERE_APPLICABLE",
             "MAPPED_SECTOR_ETF_CONFIRMATION_FOR_EVERY_INDUSTRY",
             "FULL_LEVEL2_DEPTH_AND_MARKET_IMPACT_HISTORY",
         ],
@@ -565,7 +580,24 @@ def evidence_status():
     return {"fundamentals":fundamentals,"trading_calendar":trading_calendar_status(),"sector_breadth":sector_status_cached(),
             "event_calendar":events,"history_control":history_control_status_cached(),
             "nse_universe":_cached_universe_health(state),"shadow":strategy_status().get("shadow_signals",{}),
+            "fabric":evidence_fabric_status(),"institutional":institutional_status(),
             "passive_nonblocking":True}
+
+@app.get("/api/evidence/fabric")
+def evidence_fabric():
+    return evidence_fabric_status()
+
+@app.get("/api/institutional")
+def institutional_intelligence(limit:int=20):
+    return {"current":institutional_status(),"point_in_time_history":institutional_history(max(1,min(int(limit),100)))}
+
+@app.get("/api/algorithm")
+def adaptive_algorithm():
+    return algorithm_status()
+
+@app.get("/api/algorithm/history")
+def adaptive_algorithm_history(limit:int=30):
+    return {"rows":algorithm_history(max(1,min(int(limit),365)))}
 
 @app.get("/api/history/status")
 def history_status():

@@ -29,6 +29,8 @@ from .trading_calendar import (period_end_date as exchange_period_end_date, rema
     is_regular_trading_day, next_trading_day, first_trading_day_of_week, first_trading_day_of_month)
 from .sector_context import context as sector_context, context_cached as sector_context_cached
 from .event_calendar import risk_context as event_risk_context, refresh_symbol_event, seed_official_calendar
+from .evidence_fabric import publish as fabric_publish, priority_symbols as fabric_priority_symbols, symbol_context as fabric_symbol_context
+from .institutional_intelligence import refresh as institutional_refresh
 from .production_integrity import (
     common_audit_context, make_audit_envelope, record_scan_run, seed_release_experiment, maybe_daily_backup,
 )
@@ -876,12 +878,12 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
                 stats["ensemble_score_reject"]+=1;near(sym,side,"ENSEMBLE_SCORE",ensemble_score,f"minimum={base_min}",distance_to_threshold=base_min-ensemble_score);continue
             if candles is None:candles=detect_patterns(df)
             geom=_risk_geometry(book,f);target_pct=geom["target_pct"];stop_pct=geom["stop_pct"]
-            cached_news=news_context(sym,allow_refresh=False)
-            sctx=sector_context_cached(sym,side);ectx=event_risk_context(sym,book)
-            ti=evaluate_trade_intelligence(book=book,symbol=sym,side=side,features=f,fundamentals=fund,regime_state=regime_state,candle_info=candles,news=cached_news,global_ctx=global_ctx,portfolio=None,sector_ctx=sctx,event_ctx=ectx,target_pct=target_pct,stop_pct=stop_pct,strategy_ids=[x[1] for x in top],data_confidence=data_conf)
+            shared_ctx=fabric_symbol_context(sym,book=book,side=side,features=f,fundamentals=fund)
+            cached_news=shared_ctx["news"];sctx=shared_ctx["sector"];ectx=shared_ctx["events"];ictx=shared_ctx["institutional"]
+            ti=evaluate_trade_intelligence(book=book,symbol=sym,side=side,features=f,fundamentals=fund,regime_state=regime_state,candle_info=candles,news=cached_news,global_ctx=global_ctx,portfolio=None,sector_ctx=sctx,event_ctx=ectx,institutional_ctx=ictx,target_pct=target_pct,stop_pct=stop_pct,strategy_ids=[x[1] for x in top],data_confidence=data_conf)
             rationale={"reasons":sum([x[3][:2] for x in top],[]),"ensemble_families":[x[2] for x in top],
                 "strategy_evidence":{"family_count":len(family_votes),"family_diversity_mode":"MULTI_FAMILY" if len(family_votes)>=2 else "ADVISORY_SHADOW","hard_gate":False,"policy":"V660_UNVALIDATED_FAMILY_VOTE_IS_ADVISORY"},
-                "fundamental_quality":fq,"fundamentals_asof":fund.get("_asof") if fund else None,"fundamentals_source":fund.get("_source") if fund else None,"data_confidence":data_conf,"candlestick_context":candles,"global_context":global_ctx,"news_context":cached_news,"sector_context":sctx,"event_context":ectx,"trade_intelligence":ti}
+                "fundamental_quality":fq,"fundamentals_asof":fund.get("_asof") if fund else None,"fundamentals_source":fund.get("_source") if fund else None,"data_confidence":data_conf,"candlestick_context":candles,"global_context":global_ctx,"news_context":cached_news,"sector_context":sctx,"event_context":ectx,"institutional_context":ictx,"evidence_fabric_policy":shared_ctx.get("fabric_policy"),"trade_intelligence":ti}
             candidate={"symbol":sym,"side":side,"score":ensemble_score,"raw_ensemble_score":ensemble_score,"confidence":conf,"price":px,"features":f,"regime":regime,"strategies":[x[1] for x in top],"rationale":rationale,"trade_intelligence":ti,"candlestick_context":candles,"fundamentals":fund}
             if ti['decision']=='NO_TRADE':
                 stats["intelligence_no_trade"]+=1
@@ -910,11 +912,11 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
     for c in finalists:
         if c['symbol'] in fresh:
             c['price']=float(fresh[c['symbol']]);c['features']['close']=c['price']
-        news=news_context(c['symbol'],allow_refresh=False)
-        portfolio=recommendation_cluster(c['symbol'],c['side'])
-        sctx=sector_context_cached(c['symbol'],c['side']);ectx=event_risk_context(c['symbol'],book)
-        ti=evaluate_trade_intelligence(book=book,symbol=c['symbol'],side=c['side'],features=c['features'],fundamentals=c.get('fundamentals') or {},regime_state=regime_state,candle_info=c.get('candlestick_context'),news=news,global_ctx=global_ctx,portfolio=portfolio,sector_ctx=sctx,event_ctx=ectx,target_pct=_risk_geometry(book,c['features'])['target_pct'],stop_pct=_risk_geometry(book,c['features'])['stop_pct'],strategy_ids=c['strategies'],data_confidence=float(c['rationale'].get('data_confidence') or 0))
-        c['trade_intelligence']=ti;c['rationale']['trade_intelligence']=ti;c['rationale']['news_context']=news;c['rationale']['portfolio_fit']=portfolio;c['rationale']['sector_context']=sctx;c['rationale']['event_context']=ectx
+        shared_ctx=fabric_symbol_context(c['symbol'],book=book,side=c['side'],features=c['features'],fundamentals=c.get('fundamentals') or {})
+        news=shared_ctx["news"];portfolio=recommendation_cluster(c['symbol'],c['side'])
+        sctx=shared_ctx["sector"];ectx=shared_ctx["events"];ictx=shared_ctx["institutional"]
+        ti=evaluate_trade_intelligence(book=book,symbol=c['symbol'],side=c['side'],features=c['features'],fundamentals=c.get('fundamentals') or {},regime_state=regime_state,candle_info=c.get('candlestick_context'),news=news,global_ctx=global_ctx,portfolio=portfolio,sector_ctx=sctx,event_ctx=ectx,institutional_ctx=ictx,target_pct=_risk_geometry(book,c['features'])['target_pct'],stop_pct=_risk_geometry(book,c['features'])['stop_pct'],strategy_ids=c['strategies'],data_confidence=float(c['rationale'].get('data_confidence') or 0))
+        c['trade_intelligence']=ti;c['rationale']['trade_intelligence']=ti;c['rationale']['news_context']=news;c['rationale']['portfolio_fit']=portfolio;c['rationale']['sector_context']=sctx;c['rationale']['event_context']=ectx;c['rationale']['institutional_context']=ictx;c['rationale']['evidence_fabric_policy']=shared_ctx.get("fabric_policy")
         c['score']=0.70*float(c['raw_ensemble_score'])+0.30*float(ti['score'])
         if ti['decision']!='ELIGIBLE':
             stats["intelligence_no_trade"]+=1
@@ -982,7 +984,9 @@ def update_live_books():
     # resolved at 15:00 IST even though the exchange remains open until 15:30.
     with db() as con:
         rs = [dict(r) for r in con.execute("SELECT * FROM recommendations WHERE state='LIVE' AND exchange='NSE'").fetchall()]
-    prices = live_prices([r["symbol"] for r in rs]) if rs else {}
+    # Priority-quote producer refreshes these symbols at the same cadence. Lifecycle
+    # consumers never initiate a second broker fetch for the same prices.
+    prices = live_prices([r["symbol"] for r in rs],allow_network=False,max_age_seconds=90) if rs else {}
     with db() as con:
         for r in rs:
             px = float(prices.get(r["symbol"]) or r["current_price"]);entry = float(r["entry_price"]);side = r["side"];book=str(r.get('book') or '')
@@ -1472,13 +1476,16 @@ class Engine:
         set_state("market_snapshot_status",{"at":now_iso(),"symbols":len(syms),"prices":len(prices),
             "breadth_evaluated":breadth.get("evaluated",0),"regime":state.get("regime"),
             "policy":"FULL_NSE_BATCHED_LTP_ALL_EQUITIES_SCANNERS_READ_CACHE"})
+        fabric_publish("full_market_quotes",source="GROWW_BATCHED_LTP",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","GLOBAL_INDIA","LIVE_UPDATE"),payload={"prices":len(prices),"universe":len(syms)},network_fetch=True,symbols=len(prices))
+        fabric_publish("market_regime",source="FULL_NSE_CACHED_BREADTH",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","GLOBAL_INDIA"),payload={"regime":state.get("regime"),"sample":state.get("sample")},network_fetch=False,symbols=state.get("sample"))
 
     def _universe_refresh(self):
         # Pick up same-day/new listings from Groww's authoritative instrument master.
         refresh_instruments(force=True);refresh_universe(force=True)
 
     def _global_context_refresh(self):
-        global_snapshot(force=True)
+        out=global_snapshot(force=True)
+        fabric_publish("global_context",source="BATCHED_GLOBAL_CROSS_ASSET",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","INTERNATIONAL","GLOBAL_INDIA"),payload={"coverage":out.get("coverage"),"risk_state":out.get("risk_state")},network_fetch=True,symbols=out.get("coverage"))
 
     def _fundamentals_refresh(self):
         from .fundamentals import refresh_batch
@@ -1487,11 +1494,43 @@ class Engine:
         for s in list(u.get("new_since_last_refresh") or [])+[x.get("symbol") for x in (b.get("top_absolute_movers") or [])]+syms:
             s=str(s or '').upper()
             if s and s in syms and s not in priority:priority.append(s)
-        refresh_batch(priority,max(12,int(settings.get("fundamentals_refresh_batch",12))))
+        out=refresh_batch(priority,max(12,int(settings.get("fundamentals_refresh_batch",12))))
+        fabric_publish("fundamentals",source="POINT_IN_TIME_FUNDAMENTAL_BATCH",consumers=("WEEKLY","MONTHLY","STRATEGY_LAB","ALGORITHM"),payload=out,network_fetch=True,symbols=out.get("attempted"))
 
     def _sector_context_refresh(self):
         from .sector_context import build_snapshot
-        build_snapshot(ttl_seconds=600)
+        out=build_snapshot(ttl_seconds=600)
+        fabric_publish("sector_context",source="CACHED_DAILY_INDUSTRY_BREADTH",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","ALGORITHM"),payload={"industries_ready":len(out)},network_fetch=False)
+
+    def _priority_quote_refresh(self):
+        syms=fabric_priority_symbols(160)
+        prices=refresh_live_price_cache(syms) if syms else {}
+        fabric_publish("priority_quotes",source="GROWW_PRIORITY_LTP",consumers=("LIVE_UPDATE","INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","ORDER_PREVIEW"),payload={"prices":len(prices),"requested":len(syms)},network_fetch=bool(syms),symbols=len(prices))
+
+    def _news_refresh(self):
+        from .news_context import refresh_batch
+        syms=fabric_priority_symbols(24)
+        out=refresh_batch(syms,limit=12)
+        fabric_publish("news",source="YFINANCE_AGGREGATED_NEWS_PRIORITY_BATCH",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","ALGORITHM"),payload=out,network_fetch=bool(out.get("attempted")),symbols=out.get("attempted"))
+
+    def _event_refresh(self):
+        syms=fabric_priority_symbols(12)
+        attempted=events=0
+        for sym in syms[:4]:
+            attempted+=1
+            r=refresh_symbol_event(sym)
+            events+=int(r.get("events") or 0)
+        out={"attempted":attempted,"events":events,"at":now_iso()}
+        fabric_publish("events",source="POINT_IN_TIME_EARNINGS_AND_OFFICIAL_CALENDAR",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","ALGORITHM"),payload=out,network_fetch=bool(attempted),symbols=attempted)
+
+    def _institutional_refresh(self):
+        out=institutional_refresh(force=True)
+        fabric_publish("institutional",source="NSE_FII_DII_LARGE_DEALS_PLUS_LOCAL_ACCUMULATION",consumers=("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","GLOBAL_INDIA","ALGORITHM","STRATEGY_LAB"),payload={"status":out.get("status"),"large_deal_count":out.get("large_deal_count"),"errors":out.get("errors")},network_fetch=True,symbols=out.get("large_deal_count"))
+
+    def _algorithm_refresh(self):
+        from .trading_algorithm import refresh as refresh_algorithm
+        out=refresh_algorithm()
+        fabric_publish("algorithm",source="VALIDATED_CHAMPION_MANIFEST_PLUS_LIVE_BOOKS",consumers=("ALGORITHM_UI","AUDIT"),payload={"algorithm_version":out.get("algorithm_version"),"active_strategy_count":out.get("active_strategy_count"),"accuracy":(out.get("accuracy") or {}).get("overall")},network_fetch=False)
 
     def _broker_probe(self):
         # Populate the cached broker status without coupling research to execution readiness.
@@ -1544,6 +1583,7 @@ class Engine:
         try:
             from .strategy_lab import maybe_weekly_jobs,run_shadow_cycle,resolve_shadow_signals
             resolve_shadow_signals();run_shadow_cycle();maybe_weekly_jobs()
+            self._algorithm_refresh()
         except Exception as exc:health("strategy_lab","WARN",str(exc)[:220])
 
     def _supervise(self):
@@ -1558,7 +1598,8 @@ class Engine:
             ("backup_integrity",float(settings.get("backup_worker_interval_seconds",3600)),self._backup_integrity,120),
             ("universe_refresh",float(settings.get("universe_refresh_interval_seconds",1800)),self._universe_refresh,2),
             ("market_snapshot",float(settings.get("full_breadth_ltp_interval_seconds",180)),self._market_snapshot,3),
-            ("live_update",float(settings.get("live_update_interval_seconds",60)),self._live_update,3),
+            ("priority_quotes",float(settings.get("live_update_interval_seconds",60)),self._priority_quote_refresh,3),
+            ("live_update",float(settings.get("live_update_interval_seconds",60)),self._live_update,4),
             ("intraday",float(settings.get("intraday_worker_interval_seconds",120)),run_intraday_cycle,5),
             ("maintenance",float(settings.get("maintenance_worker_interval_seconds",90)),self._maintenance,8),
             ("daily_history",float(settings.get("daily_history_worker_interval_seconds",90)),self._daily_history,9),
@@ -1570,14 +1611,18 @@ class Engine:
             ("global_india",float(settings.get("global_india_worker_interval_seconds",300)),self._global_india,17),
             ("etf",float(settings.get("etf_worker_interval_seconds",600)),self._etf,18),
             ("fundamentals",float(settings.get("fundamentals_worker_interval_seconds",60)),self._fundamentals_refresh,20),
+            ("news",float(settings.get("news_worker_interval_seconds",120)),self._news_refresh,21),
+            ("events",float(settings.get("event_worker_interval_seconds",300)),self._event_refresh,22),
+            ("institutional",float(settings.get("institutional_worker_interval_seconds",300)),self._institutional_refresh,23),
             ("sector_context",float(settings.get("sector_context_interval_seconds",900)),self._sector_context_refresh,24),
             ("global_context",float(settings.get("global_context_interval_seconds",900)),self._global_context_refresh,28),
+            ("algorithm",float(settings.get("algorithm_worker_interval_seconds",300)),self._algorithm_refresh,35),
             ("strategy",float(settings.get("strategy_worker_interval_seconds",600)),self._strategy,90),
         ]
         self.worker_specs={name:(interval,fn) for name,interval,fn,delay in specs}
         for name,interval,fn,delay in specs:
             self._spawn_worker(name,interval,fn,delay)
-        set_state("scheduler_v624",{"mode":"INDEPENDENT_DOMAIN_WORKERS_WITH_WATCHDOG","workers":[x[0] for x in specs],"started_at":now_iso(),"watchdog":"RESPAWN_DEAD_DOMAIN_WORKERS"})
+        set_state("scheduler_v624",{"mode":"SHARED_EVIDENCE_PRODUCERS_PLUS_INDEPENDENT_SCANNER_CONSUMERS_WITH_WATCHDOG","workers":[x[0] for x in specs],"started_at":now_iso(),"watchdog":"RESPAWN_DEAD_DOMAIN_WORKERS"})
         while not self.stop_evt.wait(5):
             # A domain thread can still die because of interpreter/library failures that
             # occur outside normal cycle handling. Never leave an entire scanner lane

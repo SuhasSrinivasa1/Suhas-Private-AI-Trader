@@ -33,7 +33,7 @@ def get(path, *, timeout=6.0, attempts=4):
 
 
 ping=get("/api/ping",timeout=2,attempts=3)
-if ping.get("version")!="6.7.3":fail("runtime version is not 6.7.3")
+if ping.get("version")!="6.8.0":fail("runtime version is not 6.8.0")
 
 health_started=time.monotonic()
 health=get("/api/health",timeout=3,attempts=4)
@@ -45,7 +45,16 @@ if contract.get("history_pacer_nonblocking") is not True:fail("health endpoint m
 if health_elapsed>8:fail(f"health endpoint retries exceeded bounded validation budget: {health_elapsed:.1f}s")
 
 life=get("/api/lifecycle",timeout=4)
-if life.get("policy_version")!="V673_EXECUTION_CACHE_AND_HEALTH_LATENCY":fail("lifecycle contract is not v6.7.3")
+if life.get("policy_version")!="V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM":fail("lifecycle contract is not v6.8.0")
+
+fabric=get("/api/evidence/fabric",timeout=4)
+if fabric.get("policy")!="V680_ONE_OBSERVATION_MANY_CONSUMERS":fail("shared evidence fabric policy missing")
+if fabric.get("mode")!="SHARED_PRODUCERS_CACHE_ONLY_CONSUMERS":fail("scanner evidence fabric is not producer/consumer mode")
+algorithm=get("/api/algorithm",timeout=6)
+if algorithm.get("policy")!="V680_ADAPTIVE_EVIDENCE_GATED_TRADING_ALGORITHM":fail("adaptive algorithm policy missing")
+target=algorithm.get("accuracy_target") or {}
+if abs(float(target.get("target") or 0)-0.80)>1e-9:fail("algorithm 80% evidence target missing")
+if target.get("guaranteed") is not False:fail("algorithm must never represent the 80% target as guaranteed")
 
 sanity_started=time.monotonic()
 sanity=get("/api/sanity",timeout=4,attempts=4)
@@ -95,6 +104,9 @@ print(json.dumps({
     "sanity_elapsed_seconds":round(sanity_elapsed,3),
     "health_contract":contract,
     "sanity_contract":sanity_contract,
+    "evidence_fabric_policy":fabric.get("policy"),
+    "algorithm_version":algorithm.get("algorithm_version"),
+    "algorithm_accuracy_target":target,
     "performance_rows_scanned":perf.get("rows_scanned"),
     "diagnostic_books":len(diag.get("books") or {}),
     "execution_orders_scanned":execution.get("orders_scanned"),

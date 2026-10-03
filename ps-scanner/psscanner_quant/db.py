@@ -342,6 +342,32 @@ CREATE TABLE IF NOT EXISTS experiments (
 );
 CREATE INDEX IF NOT EXISTS idx_experiments_status ON experiments(status,started_at DESC);
 
+CREATE TABLE IF NOT EXISTS institutional_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  captured_at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_institutional_time ON institutional_snapshots(captured_at DESC);
+
+CREATE TABLE IF NOT EXISTS algorithm_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  algorithm_version TEXT NOT NULL,
+  day TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  manifest_hash TEXT NOT NULL,
+  active_strategy_count INTEGER NOT NULL DEFAULT 0,
+  accuracy_target REAL NOT NULL DEFAULT 0.80,
+  observed_accuracy REAL,
+  wilson_low REAL,
+  wilson_high REAL,
+  sample_size INTEGER NOT NULL DEFAULT 0,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  UNIQUE(day,algorithm_version)
+);
+CREATE INDEX IF NOT EXISTS idx_algorithm_versions_time ON algorithm_versions(generated_at DESC);
+
 CREATE TABLE IF NOT EXISTS strategy_validation_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT NOT NULL,

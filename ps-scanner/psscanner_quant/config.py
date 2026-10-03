@@ -59,6 +59,11 @@ _DEFAULTS: Dict[str, Any] = {
     "sector_context_interval_seconds": 300,
     "fundamentals_worker_interval_seconds": 60,
     "fundamentals_refresh_batch": 12,
+    # v6.8.0 shared evidence producers. Scanner cadences remain unchanged.
+    "news_worker_interval_seconds": 120,
+    "event_worker_interval_seconds": 300,
+    "institutional_worker_interval_seconds": 300,
+    "algorithm_worker_interval_seconds": 300,
     "horizon_worker_interval_seconds": 300,
     "horizon_recovery_batch_size": 120,
     "broker_probe_interval_seconds": 300,
