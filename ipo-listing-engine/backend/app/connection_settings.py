@@ -23,12 +23,7 @@ class StoredGrowwSettings:
 
 
 class EncryptedGrowwSettingsStore:
-    """
-    Stores Groww credentials only on the backend, encrypted at rest.
-
-    The encryption key must come from IPO_SENTINEL_MASTER_KEY. It is intentionally
-    never accepted from the Android API and must not be committed to Git.
-    """
+    """Stores Groww credentials encrypted at rest on the trading service."""
 
     def __init__(self) -> None:
         self._lock = RLock()
@@ -41,7 +36,7 @@ class EncryptedGrowwSettingsStore:
     def _fernet(self) -> Fernet:
         raw = os.getenv("IPO_SENTINEL_MASTER_KEY", "").strip()
         if not raw:
-            raise RuntimeError("IPO_SENTINEL_MASTER_KEY is not configured on the backend")
+            raise RuntimeError("IPO_SENTINEL_MASTER_KEY is not configured")
         try:
             return Fernet(raw.encode("ascii"))
         except Exception as exc:
@@ -88,18 +83,18 @@ class EncryptedGrowwSettingsStore:
             self._path.unlink(missing_ok=True)
 
 
-def require_admin_key(x_ipo_sentinel_admin_key: str | None = Header(default=None)) -> None:
-    configured = os.getenv("IPO_SENTINEL_ADMIN_KEY", "")
+def require_device_key(x_ipo_sentinel_device_key: str | None = Header(default=None)) -> None:
+    configured = os.getenv("IPO_SENTINEL_DEVICE_KEY", "")
     if not configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Backend admin key is not configured",
+            detail="Trading service device key is not configured",
         )
-    if not x_ipo_sentinel_admin_key or not secrets.compare_digest(
-        x_ipo_sentinel_admin_key.encode("utf-8"),
+    if not x_ipo_sentinel_device_key or not secrets.compare_digest(
+        x_ipo_sentinel_device_key.encode("utf-8"),
         configured.encode("utf-8"),
     ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid backend admin key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device key")
 
 
 async def detect_egress_ip() -> str:

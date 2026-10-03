@@ -10,11 +10,11 @@ from .connection_settings import (
     EncryptedGrowwSettingsStore,
     StoredGrowwSettings,
     detect_egress_ip,
-    require_admin_key,
+    require_device_key,
 )
 from .groww_session import GrowwCredentials, GrowwSession
 
-router = APIRouter(prefix="/settings", tags=["connection-settings"])
+router = APIRouter(prefix="/settings", tags=["groww-settings"])
 store = EncryptedGrowwSettingsStore()
 
 
@@ -25,7 +25,7 @@ class GrowwSettingsRequest(BaseModel):
     static_ip_confirmed: bool = False
 
 
-@router.get("/status", dependencies=[Depends(require_admin_key)])
+@router.get("/status", dependencies=[Depends(require_device_key)])
 async def connection_status() -> dict:
     saved = None
     error = None
@@ -45,15 +45,15 @@ async def connection_status() -> dict:
     }
 
 
-@router.post("/groww", dependencies=[Depends(require_admin_key)])
+@router.post("/groww", dependencies=[Depends(require_device_key)])
 def save_groww_settings(payload: GrowwSettingsRequest) -> dict:
     if not store.ready:
-        raise HTTPException(status_code=503, detail="Backend encrypted secret store is not ready")
+        raise HTTPException(status_code=503, detail="Secure credential vault is not ready")
 
     try:
         ipaddress.ip_address(payload.expected_static_ip)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Expected static IP is invalid") from exc
+        raise HTTPException(status_code=422, detail="Static IP is invalid") from exc
 
     store.save(
         StoredGrowwSettings(
@@ -72,16 +72,16 @@ def save_groww_settings(payload: GrowwSettingsRequest) -> dict:
     }
 
 
-@router.delete("/groww", dependencies=[Depends(require_admin_key)])
+@router.delete("/groww", dependencies=[Depends(require_device_key)])
 def clear_groww_settings() -> dict:
     store.clear()
     return {"cleared": True}
 
 
-@router.post("/validate", dependencies=[Depends(require_admin_key)])
+@router.post("/validate", dependencies=[Depends(require_device_key)])
 async def validate_connection() -> dict:
     if not store.ready:
-        raise HTTPException(status_code=503, detail="Backend encrypted secret store is not ready")
+        raise HTTPException(status_code=503, detail="Secure credential vault is not ready")
 
     saved = store.load()
     if not saved:

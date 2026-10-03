@@ -19,6 +19,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
+import java.util.Locale
 
 private val Ink = Color(0xFF0F1318)
 private val Card = Color(0xFF171D23)
@@ -67,7 +69,7 @@ private fun IpoSentinelApp() {
                         selected = screen == AppScreen.SETTINGS,
                         onClick = { screen = AppScreen.SETTINGS },
                         icon = { Text("⚙") },
-                        label = { Text("Groww Setup") }
+                        label = { Text("Settings") }
                     )
                 }
             }
@@ -82,9 +84,9 @@ private fun IpoSentinelApp() {
                     budget = budget,
                     onBudgetChange = { budget = it },
                     growwConfigured = growwConfigured,
-                    validation = lastValidation,
-                    openSettings = { screen = AppScreen.SETTINGS }
+                    validation = lastValidation
                 )
+
                 AppScreen.SETTINGS -> GrowwSettingsScreen(
                     modifier = Modifier.padding(padding),
                     onConfigurationSaved = { growwConfigured = true },
@@ -106,8 +108,7 @@ private fun DashboardScreen(
     budget: Float,
     onBudgetChange: (Float) -> Unit,
     growwConfigured: Boolean,
-    validation: ValidationStatus?,
-    openSettings: () -> Unit
+    validation: ValidationStatus?
 ) {
     Column(
         modifier = modifier
@@ -124,33 +125,25 @@ private fun DashboardScreen(
             growwConfigured -> "NEEDS VALIDATION"
             else -> "NOT CONFIGURED"
         }
+
         StatusCard(
-            title = "Groww + Static IP",
+            title = "Groww API + Static IP",
             primary = readiness,
             secondary = when {
                 validation?.liveExecutionReady == true ->
-                    "Groww authentication and backend egress IP validation passed"
+                    "Groww authentication and static-IP checks passed"
                 growwConfigured ->
-                    "Credentials saved. Open Groww Setup and validate connection."
+                    "Credentials saved. Validate them from Settings."
                 else ->
-                    "Add backend URL, Groww TOTP token, secret and whitelisted static IP"
+                    "Add Groww TOTP token, secret and whitelisted static IP in Settings"
             },
             primaryColor = if (validation?.liveExecutionReady == true) Teal else Amber
         )
 
-        if (!growwConfigured) {
-            Button(
-                onClick = openSettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Configure Groww Connection")
-            }
-        }
-
         StatusCard(
             title = "Next trading day",
             primary = "Research queue not synced",
-            secondary = "Backend resolves official exchange calendar + next listings"
+            secondary = "Syncs official exchange calendar + next listings"
         )
 
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
@@ -163,7 +156,7 @@ private fun DashboardScreen(
                         Text("Live auto-trading", fontWeight = FontWeight.SemiBold)
                         Text(
                             when {
-                                liveEnabled -> "ARMED — backend validation passed"
+                                liveEnabled -> "ARMED — Groww and static IP checks passed"
                                 validation?.liveExecutionReady == true -> "READY — switch on when you want live execution"
                                 else -> "LOCKED — Groww + static IP validation required"
                             },
@@ -180,7 +173,11 @@ private fun DashboardScreen(
 
                 HorizontalDivider(color = Color(0xFF27313A))
 
-                Text("Live budget  ₹" + budget.toInt(), fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Live budget  ₹" + NumberFormat.getNumberInstance(Locale("en", "IN"))
+                        .format(budget.toInt()),
+                    fontWeight = FontWeight.SemiBold
+                )
                 Slider(
                     value = budget,
                     onValueChange = { onBudgetChange((it / 5_000f).toInt() * 5_000f) },
@@ -230,8 +227,6 @@ private fun GrowwSettingsScreen(
     onConfigurationSaved: () -> Unit,
     onValidated: (ValidationStatus) -> Unit
 ) {
-    var backendUrl by rememberSaveable { mutableStateOf("") }
-    var adminKey by rememberSaveable { mutableStateOf("") }
     var totpToken by remember { mutableStateOf("") }
     var totpSecret by remember { mutableStateOf("") }
     var staticIp by rememberSaveable { mutableStateOf("") }
@@ -243,19 +238,36 @@ private fun GrowwSettingsScreen(
     var status by remember { mutableStateOf<ConnectionStatus?>(null) }
     var validation by remember { mutableStateOf<ValidationStatus?>(null) }
     val scope = rememberCoroutineScope()
+    val client = remember { BackendApi() }
 
-    fun api(): BackendApi? {
-        if (!backendUrl.trim().startsWith("https://")) {
-            message = "Backend URL must start with https://"
-            messageColor = Danger
-            return null
+    fun refreshStatus(showMessage: Boolean) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val (result, value) = client.fetchStatus()
+            busy = false
+            if (result.ok && value != null) {
+                status = value
+                if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
+                whitelistConfirmed = value.staticIpConfirmed
+                if (showMessage) {
+                    message = "Settings status refreshed"
+                    messageColor = Teal
+                }
+            } else if (showMessage) {
+                message = result.error ?: "Unable to refresh settings"
+                messageColor = Danger
+            }
         }
-        if (adminKey.isBlank()) {
-            message = "Enter the backend admin key"
-            messageColor = Danger
-            return null
+    }
+
+    LaunchedEffect(Unit) {
+        val (result, value) = client.fetchStatus()
+        if (result.ok && value != null) {
+            status = value
+            if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
+            whitelistConfirmed = value.staticIpConfirmed
         }
-        return BackendApi(backendUrl.trim(), adminKey)
     }
 
     Column(
@@ -265,39 +277,14 @@ private fun GrowwSettingsScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Groww & Backend Setup", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text(
-            "Credentials are sent to your backend over HTTPS and encrypted there. The APK does not persist the Groww TOTP token or secret.",
+            "Groww credentials and the whitelisted static public IP are managed here.",
             color = Muted,
             fontSize = 13.sp
         )
 
-        SettingsSection("1. Backend") {
-            OutlinedTextField(
-                value = backendUrl,
-                onValueChange = { backendUrl = it },
-                label = { Text("Backend HTTPS URL") },
-                placeholder = { Text("https://ipo-sentinel.example.com") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-            )
-            OutlinedTextField(
-                value = adminKey,
-                onValueChange = { adminKey = it },
-                label = { Text("Backend admin key") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                "The admin key protects the credential-management endpoints. It is not your Groww token.",
-                color = Muted,
-                fontSize = 12.sp
-            )
-        }
-
-        SettingsSection("2. Groww TOTP") {
+        SettingsSection("Groww TOTP") {
             OutlinedTextField(
                 value = totpToken,
                 onValueChange = { totpToken = it },
@@ -315,17 +302,17 @@ private fun GrowwSettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "The secret is used server-side to generate the current one-time password. It is never returned by the backend.",
+                "The secret is stored encrypted and is never displayed again after saving.",
                 color = Muted,
                 fontSize = 12.sp
             )
         }
 
-        SettingsSection("3. Static IP") {
+        SettingsSection("Static IP") {
             OutlinedTextField(
                 value = staticIp,
                 onValueChange = { staticIp = it.trim() },
-                label = { Text("Whitelisted backend static public IP") },
+                label = { Text("Whitelisted static public IP") },
                 placeholder = { Text("203.0.113.10") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -337,12 +324,12 @@ private fun GrowwSettingsScreen(
                     onCheckedChange = { whitelistConfirmed = it }
                 )
                 Text(
-                    "I have whitelisted this public IP in Groww",
+                    "I have whitelisted this IP in Groww",
                     modifier = Modifier.weight(1f)
                 )
             }
             Text(
-                "Use the backend server's public egress IP — not your phone IP or home Wi-Fi IP. Validation compares the real backend egress IP with this value.",
+                "This must be the fixed public IP registered in Groww for API order placement.",
                 color = Muted,
                 fontSize = 12.sp
             )
@@ -350,7 +337,6 @@ private fun GrowwSettingsScreen(
 
         Button(
             onClick = {
-                val client = api() ?: return@Button
                 if (totpToken.isBlank() || totpSecret.isBlank() || staticIp.isBlank()) {
                     message = "Enter the Groww token, TOTP secret and static IP"
                     messageColor = Danger
@@ -366,12 +352,12 @@ private fun GrowwSettingsScreen(
                     )
                     busy = false
                     if (result.ok) {
-                        // Deliberately remove broker secrets from UI memory immediately after save.
                         totpToken = ""
                         totpSecret = ""
                         onConfigurationSaved()
-                        message = "Encrypted Groww configuration saved on backend"
+                        message = "Groww settings saved securely"
                         messageColor = Teal
+                        refreshStatus(showMessage = false)
                     } else {
                         message = result.error ?: "Save failed"
                         messageColor = Danger
@@ -381,12 +367,11 @@ private fun GrowwSettingsScreen(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth().height(50.dp)
         ) {
-            Text("Save encrypted configuration")
+            Text("Save Groww Settings")
         }
 
         OutlinedButton(
             onClick = {
-                val client = api() ?: return@OutlinedButton
                 busy = true
                 scope.launch {
                     val (result, value) = client.validate()
@@ -397,7 +382,7 @@ private fun GrowwSettingsScreen(
                         message = if (value.liveExecutionReady) {
                             "Validation passed — live execution can be armed"
                         } else {
-                            "Validation completed — one or more readiness checks failed"
+                            "Validation completed — one or more checks failed"
                         }
                         messageColor = if (value.liveExecutionReady) Teal else Amber
                     } else {
@@ -413,28 +398,11 @@ private fun GrowwSettingsScreen(
         }
 
         TextButton(
-            onClick = {
-                val client = api() ?: return@TextButton
-                busy = true
-                scope.launch {
-                    val (result, value) = client.fetchStatus()
-                    busy = false
-                    if (result.ok && value != null) {
-                        status = value
-                        if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
-                        whitelistConfirmed = value.staticIpConfirmed
-                        message = "Backend status refreshed"
-                        messageColor = Teal
-                    } else {
-                        message = result.error ?: "Status check failed"
-                        messageColor = Danger
-                    }
-                }
-            },
+            onClick = { refreshStatus(showMessage = true) },
             enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Refresh backend status")
+            Text("Refresh Status")
         }
 
         if (busy) {
@@ -446,9 +414,9 @@ private fun GrowwSettingsScreen(
         }
 
         status?.let {
-            SettingsSection("Backend status") {
-                CheckRow("Encrypted secret store", it.secretStoreReady)
-                CheckRow("Groww credentials configured", it.growwConfigured)
+            SettingsSection("Saved status") {
+                CheckRow("Secure credential vault", it.secretStoreReady)
+                CheckRow("Groww credentials saved", it.growwConfigured)
                 CheckRow("Static IP marked as whitelisted", it.staticIpConfirmed)
             }
         }
@@ -456,17 +424,17 @@ private fun GrowwSettingsScreen(
         validation?.let {
             SettingsSection("Validation result") {
                 CheckRow("Groww TOTP authentication", it.growwAuthOk)
-                CheckRow("Backend egress IP matches", it.staticIpMatches)
-                CheckRow("Static IP whitelist confirmed", it.staticIpConfirmed)
-                CheckRow("Encrypted secret store ready", it.secretStoreReady)
+                CheckRow("Static public IP matches", it.staticIpMatches)
+                CheckRow("Groww whitelist confirmed", it.staticIpConfirmed)
+                CheckRow("Secure credential vault", it.secretStoreReady)
                 HorizontalDivider(color = Color(0xFF27313A))
                 Text(
-                    "Detected egress IP: " + (it.detectedEgressIp ?: "Unavailable"),
+                    "Detected static IP: " + (it.detectedEgressIp ?: "Unavailable"),
                     color = Muted,
                     fontSize = 12.sp
                 )
                 Text(
-                    "Expected static IP: " + (it.expectedStaticIp ?: "Not configured"),
+                    "Whitelisted IP: " + (it.expectedStaticIp ?: "Not configured"),
                     color = Muted,
                     fontSize = 12.sp
                 )
@@ -479,13 +447,13 @@ private fun GrowwSettingsScreen(
                     Text("Groww: $error", color = Danger, fontSize = 12.sp)
                 }
                 it.egressError?.let { error ->
-                    Text("Network: $error", color = Danger, fontSize = 12.sp)
+                    Text("Static IP: $error", color = Danger, fontSize = 12.sp)
                 }
             }
         }
 
         Text(
-            "Security: Groww secrets are intentionally never displayed after saving. To change them, enter the new values and save again.",
+            "Security: the TOTP token and secret are not shown after saving. Enter new values and save again if they need to be replaced.",
             color = Muted,
             fontSize = 12.sp
         )

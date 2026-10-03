@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun escapedBuildConfig(value: String): String =
+    value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+val ipoSentinelApiUrl = System.getenv("IPO_SENTINEL_API_URL") ?: ""
+val ipoSentinelDeviceKey = System.getenv("IPO_SENTINEL_DEVICE_KEY") ?: ""
+
 android {
     namespace = "com.suhas.iposentinel"
     compileSdk = 35
@@ -12,11 +18,25 @@ android {
         applicationId = "com.suhas.iposentinel"
         minSdk = 28
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
+
+        buildConfigField(
+            "String",
+            "IPO_SENTINEL_API_URL",
+            "\"\${escapedBuildConfig(ipoSentinelApiUrl)}\""
+        )
+        buildConfigField(
+            "String",
+            "IPO_SENTINEL_DEVICE_KEY",
+            "\"\${escapedBuildConfig(ipoSentinelDeviceKey)}\""
+        )
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

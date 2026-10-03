@@ -33,12 +33,9 @@ data class ValidationStatus(
     val egressError: String? = null
 )
 
-class BackendApi(
-    private val baseUrl: String,
-    private val adminKey: String
-) {
-    private fun endpoint(path: String): String =
-        baseUrl.trim().trimEnd('/') + path
+class BackendApi {
+    private val baseUrl: String = BuildConfig.IPO_SENTINEL_API_URL.trim().trimEnd('/')
+    private val deviceKey: String = BuildConfig.IPO_SENTINEL_DEVICE_KEY
 
     suspend fun saveGrowwSettings(
         totpToken: String,
@@ -87,14 +84,33 @@ class BackendApi(
 
     private suspend fun request(method: String, path: String, body: String?): ApiResult =
         withContext(Dispatchers.IO) {
+            if (baseUrl.isBlank()) {
+                return@withContext ApiResult(
+                    ok = false,
+                    statusCode = 0,
+                    body = "",
+                    error = "Trading service is not provisioned in this build"
+                )
+            }
+            if (!baseUrl.startsWith("https://")) {
+                return@withContext ApiResult(
+                    ok = false,
+                    statusCode = 0,
+                    body = "",
+                    error = "Trading service configuration is invalid"
+                )
+            }
+
             try {
-                val url = URL(endpoint(path))
+                val url = URL(baseUrl + path)
                 val connection = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = method
                     connectTimeout = 8_000
                     readTimeout = 15_000
                     setRequestProperty("Accept", "application/json")
-                    setRequestProperty("X-IPO-Sentinel-Admin-Key", adminKey)
+                    if (deviceKey.isNotBlank()) {
+                        setRequestProperty("X-IPO-Sentinel-Device-Key", deviceKey)
+                    }
                     if (body != null) {
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json")
@@ -117,7 +133,7 @@ class BackendApi(
         }
 
     private fun extractError(body: String): String {
-        if (body.isBlank()) return "Backend request failed"
+        if (body.isBlank()) return "Trading service request failed"
         return try {
             JSONObject(body).optString("detail").ifBlank { body.take(300) }
         } catch (_: Exception) {
