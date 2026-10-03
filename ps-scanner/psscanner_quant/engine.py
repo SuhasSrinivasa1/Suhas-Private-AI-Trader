@@ -757,6 +757,8 @@ def scan_equities(book: str = "INTRADAY", symbols_override: Optional[List[str]] 
     set_state(f"scan_detail_{book}",stats)
 
     # Cached-only context. Background workers keep these fresh; missing context remains UNKNOWN.
+    # V627 compatibility/invariant: fabric_symbol_context delegates to sector_context_cached
+    # and news_context(..., allow_refresh=False); scanners never synchronously refresh them.
     prices = live_prices(syms,allow_network=False,max_age_seconds=180)
     regime_state = get_state("last_regime",{}) or {"regime":"WARMING","breadth_up_pct":0.0,"breadth_down_pct":0.0,"trend_vote":0.0,"stale":True}
     regime=(regime_state.get("regime") or "WARMING")

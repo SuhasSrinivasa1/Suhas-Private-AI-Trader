@@ -331,6 +331,8 @@ def run_circuit_cycle(max_symbols:int=120):
     set_state('scan_status_CIRCUIT',stats)
 
     regime_state=get_state('last_regime',{}) or {'regime':'WARMING','trend_vote':0,'breadth_up_pct':0,'breadth_down_pct':0,'stale':True};reg=(regime_state.get('regime') or 'WARMING');g=get_state('global_context',{}) or {'risk_state':'UNKNOWN','moves_pct':{},'stale':True};made=0;pk=period_key('CIRCUIT')
+    # V627 compatibility/invariant: fabric_symbol_context delegates to sector_context_cached;
+    # Circuit scoring remains cache-only for sector context and never rebuilds it inline.
     max_side=max(1,min(5,int(settings.get('circuit_live_max_per_side',3))))
     with db() as con:live_counts={side:int(con.execute("SELECT COUNT(*) FROM recommendations WHERE book='CIRCUIT' AND period_key=? AND side=? AND state='LIVE'",(pk,side)).fetchone()[0]) for side in ('LONG','SHORT')}
     for idx,s in enumerate(exact,1):
