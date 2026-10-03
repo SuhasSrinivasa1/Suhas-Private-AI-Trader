@@ -33,7 +33,7 @@ def get(path, *, timeout=6.0, attempts=4):
 
 
 ping=get("/api/ping",timeout=2,attempts=3)
-if ping.get("version")!="6.8.0":fail("runtime version is not 6.8.0")
+if ping.get("version")!="6.8.1":fail("runtime version is not 6.8.1")
 
 health_started=time.monotonic()
 health=get("/api/health",timeout=3,attempts=4)
@@ -87,7 +87,11 @@ for book in ("INTRADAY","WEEKLY","MONTHLY","ETF","CIRCUIT","CIRCUIT_NEXTDAY","IN
 
 perf=get("/api/performance?group_by=book&limit=1000",timeout=6)
 policy=perf.get("outcome_policy") or {}
+perf_contract=perf.get("performance_contract") or {}
 if "excluded" not in str(policy.get("voids") or "").lower():fail("performance VOID exclusion policy missing")
+if perf_contract.get("passive_bounded") is not True:fail("performance endpoint is not using the bounded passive contract")
+if perf_contract.get("network_calls") is not False:fail("performance endpoint must not make network calls")
+if perf.get("complete") is not True:fail("performance endpoint returned degraded telemetry: "+str(perf.get("degraded_reason") or perf.get("status")))
 
 diag=get("/api/diagnostics/no-trade?limit=4",timeout=6)
 execution=get("/api/execution/analytics?limit=20",timeout=6)
@@ -108,6 +112,7 @@ print(json.dumps({
     "algorithm_version":algorithm.get("algorithm_version"),
     "algorithm_accuracy_target":target,
     "performance_rows_scanned":perf.get("rows_scanned"),
+    "performance_contract":perf_contract,
     "diagnostic_books":len(diag.get("books") or {}),
     "execution_orders_scanned":execution.get("orders_scanned"),
     "backup_policy":backups.get("policy"),
