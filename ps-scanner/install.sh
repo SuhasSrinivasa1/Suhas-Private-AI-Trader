@@ -16,7 +16,7 @@ MODE="migration"
 cleanup(){ rm -f "$TMPSECRET" "$OLD_STATUS" "$NEW_HEALTH" "$NEW_GROWW" "$PLIST_BACKUP" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "PS Scanner Quant v6.8.0 safe install / in-place upgrade"
+echo "PS Scanner Quant v6.8.1 safe install / in-place upgrade"
 echo "Target: $APP"
 echo
 
@@ -209,7 +209,7 @@ for i in {1..60}; do
 import json,sys
 try:d=json.load(open(sys.argv[1]))
 except Exception:d={}
-ok=(d.get('version')=='6.8.0' and d.get('engine_alive') is True)
+ok=(d.get('version')=='6.8.1' and d.get('engine_alive') is True)
 raise SystemExit(0 if ok else 1)
 PYH
     then ok=1; break; fi
@@ -217,7 +217,7 @@ PYH
   sleep 2
 done
 if [[ $ok -ne 1 ]]; then
-  echo "v6.8.0 service did not pass application health check. See $APP/logs/service-error.log" >&2
+  echo "v6.8.1 service did not pass application health check. See $APP/logs/service-error.log" >&2
   exit 20
 fi
 
@@ -248,7 +248,7 @@ PYA
 done
 
 if [[ $groww_ok -ne 1 ]]; then
-  echo "v6.8.0 application started, but Groww connectivity could not be verified after explicit probes." >&2
+  echo "v6.8.1 application started, but Groww connectivity could not be verified after explicit probes." >&2
   if [[ $groww_auth_required -gt 0 ]]; then
     echo "Groww returned AUTH_REQUIRED during verification." >&2
   else
@@ -267,7 +267,7 @@ except Exception:g={}
 print('New app:', h.get('app'), h.get('version'))
 print('New Groww status:', g.get('status') or 'UNKNOWN')
 print('Credential capabilities:', g.get('credential_capabilities') or {})
-ok=(h.get('version')=='6.8.0' and h.get('engine_alive') is True and g.get('connected') is True)
+ok=(h.get('version')=='6.8.1' and h.get('engine_alive') is True and g.get('connected') is True)
 raise SystemExit(0 if ok else 1)
 PYV
 
@@ -276,7 +276,7 @@ trap cleanup EXIT
 
 echo
 echo "============================================================"
-echo "PS Scanner Quant v6.8.0 INSTALLED"
+echo "PS Scanner Quant v6.8.1 INSTALLED"
 echo "UI: http://127.0.0.1:8765"
 echo "Groww authentication: VERIFIED"
 echo "v6 runtime data/ledger: PRESERVED"
