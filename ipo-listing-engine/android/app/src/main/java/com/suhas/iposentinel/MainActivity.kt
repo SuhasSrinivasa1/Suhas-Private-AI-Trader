@@ -29,7 +29,7 @@ private val Danger = Color(0xFFFF6B6B)
 private val Muted = Color(0xFF9AA7B3)
 private val Amber = Color(0xFFFFC857)
 
-private enum class AppScreen { DASHBOARD, SETTINGS }
+private enum class AppScreen { DASHBOARD, STRATEGIES, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +73,12 @@ private fun IpoSentinelApp() {
                         label = { Text("Dashboard") }
                     )
                     NavigationBarItem(
+                        selected = screen == AppScreen.STRATEGIES,
+                        onClick = { screen = AppScreen.STRATEGIES },
+                        icon = { Text("▲") },
+                        label = { Text("Strategies") }
+                    )
+                    NavigationBarItem(
                         selected = screen == AppScreen.SETTINGS,
                         onClick = { screen = AppScreen.SETTINGS },
                         icon = { Text("⚙") },
@@ -92,6 +98,10 @@ private fun IpoSentinelApp() {
                     onBudgetChange = { budget = it },
                     growwConfigured = growwConfigured,
                     validation = lastValidation
+                )
+
+                AppScreen.STRATEGIES -> StrategiesScreen(
+                    modifier = Modifier.padding(padding)
                 )
 
                 AppScreen.SETTINGS -> GrowwSettingsScreen(
@@ -225,6 +235,224 @@ private fun DashboardScreen(
         ) {
             Text("Emergency Disable", fontWeight = FontWeight.Bold)
         }
+    }
+}
+
+@Composable
+private fun StrategiesScreen(modifier: Modifier) {
+    var summary by remember { mutableStateOf<StrategySummary?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val client = remember { BackendApi() }
+
+    fun refresh() {
+        if (busy) return
+        busy = true
+        error = null
+        scope.launch {
+            val (result, value) = client.fetchStrategySummary()
+            busy = false
+            if (result.ok && value != null) {
+                summary = value
+            } else {
+                error = result.error ?: "Unable to load strategy statistics"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text("Strategies", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Replay evidence, family rankings and champion promotion status",
+            color = Muted,
+            fontSize = 13.sp
+        )
+
+        if (busy && summary == null) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        error?.let {
+            StatusCard(
+                title = "Strategy service",
+                primary = "UNAVAILABLE",
+                secondary = it,
+                primaryColor = Danger
+            )
+            OutlinedButton(onClick = { refresh() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Retry")
+            }
+        }
+
+        summary?.let { data ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CompactMetricCard("Total", data.totalStrategyFamilies.toString(), Modifier.weight(1f))
+                CompactMetricCard("Tested", data.testedFamilies.toString(), Modifier.weight(1f))
+                CompactMetricCard("Champions", data.champions.toString(), Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CompactMetricCard("Challengers", data.challengers.toString(), Modifier.weight(1f))
+                CompactMetricCard(
+                    "Coverage",
+                    if (data.totalStrategyFamilies > 0)
+                        ((data.testedFamilies * 100) / data.totalStrategyFamilies).toString() + "%"
+                    else "0%",
+                    Modifier.weight(1f)
+                )
+                CompactMetricCard("Research", data.untestedFamilies.toString(), Modifier.weight(1f))
+            }
+
+            SettingsSection("Top 5 Working Families") {
+                if (data.topFive.isEmpty()) {
+                    Text(
+                        "No strategy family has enough recorded replay evidence yet. IPO Sentinel will not label an untested family as working.",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                } else {
+                    data.topFive.forEachIndexed { index, family ->
+                        StrategyFamilyRow(index + 1, family)
+                        if (index < data.topFive.lastIndex) {
+                            HorizontalDivider(color = Color(0xFF27313A))
+                        }
+                    }
+                }
+            }
+
+            SettingsSection("Promotion Pipeline") {
+                Text(
+                    "CHAMPION requires mature positive evidence after costs. CHALLENGER has sufficient testing but has not passed all promotion gates. RESEARCH is untested or has a small sample.",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+                HorizontalDivider(color = Color(0xFF27313A))
+                Text("Champion gate", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "≥30 trades • positive net expectancy • profit factor ≥1.15 • controlled drawdown • non-negative recent evidence",
+                    color = Muted,
+                    fontSize = 12.sp
+                )
+            }
+
+            SettingsSection("Registered Families") {
+                data.families.forEachIndexed { index, family ->
+                    RegisteredFamilyRow(family)
+                    if (index < data.families.lastIndex) {
+                        HorizontalDivider(color = Color(0xFF27313A))
+                    }
+                }
+            }
+
+            Text(
+                data.rankingNote,
+                color = Muted,
+                fontSize = 11.sp,
+                lineHeight = 16.sp
+            )
+
+            OutlinedButton(
+                onClick = { refresh() },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (busy) "Refreshing…" else "Refresh Strategy Evidence")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactMetricCard(label: String, value: String, modifier: Modifier = Modifier) {
+    ElevatedCard(
+        modifier = modifier,
+        colors = CardDefaults.elevatedCardColors(containerColor = Card)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(label, color = Muted, fontSize = 10.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun StrategyFamilyRow(rank: Int, family: StrategyFamilyStats) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("#" + rank, color = Teal, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
+            Column(Modifier.weight(1f)) {
+                Text(family.name, fontWeight = FontWeight.SemiBold)
+                Text(family.phase.replace("_", " "), color = Muted, fontSize = 10.sp)
+            }
+            StrategyStatusBadge(family.status)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            StrategyStat("Trades", family.trades.toString())
+            StrategyStat("Win", String.format(Locale.US, "%.1f%%", family.winRatePct))
+            StrategyStat("Exp.", String.format(Locale.US, "%.1f bps", family.expectancyBps))
+            StrategyStat("PF", String.format(Locale.US, "%.2f", family.profitFactor))
+        }
+        Text(
+            "Max DD " + String.format(Locale.US, "%.0f bps", family.maxDrawdownBps) +
+                " • Recent " + String.format(Locale.US, "%+.0f bps", family.last20NetBps),
+            color = Muted,
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
+private fun RegisteredFamilyRow(family: StrategyFamilyStats) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(family.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(
+                family.phase.replace("_", " ") + " • " + family.trades + " replay trades",
+                color = Muted,
+                fontSize = 10.sp
+            )
+        }
+        StrategyStatusBadge(family.status)
+    }
+}
+
+@Composable
+private fun StrategyStat(label: String, value: String) {
+    Column {
+        Text(label, color = Muted, fontSize = 9.sp)
+        Text(value, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun StrategyStatusBadge(status: String) {
+    val color = when (status.uppercase()) {
+        "CHAMPION" -> Teal
+        "CHALLENGER" -> Amber
+        else -> Muted
+    }
+    Surface(
+        color = color.copy(alpha = 0.14f),
+        shape = MaterialTheme.shapes.small
+    ) {
+        Text(
+            status,
+            color = color,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+        )
     }
 }
 
