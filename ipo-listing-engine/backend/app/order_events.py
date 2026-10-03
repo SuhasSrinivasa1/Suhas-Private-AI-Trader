@@ -108,6 +108,10 @@ class OrderEventStore:
         )
         return event
 
+    def latest_id(self) -> int:
+        with self._lock:
+            return max(0, self._next_id - 1)
+
     def after(self, event_id: int, limit: int = 100) -> list[OrderEvent]:
         if not self._path.exists():
             return []
