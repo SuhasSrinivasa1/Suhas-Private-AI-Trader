@@ -44,7 +44,20 @@ data class StrategySummary(
     val untestedFamilies: Int = 0,
     val topFive: List<StrategyFamilyStats> = emptyList(),
     val families: List<StrategyFamilyStats> = emptyList(),
-    val rankingNote: String = ""
+    val rankingNote: String = "",
+    val evidenceSource: String = "REMOTE"
+)
+
+data class TradeEvent(
+    val id: Long,
+    val eventType: String,
+    val symbol: String?,
+    val side: String?,
+    val quantity: Int?,
+    val price: Double?,
+    val orderId: String?,
+    val message: String,
+    val createdAt: String
 )
 
 data class ValidationStatus(
@@ -92,8 +105,18 @@ class BackendApi {
     }
 
     suspend fun fetchStrategySummary(): Pair<ApiResult, StrategySummary?> {
+        if (!isProvisioned()) {
+            return ApiResult(true, 200, "local") to LocalStrategyCatalog.summary(
+                "Replay evidence will sync after the live execution engine is provisioned."
+            )
+        }
+
         val result = request("GET", "/strategies/summary", null)
-        if (!result.ok) return result to null
+        if (!result.ok) {
+            return ApiResult(true, 206, "local", result.error) to LocalStrategyCatalog.summary(
+                "Live replay evidence is temporarily unavailable; showing the built-in strategy catalog."
+            )
+        }
         val json = JSONObject(result.body)
 
         fun parseFamily(obj: JSONObject): StrategyFamilyStats =
@@ -137,9 +160,45 @@ class BackendApi {
             untestedFamilies = json.optInt("untested_families", 0),
             topFive = topFive,
             families = families,
-            rankingNote = json.optString("ranking_note")
+            rankingNote = json.optString("ranking_note"),
+            evidenceSource = "REMOTE"
         )
     }
+
+    suspend fun fetchTradeEvents(afterId: Long, timeoutSeconds: Int = 20): Pair<ApiResult, List<TradeEvent>> {
+        if (!isProvisioned()) {
+            return ApiResult(false, 0, "", "Live execution engine is not connected") to emptyList()
+        }
+        val safeTimeout = timeoutSeconds.coerceIn(1, 25)
+        val result = request("GET", "/events?after_id=$afterId&timeout=$safeTimeout", null)
+        if (!result.ok) return result to emptyList()
+
+        val json = JSONObject(result.body)
+        val items = json.optJSONArray("events")
+        val events = buildList {
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val item = items.getJSONObject(i)
+                    add(
+                        TradeEvent(
+                            id = item.optLong("id"),
+                            eventType = item.optString("event_type"),
+                            symbol = item.optString("symbol").ifBlank { null },
+                            side = item.optString("side").ifBlank { null },
+                            quantity = if (item.isNull("quantity")) null else item.optInt("quantity"),
+                            price = if (item.isNull("price")) null else item.optDouble("price"),
+                            orderId = item.optString("order_id").ifBlank { null },
+                            message = item.optString("message"),
+                            createdAt = item.optString("created_at")
+                        )
+                    )
+                }
+            }
+        }
+        return result to events
+    }
+
+    fun isProvisioned(): Boolean = baseUrl.startsWith("https://") && deviceKey.isNotBlank()
 
     suspend fun validate(): Pair<ApiResult, ValidationStatus?> {
         val result = request("POST", "/settings/validate", "{}")
@@ -165,7 +224,7 @@ class BackendApi {
                     ok = false,
                     statusCode = 0,
                     body = "",
-                    error = "Trading service is not provisioned in this build"
+                    error = "Live execution engine is not connected in this build"
                 )
             }
             if (!baseUrl.startsWith("https://")) {
