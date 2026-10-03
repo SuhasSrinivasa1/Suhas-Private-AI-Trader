@@ -79,12 +79,18 @@ private fun IpoSentinelApp() {
     var budget by rememberSaveable { mutableFloatStateOf(100_000f) }
     var lastValidation by remember { mutableStateOf<ValidationStatus?>(null) }
     var growwConfigured by remember { mutableStateOf(false) }
+    var researchPlan by remember { mutableStateOf<ResearchPlan?>(null) }
 
     LaunchedEffect(Unit) {
         val api = BackendApi()
         val (_, savedStatus) = api.fetchStatus()
         if (savedStatus != null) {
             growwConfigured = savedStatus.growwConfigured
+        }
+
+        val (_, plan) = api.fetchResearchPlan()
+        if (plan != null) {
+            researchPlan = plan
         }
 
         val (_, liveState) = api.fetchLiveState()
@@ -213,7 +219,8 @@ private fun IpoSentinelApp() {
                     budget = budget,
                     onBudgetChange = { budget = it },
                     growwConfigured = growwConfigured,
-                    validation = lastValidation
+                    validation = lastValidation,
+                    researchPlan = researchPlan
                 )
 
                 AppScreen.STRATEGIES -> StrategiesScreen(
@@ -225,6 +232,10 @@ private fun IpoSentinelApp() {
                     onConfigurationSaved = { growwConfigured = true },
                     onValidated = {
                         lastValidation = it
+                        scope.launch {
+                            val (_, refreshedPlan) = BackendApi().fetchResearchPlan()
+                            if (refreshedPlan != null) researchPlan = refreshedPlan
+                        }
                         if (!it.liveExecutionReady && liveEnabled) {
                             requestLiveState(false)
                         }
@@ -246,7 +257,8 @@ private fun DashboardScreen(
     budget: Float,
     onBudgetChange: (Float) -> Unit,
     growwConfigured: Boolean,
-    validation: ValidationStatus?
+    validation: ValidationStatus?,
+    researchPlan: ResearchPlan?
 ) {
     Column(
         modifier = modifier
@@ -278,11 +290,65 @@ private fun DashboardScreen(
             primaryColor = if (validation?.liveExecutionReady == true) Teal else Amber
         )
 
+        val nextDay = researchPlan?.nextTradingDay
+        val nextCandidates = researchPlan?.nextTradingDayCandidates.orEmpty()
+        val weekCandidates = researchPlan?.weekCandidates.orEmpty()
+        val resolvedCount = nextCandidates.count { it.symbolResolved }
+
         StatusCard(
             title = "Next trading day",
-            primary = "Research queue not synced",
-            secondary = "Syncs official exchange calendar + next listings"
+            primary = when {
+                nextDay == null -> "Research queue not synced"
+                nextCandidates.isEmpty() -> nextDay + " • No confirmed NSE listing candidates"
+                else -> nextDay + " • " + nextCandidates.size + " candidate" +
+                    if (nextCandidates.size == 1) "" else "s"
+            },
+            secondary = when {
+                nextCandidates.isEmpty() && nextDay != null ->
+                    "Weekend/after-market research is active. NSE issue feed will be rechecked automatically."
+                nextCandidates.isEmpty() ->
+                    "Syncs official NSE calendar + issue feed"
+                else ->
+                    nextCandidates.joinToString(" • ") { candidate ->
+                        candidate.symbol + if (candidate.symbolResolved) " ✓" else " ⏳"
+                    } + "  |  Groww resolved " + resolvedCount + "/" + nextCandidates.size
+            },
+            primaryColor = if (researchPlan?.sourceReady == true) Teal else Amber
         )
+
+        if (weekCandidates.isNotEmpty()) {
+            ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
+                Column(
+                    Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Next-week IPO research", color = Muted, fontSize = 12.sp)
+                    weekCandidates.take(8).forEach { candidate ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(candidate.symbol, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    (candidate.listingDate ?: "Date pending") + " • " + candidate.companyName,
+                                    color = Muted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Text(
+                                if (candidate.symbolResolved) "RESOLVED" else "VERIFY",
+                                color = if (candidate.symbolResolved) Teal else Amber,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Text(
+                        "Trade gate: exact NSE symbol + Groww instrument + listing-day live quote/depth must all agree.",
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
 
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
             Column(
