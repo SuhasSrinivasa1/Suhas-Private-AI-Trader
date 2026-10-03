@@ -43,7 +43,17 @@ async def set_live_state(payload: LiveStateRequest) -> dict:
             )
             raise HTTPException(status_code=409, detail="Groww and static-IP validation must pass before live execution")
 
-    state = live_state_store.save(payload.enabled, payload.budget_rupees)
+    try:
+        state = live_state_store.save(payload.enabled, payload.budget_rupees)
+    except ValueError as exc:
+        audit_log.append(
+            "LIVE_STATE_REJECTED",
+            severity="WARN",
+            enabled=payload.enabled,
+            requested_budget_rupees=payload.budget_rupees,
+            reason=str(exc),
+        )
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     event_type = "LIVE_ENABLED" if state.enabled else "LIVE_DISABLED"
     event = order_events.publish(
         event_type,
