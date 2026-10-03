@@ -7,11 +7,11 @@ Verified using v4 scheme (APK Signature Scheme v4): false
 Verified for SourceStamp: false
 Number of signers: 1
 Signer #1 certificate DN: CN=Univest AutoTrade v2.2.0, OU=Private Release, O=Univest AutoTrade, L=Bengaluru, ST=Karnataka, C=IN
-Signer #1 certificate SHA-256 digest: 1e3cb4c9605797e9a95c615cff540084b5297d3e8b5b92a6f45c509e5112558b
-Signer #1 certificate SHA-1 digest: 360d847c3bb0f572d3505c2c326efeffa0540622
-Signer #1 certificate MD5 digest: b0cc5f5e20e7f8eab1ac953a1e24b4e5
+Signer #1 certificate SHA-256 digest: c288b1ad1dcb9c231dc02a020ef8b4b56ba13603f10faf44dbe2027a1deb372e
+Signer #1 certificate SHA-1 digest: 5faa4b5cf5ff7d7999f75966bc9b87104a9aaace
+Signer #1 certificate MD5 digest: c99fd0822aae82e32a7c9c6736200eea
 Signer #1 key algorithm: RSA
 Signer #1 key size (bits): 4096
-Signer #1 public key SHA-256 digest: c06fa6f80f80ae9fc9b89354ed914287f45f5298895aa08fecad2772003d8b23
-Signer #1 public key SHA-1 digest: 39c9e90cf47cce2deb77d763ea364bafa1ddfb71
-Signer #1 public key MD5 digest: 9ef593d20efbbcd14d7a3185d4907072
+Signer #1 public key SHA-256 digest: 0f948e49eff516012aa0e3bcb9f5a94a76038734b0840cff193c445763ad1d89
+Signer #1 public key SHA-1 digest: 6145e2fd33d15472e3e75eda63d7b35b6bc134a8
+Signer #1 public key MD5 digest: 4fc9386de498a48c04a48842ee52f624
