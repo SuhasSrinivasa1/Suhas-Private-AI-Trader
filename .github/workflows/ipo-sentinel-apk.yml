@@ -29,29 +29,58 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend + tests
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
-
-      - name: Compile backend
-        run: python -m compileall -q app scripts tests
-
-      - name: Run backend tests
+        id: install
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -q 2>&1 | tee pytest.log
+          python -m pip install --upgrade pip 2>&1 | tee validation.log
+          python -m pip install -e ".[dev]" 2>&1 | tee -a validation.log
+
+      - name: Compile backend
+        id: compile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m compileall -q app scripts tests 2>&1 | tee -a validation.log
+
+      - name: Run backend tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q 2>&1 | tee -a validation.log
 
       - name: Dependency check
-        run: python -m pip check
+        id: deps
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pip check 2>&1 | tee -a validation.log
 
       - name: Upload backend validation log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ipo-sentinel-backend-validation
-          path: ipo-listing-engine/backend/pytest.log
-          if-no-files-found: ignore
+          path: ipo-listing-engine/backend/validation.log
+          if-no-files-found: error
+
+      - name: Enforce backend validation gate
+        if: always()
+        shell: bash
+        run: |
+          echo "install=${{ steps.install.outcome }}"
+          echo "compile=${{ steps.compile.outcome }}"
+          echo "tests=${{ steps.tests.outcome }}"
+          echo "deps=${{ steps.deps.outcome }}"
+          test "${{ steps.install.outcome }}" = "success"
+          test "${{ steps.compile.outcome }}" = "success"
+          test "${{ steps.tests.outcome }}" = "success"
+          test "${{ steps.deps.outcome }}" = "success"
 
   build-apk:
     needs: backend-test
