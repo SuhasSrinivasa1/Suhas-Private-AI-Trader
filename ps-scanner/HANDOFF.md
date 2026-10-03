@@ -1,8 +1,20 @@
 # PS Scanner handoff
 
-Current source version: **6.8.1**.
+Current source version: **6.8.2**.
 
 The canonical source is this `ps-scanner/` directory. Runtime state is intentionally not committed. On a Mac installation, runtime state remains under `~/Applications/PS_Scanner_Final/data`, logs under `~/Applications/PS_Scanner_Final/logs`, and local credentials under the secure runtime data path.
+
+## v6.8.2 clean-baseline / bounded health execution snapshot
+
+v6.8.2 carries forward the fully production-validated v6.8.1 performance fix and adds one concrete bounded-health reliability hardening before migration to a dedicated public PS Scanner repository.
+
+The health snapshot now reads the daily manual-order count and persisted reconciliation/system state before optional historical telemetry. New indexes support the 24-hour trade-decision aggregation and daily order-count expression. This prevents a grown historical decision ledger from consuming the passive one-second health SQL budget before execution-critical diagnostic fields are available.
+
+Static IP remains execution-only. An unset Static IP is an expected execution blocker, not a scanner/research defect.
+
+The installer prefers an already-installed Python 3.12/3.11/3.10, rebuilds the disposable .venv cleanly, and retains a conditional urllib3 compatibility pin for legacy Python 3.9 / Apple LibreSSL environments. It does not install or modify system Python.
+
+See `RELEASE_v6.8.2.md` and `ARCHITECTURE_AUDIT_v6.8.2.md`.
 
 ## v6.8.1 bounded performance analytics reliability
 
