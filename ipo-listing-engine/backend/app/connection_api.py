@@ -116,17 +116,10 @@ async def validate_connection() -> dict:
     except Exception as exc:
         groww_error = str(exc)
 
-    live_ready = bool(
-        groww_auth_ok
-        and detected_ip
-        and static_ip_matches
-        and saved.static_ip_confirmed
-        and store.ready
-    )
-
+    research_plan: dict | None = None
     if groww_auth_ok and research_module.research_service is not None:
         try:
-            await asyncio.to_thread(
+            research_plan = await asyncio.to_thread(
                 research_module.research_service.refresh,
                 trigger="groww_connected",
             )
@@ -139,6 +132,20 @@ async def validate_connection() -> dict:
                 error=exc.__class__.__name__,
             )
 
+    calendar_ready = bool((research_plan or {}).get("calendar_ready", False))
+    nse_identity_source_ready = bool(
+        (research_plan or {}).get("nse_identity_source_ready", False)
+    )
+    live_ready = bool(
+        groww_auth_ok
+        and detected_ip
+        and static_ip_matches
+        and saved.static_ip_confirmed
+        and store.ready
+        and calendar_ready
+        and nse_identity_source_ready
+    )
+
     audit_log.append(
         "GROWW_VALIDATION",
         severity="INFO" if live_ready else "WARN",
@@ -147,6 +154,8 @@ async def validate_connection() -> dict:
         expected_static_ip=saved.expected_static_ip,
         static_ip_matches=static_ip_matches,
         static_ip_confirmed=saved.static_ip_confirmed,
+        calendar_ready=calendar_ready,
+        nse_identity_source_ready=nse_identity_source_ready,
         live_execution_ready=live_ready,
     )
 
@@ -158,6 +167,8 @@ async def validate_connection() -> dict:
         "static_ip_matches": static_ip_matches,
         "static_ip_confirmed": saved.static_ip_confirmed,
         "secret_store_ready": store.ready,
+        "calendar_ready": calendar_ready,
+        "nse_identity_source_ready": nse_identity_source_ready,
         "live_execution_ready": live_ready,
         "groww_error": groww_error,
         "egress_error": egress_error,
