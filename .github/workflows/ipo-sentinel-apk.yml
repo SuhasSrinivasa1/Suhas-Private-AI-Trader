@@ -16,9 +16,6 @@ jobs:
   backend-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: ipo-listing-engine/backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,8 +31,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pip install --upgrade pip 2>&1 | tee validation.log
-          python -m pip install -e ".[dev]" 2>&1 | tee -a validation.log
+          cd ipo-listing-engine/backend
+          python -m pip install --upgrade pip 2>&1 | tee ../../ipo-backend-validation.log
+          python -m pip install -e ".[dev]" 2>&1 | tee -a ../../ipo-backend-validation.log
 
       - name: Compile backend
         id: compile
@@ -43,7 +41,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m compileall -q app scripts tests 2>&1 | tee -a validation.log
+          cd ipo-listing-engine/backend
+          python -m compileall -q app scripts tests 2>&1 | tee -a ../../ipo-backend-validation.log
 
       - name: Run backend tests
         id: tests
@@ -51,7 +50,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -q 2>&1 | tee -a validation.log
+          cd ipo-listing-engine/backend
+          python -m pytest -q 2>&1 | tee -a ../../ipo-backend-validation.log
 
       - name: Dependency check
         id: deps
@@ -59,15 +59,17 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pip check 2>&1 | tee -a validation.log
+          cd ipo-listing-engine/backend
+          python -m pip check 2>&1 | tee -a ../../ipo-backend-validation.log
 
       - name: Upload backend validation log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ipo-sentinel-backend-validation
-          path: ipo-listing-engine/backend/validation.log
+          path: ipo-backend-validation.log
           if-no-files-found: error
+          retention-days: 7
 
       - name: Enforce backend validation gate
         if: always()
@@ -124,7 +126,7 @@ jobs:
         run: |
           mkdir -p release
           cp app/build/outputs/apk/debug/app-debug.apk release/IPO-Sentinel-v1.1.0-FINAL-debug.apk
-          sha256sum release/IPO-Sentinel-v1.0.0-debug.apk > release/SHA256SUMS.txt
+          sha256sum release/IPO-Sentinel-v1.1.0-FINAL-debug.apk > release/SHA256SUMS.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
