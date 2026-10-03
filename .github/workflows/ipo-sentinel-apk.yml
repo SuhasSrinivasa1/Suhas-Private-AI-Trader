@@ -37,10 +37,21 @@ jobs:
         run: python -m compileall -q app scripts tests
 
       - name: Run backend tests
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q 2>&1 | tee pytest.log
 
       - name: Dependency check
         run: python -m pip check
+
+      - name: Upload backend validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipo-sentinel-backend-validation
+          path: ipo-listing-engine/backend/pytest.log
+          if-no-files-found: ignore
 
   build-apk:
     needs: backend-test
