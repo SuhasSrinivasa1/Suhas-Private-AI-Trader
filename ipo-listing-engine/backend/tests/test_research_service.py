@@ -2,7 +2,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from app.listing_session import listing_session_gate
-from app.research_service import GrowwInstrumentMaster
+from app.research_service import GrowwInstrumentMaster, _extract_forthcoming_records
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -117,3 +117,20 @@ def test_listing_session_blocks_when_groww_buy_not_allowed():
     )
     assert result.can_submit_continuous_order is False
     assert result.state == "WAIT_BUY_NOT_ALLOWED"
+
+
+def test_forthcoming_listing_parser_extracts_official_identity():
+    payload = {
+        "data": [
+            {
+                "symbol": "NEWIPO",
+                "companyName": "New IPO Limited",
+                "dateOfListing": "05-Oct-2026",
+                "isin": "INE123456789",
+                "series": "EQ",
+            }
+        ]
+    }
+    rows = _extract_forthcoming_records(payload)
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "NEWIPO"
