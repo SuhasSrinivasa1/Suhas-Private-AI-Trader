@@ -880,6 +880,8 @@ private fun GrowwSettingsScreen(
                                 .put("ready", value.liveExecutionReady)
                                 .put("auth_ok", value.growwAuthOk)
                                 .put("static_ip_matches", value.staticIpMatches)
+                                .put("calendar_ready", value.calendarReady)
+                                .put("nse_identity_source_ready", value.nseIdentitySourceReady)
                         )
                     } else {
                         message = result.error ?: "Validation failed"
@@ -923,6 +925,8 @@ private fun GrowwSettingsScreen(
                 CheckRow("Static public IP matches", it.staticIpMatches)
                 CheckRow("Groww whitelist confirmed", it.staticIpConfirmed)
                 CheckRow("Secure credential vault", it.secretStoreReady)
+                CheckRow("Official NSE calendar ready", it.calendarReady)
+                CheckRow("NSE listing identity source ready", it.nseIdentitySourceReady)
                 HorizontalDivider(color = Color(0xFF27313A))
                 Text(
                     "Detected static IP: " + (it.detectedEgressIp ?: "Unavailable"),
