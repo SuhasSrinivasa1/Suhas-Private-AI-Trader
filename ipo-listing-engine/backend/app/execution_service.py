@@ -80,6 +80,20 @@ class GrowwExecutionService:
         return 0.0
 
     @staticmethod
+    def _quote_is_fresh(quote: Any, now: datetime, *, max_age_seconds: float = 120.0) -> bool:
+        if not isinstance(quote, dict):
+            return False
+        source = quote.get("payload") if isinstance(quote.get("payload"), dict) else quote
+        try:
+            last_trade_ms = float(source.get("last_trade_time") or 0)
+        except (TypeError, ValueError):
+            return False
+        if last_trade_ms <= 0:
+            return False
+        age_seconds = now.timestamp() - (last_trade_ms / 1000.0)
+        return -5.0 <= age_seconds <= max_age_seconds
+
+    @staticmethod
     def _quote_has_depth(quote: Any) -> bool:
         if not isinstance(quote, dict):
             return False
@@ -120,6 +134,8 @@ class GrowwExecutionService:
             raise RuntimeError("Official IPO research plan is unavailable")
         if not plan.get("calendar_ready"):
             raise RuntimeError("Official NSE cash-market calendar is not ready")
+        if not plan.get("nse_identity_source_ready"):
+            raise RuntimeError("Authoritative NSE forthcoming-listing identity source is unavailable")
         try:
             generated = datetime.fromisoformat(str(plan.get("generated_at")))
             generated = generated if generated.tzinfo else generated.replace(tzinfo=IST)
@@ -169,6 +185,7 @@ class GrowwExecutionService:
         groww: Any,
         symbol: str,
         candidate: dict[str, Any],
+        now: datetime,
     ) -> tuple[dict[str, Any], dict[str, Any], float]:
         instrument = groww.get_instrument_by_exchange_and_trading_symbol(
             exchange=groww.EXCHANGE_NSE,
@@ -200,6 +217,8 @@ class GrowwExecutionService:
         )
         if not isinstance(quote, dict):
             raise RuntimeError("Fresh Groww quote is unavailable")
+        if not self._quote_is_fresh(quote, now):
+            raise RuntimeError("Groww quote is missing a fresh last_trade_time")
         ltp = self._extract_ltp(quote)
         if ltp <= 0:
             raise RuntimeError("Positive live Groww price is unavailable")
@@ -229,7 +248,7 @@ class GrowwExecutionService:
             raise RuntimeError("Security has not reached its official listing date")
 
         groww = self._session().api
-        instrument, quote, live_price = self._instrument_and_price(groww, symbol, candidate)
+        instrument, quote, live_price = self._instrument_and_price(groww, symbol, candidate, now)
         depth_available = self._quote_has_depth(quote)
 
         lot_size = max(1, int(float(instrument.get("lot_size") or 1)))
