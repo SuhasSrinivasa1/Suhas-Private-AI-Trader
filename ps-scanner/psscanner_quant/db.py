@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at TEXT NOT NULL,
   FOREIGN KEY(recommendation_id) REFERENCES recommendations(recommendation_id)
 );
+CREATE INDEX IF NOT EXISTS idx_orders_created_day_state ON orders(substr(created_at,1,10),state);
 
 CREATE TABLE IF NOT EXISTS health_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,6 +255,7 @@ CREATE TABLE IF NOT EXISTS trade_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_trade_decisions_book_ts ON trade_decisions(book,ts DESC);
 CREATE INDEX IF NOT EXISTS idx_trade_decisions_symbol ON trade_decisions(symbol,side,ts DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_decisions_ts_decision ON trade_decisions(ts DESC,decision);
 
 
 CREATE TABLE IF NOT EXISTS fundamental_snapshots (
