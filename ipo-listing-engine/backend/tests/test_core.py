@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from app.domain import Action, LiveFeatures, Ownership
-from app.services import ExchangeCalendar, OwnedPositionRegistry
+from app.services import ExchangeCalendar, OwnedPositionRegistry, ShadowFill, ShadowLedger
 from app.strategy import ListingDecisionEngine
 
 
@@ -45,3 +45,14 @@ def test_strong_listing_flow_can_probe_long():
     )
     decision = ListingDecisionEngine().decide(f, 100_000)
     assert decision.action in {Action.PROBE_LONG, Action.BUILD_LONG}
+
+
+def test_shadow_ledger_includes_all_charges_once():
+    ledger = ShadowLedger(100_000)
+    ledger.apply(ShadowFill(symbol="ABC", side="BUY", quantity=100, price=100, charges=10))
+    ledger.apply(ShadowFill(symbol="ABC", side="SELL", quantity=100, price=110, charges=12))
+    status = ledger.mark_to_market({})
+    assert status["realized_gross_pnl"] == 1000.0
+    assert status["charges"] == 22.0
+    assert status["realized_pnl"] == 978.0
+    assert status["net_pnl"] == 978.0
