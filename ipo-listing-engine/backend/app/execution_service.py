@@ -46,6 +46,9 @@ class GrowwExecutionService:
     TERMINAL_SUCCESS = {"EXECUTED", "COMPLETED", "DELIVERY_AWAITED"}
     TERMINAL_FAILURE = {"REJECTED", "FAILED", "CANCELLED"}
 
+    def _now(self) -> datetime:
+        return datetime.now(IST)
+
     def _session(self) -> GrowwSession:
         saved = groww_settings_store.load()
         if not saved:
@@ -213,7 +216,7 @@ class GrowwExecutionService:
         if side not in {"BUY", "SELL"}:
             raise ValueError("Side must be BUY or SELL")
 
-        now = datetime.now(IST)
+        now = self._now()
         self._require_current_static_ip()
         candidate, plan = self._authorized_candidate(symbol, now)
 
