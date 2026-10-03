@@ -20,7 +20,7 @@ from .research_api import router as research_router, bind_service as bind_resear
 from .research_service import bind_research_service
 from .scheduler import ResearchScheduler
 
-app = FastAPI(title="IPO Sentinel", version="1.0.0")
+app = FastAPI(title="IPO Sentinel", version="1.1.0")
 app.include_router(connection_router)
 app.include_router(strategy_router)
 app.include_router(ops_router)
@@ -99,7 +99,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "ipo-sentinel",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "shadow_capital": shadow.starting_capital,
         "live_execution": live_state_store.load().enabled,
         "calendar_ready": calendar.source_ready,

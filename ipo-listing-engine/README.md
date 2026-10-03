@@ -133,3 +133,18 @@ Live trading state is server-authoritative. Enabling live mode requires Groww au
 ### Build validation
 
 The stable GitHub workflow compiles and tests the IPO backend, runs its pytest suite and dependency check, runs Android lint, and only then builds the APK artifact.
+
+
+## Final autonomous research release (v1.1.0)
+
+This release freezes the automated IPO-discovery and listing-day identity workflow.
+
+- Research runs independently of Groww authentication and refreshes again immediately after a successful Groww validation.
+- A full NSE IPO research refresh runs every calendar day at 16:05 IST, including Saturdays and Sundays, plus at backend startup.
+- Weekdays revalidate at 08:30 IST and repeatedly through the new-listing special pre-open / continuous-market transition.
+- IPO research does not require a trading symbol. Candidates can exist in a pre-symbol state using official issue identity, ISIN when available, company identity and issue dates.
+- Live identity is authorized only after the official NSE forthcoming-listing source provides the listing symbol/date and the Groww NSE CASH instrument resolves exactly.
+- When ISIN is available, both NSE trading symbol and ISIN must agree exactly; ambiguous or conflicting rows fail closed.
+- Groww instrument metadata is rechecked for exchange token, series, lot size, tick size, freeze quantity, buy/sell permission and live availability.
+- Listing-day auto execution is disabled during NSE special pre-open. The engine may observe 09:00-10:00, but continuous-market orders are not eligible before 10:00 IST and still require fresh quote, market depth, liquidity, spread, impact, circuit, position and order-state gates.
+- The dashboard exposes daily research health, next-trading-day candidates, next-week candidates, NSE identity confirmation and Groww resolution state.
