@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from .audit import audit_log
+
 from .connection_settings import (
     EncryptedGrowwSettingsStore,
     StoredGrowwSettings,
@@ -63,6 +65,11 @@ def save_groww_settings(payload: GrowwSettingsRequest) -> dict:
             static_ip_confirmed=payload.static_ip_confirmed,
         )
     )
+    audit_log.append(
+        "GROWW_SETTINGS_SAVED",
+        expected_static_ip=payload.expected_static_ip.strip(),
+        static_ip_confirmed=payload.static_ip_confirmed,
+    )
     return {
         "saved": True,
         "groww_configured": True,
@@ -75,6 +82,7 @@ def save_groww_settings(payload: GrowwSettingsRequest) -> dict:
 @router.delete("/groww", dependencies=[Depends(require_device_key)])
 def clear_groww_settings() -> dict:
     store.clear()
+    audit_log.append("GROWW_SETTINGS_CLEARED")
     return {"cleared": True}
 
 
@@ -112,6 +120,17 @@ async def validate_connection() -> dict:
         and static_ip_matches
         and saved.static_ip_confirmed
         and store.ready
+    )
+
+    audit_log.append(
+        "GROWW_VALIDATION",
+        severity="INFO" if live_ready else "WARN",
+        groww_auth_ok=groww_auth_ok,
+        detected_egress_ip=detected_ip,
+        expected_static_ip=saved.expected_static_ip,
+        static_ip_matches=static_ip_matches,
+        static_ip_confirmed=saved.static_ip_confirmed,
+        live_execution_ready=live_ready,
     )
 
     return {
