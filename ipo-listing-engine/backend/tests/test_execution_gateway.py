@@ -46,7 +46,7 @@ def test_gateway_uses_official_cash_order_shape(monkeypatch, tmp_path):
             transaction_type="BUY",
             product="CNC",
             order_type="LIMIT",
-            order_reference_id="IPO-SENT-ABC-01",
+            order_reference_id="IPOSENT-ABC-01",
             price=100.0,
         )
     )
