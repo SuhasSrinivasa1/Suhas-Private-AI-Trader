@@ -39,8 +39,17 @@ jobs:
         run: python -m compileall -q psscanner_quant tests tools
       - name: Unit/regression suite
         run: |
+          set -o pipefail
           python -c "from psscanner_quant.db import init_db; init_db()"
-          python -m unittest discover -s tests -v
+          python -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/ps-scanner-tests.log"
+      - name: Upload regression failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps-scanner-regression-log-${{ matrix.os }}
+          path: ${{ runner.temp }}/ps-scanner-tests.log
+          if-no-files-found: warn
+          retention-days: 1
       - name: Validate UI JavaScript syntax
         run: |
           python - <<'PY'
