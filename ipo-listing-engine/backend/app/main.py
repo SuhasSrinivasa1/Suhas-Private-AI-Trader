@@ -10,6 +10,7 @@ from .audit import audit_log
 from .connection_api import router as connection_router
 from .domain import LiveFeatures
 from .post_listing_monitor import PostListingOpportunityEngine, PostListingSnapshot
+from .live_state import live_state_store
 from .ops_api import router as ops_router
 from .services import ExchangeCalendar, OwnedPositionRegistry, ShadowLedger
 from .strategy import ListingDecisionEngine
@@ -73,7 +74,7 @@ def health() -> dict:
         "service": "ipo-sentinel",
         "version": "1.0.0",
         "shadow_capital": shadow.starting_capital,
-        "live_execution": False,
+        "live_execution": live_state_store.load().enabled,
         "calendar_ready": calendar.source_ready,
         "post_listing_monitor_days": 30,
     }
