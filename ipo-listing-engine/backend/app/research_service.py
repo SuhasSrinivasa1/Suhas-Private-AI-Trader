@@ -129,6 +129,8 @@ class ResearchCandidate:
     groww_symbol: str | None
     groww_exchange_token: str | None
     groww_series: str | None
+    groww_lot_size: int | None
+    groww_tick_size: float | None
     buy_allowed: bool
     sell_allowed: bool
     symbol_resolved: bool
@@ -361,6 +363,16 @@ class DailyResearchService:
                             groww_symbol=str((row or {}).get("groww_symbol") or "").strip() or None,
                             groww_exchange_token=str((row or {}).get("exchange_token") or "").strip() or None,
                             groww_series=str((row or {}).get("series") or "").strip() or None,
+                            groww_lot_size=(
+                                int(float((row or {}).get("lot_size") or 0))
+                                if str((row or {}).get("lot_size") or "").strip()
+                                else None
+                            ),
+                            groww_tick_size=(
+                                float((row or {}).get("tick_size"))
+                                if str((row or {}).get("tick_size") or "").strip()
+                                else None
+                            ),
                             buy_allowed=buy_allowed,
                             sell_allowed=sell_allowed,
                             symbol_resolved=resolved,
