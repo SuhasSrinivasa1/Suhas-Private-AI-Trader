@@ -57,17 +57,21 @@ class ResearchScheduler:
                 max_instances=1,
                 coalesce=True,
             )
-        scheduler.add_job(
-            lambda: self.research_job(trigger="continuous_open_recheck"),
-            trigger="cron",
-            day_of_week="mon-fri",
-            hour=10,
-            minute=0,
-            id="ipo_listing_recheck_1000",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+        # Groww can publish a newly-listed CASH instrument a few minutes after the
+        # exchange session transitions. Recheck repeatedly instead of assuming 10:00
+        # availability. The execution gate still remains closed until an exact match exists.
+        for minute in (0, 1, 2, 3, 5, 10, 15):
+            scheduler.add_job(
+                lambda: self.research_job(trigger="continuous_open_recheck"),
+                trigger="cron",
+                day_of_week="mon-fri",
+                hour=10,
+                minute=minute,
+                id=f"ipo_listing_recheck_10{minute:02d}",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
         return scheduler
 
 
