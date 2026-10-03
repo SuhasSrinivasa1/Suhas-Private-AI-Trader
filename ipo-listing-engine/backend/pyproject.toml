@@ -1,0 +1,26 @@
+[project]
+name = "ipo-sentinel-backend"
+version = "1.1.0"
+description = "Static-IP backend for IPO Sentinel"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32,<1",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6,<3",
+  "httpx>=0.28,<1",
+  "growwapi>=1.5,<2",
+  "pyotp>=2.9,<3",
+  "apscheduler>=3.10,<4",
+  "cryptography>=43,<47",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.8,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
