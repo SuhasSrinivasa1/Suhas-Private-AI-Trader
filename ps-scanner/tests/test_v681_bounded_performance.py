@@ -58,6 +58,11 @@ class V681BoundedPerformanceTests(unittest.TestCase):
         self.assertIn("idx_recs_book_state_closed_time",indexes)
         self.assertIn("idx_recs_state_closed_time",plan)
 
+    def test_ui_distinguishes_degraded_analytics_from_no_evidence(self):
+        html=(Path(__file__).resolve().parents[1]/"static"/"index.html").read_text()
+        self.assertIn("Performance analytics degraded",html)
+        self.assertIn("p.complete===false",html)
+
     def test_book_projection_does_not_load_large_json_envelopes(self):
         cols=analytics._performance_select_columns("book")
         self.assertNotIn("rationale_json",cols)

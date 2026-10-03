@@ -30,7 +30,7 @@ That design could exceed the validator's six-second HTTP timeout on the producti
 - Project only the fields needed by each performance grouping.
 - Keep family mapping inside the same SQLite snapshot.
 - Passive HTTP performance calls use a 2.5-second wall-clock/SQL budget and 0.25-second SQLite busy timeout.
-- If the passive budget cannot be met, return explicit `DEGRADED` telemetry with `total=null` and no fabricated group rows.
+- If the passive budget cannot be met, return explicit `DEGRADED` telemetry with `total=null` and no fabricated group rows; the UI shows this state explicitly instead of presenting it as zero evidence.
 - Background learning continues to call the unbounded analytics path so evidence is never silently discarded.
 - Post-install validation uses a bounded 200-row contract and verifies passive/network-free/single-snapshot telemetry.
 
