@@ -1,114 +1,20 @@
-name: Build NSE Intraday Momentum v2.0 Live Candle Fusion
+name: Build NSE Intraday Momentum v2.0 Live Candle Fusion (manual archive)
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-v200:
-    if: contains(github.event.pull_request.title, '[BUILD-V200]')
+  archived:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
     steps:
-      - name: Checkout v2.0 build branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Reconstruct and verify v2.0 source
-        shell: bash
+      - name: Archived workflow notice
         run: |
-          set -euo pipefail
-          cat v2chunk.00 v2chunk.01 v2chunk.02 v2chunk.03 v2chunk.04 v2chunk.05 | base64 -d > /tmp/nse-v200-source.tar.xz
-          echo 'baabb4ea5644f1eb156b425ce772951bf903706a8c128a1189489ff9cd2a9ea2  /tmp/nse-v200-source.tar.xz' | sha256sum -c -
-          tar -xJf /tmp/nse-v200-source.tar.xz
-          test -d v200src
-          # Conservative precision fix: ensure generated trade plans clear the 1.30 R:R floor with margin.
-          sed -i 's/double rrMin=1\.30;/double rrMin=1.35;/' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/TradePlanMath.java
-          grep -q 'double rrMin=1.35' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/TradePlanMath.java
-          grep -q "versionCode 200" v200src/app/build.gradle
-          grep -q "versionName '2.0.0'" v200src/app/build.gradle
-          test ! -f v200src/app/src/main/java/com/suhas/nsedeliverymomentum/NightLab.java
-          grep -q 'class CandlestickPatternMath' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/CandlestickPatternMath.java
-          grep -q 'class TradePlanMath' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/TradePlanMath.java
-          grep -q 'scheduleWithFixedDelay(this::safeFastPrices,5,5' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
-          grep -q 'results_total' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/DeliveryMomentumService.java
-          grep -q 'targetKnown' v200src/app/src/main/java/com/suhas/nsedeliverymomentum/LearningStore.java
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android API 36
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-
-      - name: Unit tests and lint
-        working-directory: v200src
-        run: gradle --no-daemon --console=plain clean testDebugUnitTest lintDebug
-
-      - name: Assemble release
-        working-directory: v200src
-        run: gradle --no-daemon --console=plain assembleRelease
-
-      - name: Align sign and validate APK
-        working-directory: v200src
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          UNSIGNED='app/build/outputs/apk/release/app-release-unsigned.apk'
-          ALIGNED='out/app-release-aligned.apk'
-          SIGNED='out/NSE-Intraday-Momentum-S24-v2.0.0-LIVE-CANDLE-FUSION-FRESH-SIGNED.apk'
-          test -s "$UNSIGNED"
-          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
-          "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
-          keytool -genkeypair -v -keystore /tmp/v200.jks -storepass changeit -keypass changeit -alias nse-v200 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=NSE Intraday Momentum v2.0, OU=Private Build, O=NSE Intraday Momentum, L=Bengaluru, ST=Karnataka, C=IN'
-          "$APKSIGNER" sign --ks /tmp/v200.jks --ks-pass pass:changeit --key-pass pass:changeit --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
-          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
-          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
-          "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
-          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
-          grep -q "package: name='com.suhas.nsedeliverymomentum'" out/APK-BADGING.txt
-          grep -q "versionCode='200'" out/APK-BADGING.txt
-          grep -q "versionName='2.0.0'" out/APK-BADGING.txt
-          grep -q "application-label:'NSE Intraday Momentum'" out/APK-BADGING.txt
-          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
-          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
-          grep -q 'Verification successful' out/ZIPALIGN-VERIFY.txt
-          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
-          sha256sum "$SIGNED" | tee out/SHA256.txt
-          (cd .. && zip -qr v200src/out/NSE-Intraday-Momentum-v2.0.0-SOURCE.zip v200src -x 'v200src/app/build/*' 'v200src/.gradle/*' 'v200src/out/*')
-
-      - name: Upload verified v2.0 package
-        uses: actions/upload-artifact@v4
-        with:
-          name: NSE-Intraday-Momentum-S24-v2.0.0-LIVE-CANDLE-FUSION-VERIFIED
-          path: |
-            v200src/out/NSE-Intraday-Momentum-S24-v2.0.0-LIVE-CANDLE-FUSION-FRESH-SIGNED.apk
-            v200src/out/APK-SIGNATURE-VERIFY.txt
-            v200src/out/APK-BADGING.txt
-            v200src/out/ZIPALIGN-VERIFY.txt
-            v200src/out/ZIP-INTEGRITY.txt
-            v200src/out/SHA256.txt
-            v200src/out/NSE-Intraday-Momentum-v2.0.0-SOURCE.zip
-            v200src/RELEASE-NOTES-v2.0.0.txt
-          if-no-files-found: error
-          retention-days: 30
+          echo "The v2.0 NSE build is retained for manual historical use only."
+          echo "It no longer runs automatically on unrelated pull requests."
