@@ -21,6 +21,7 @@ NSE_BASE = "https://www.nseindia.com"
 NSE_UPCOMING = "/api/all-upcoming-issues?category=ipo"
 NSE_CURRENT = "/api/ipo-current-issue"
 NSE_HOLIDAYS = "/api/holiday-master?type=trading"
+NSE_FORTHCOMING = "/api/new-listing-today?index=ForthListing"
 GROWW_INSTRUMENT_CSV = "https://growwapi-assets.groww.in/instruments/instrument.csv"
 
 _BROWSER_HEADERS = {
@@ -84,17 +85,18 @@ def _extract_records(payload: Any) -> list[dict[str, Any]]:
         if isinstance(node, dict):
             flat = _flat_keys(node)
             looks_like_issue = (
-                any(k in flat for k in ("symbol", "tradingSymbol", "issuesymbol"))
+                any(_norm_key(k) in flat for k in ("symbol", "tradingSymbol", "issue_symbol"))
                 and any(
-                    k in flat
+                    _norm_key(k) in flat
                     for k in (
-                        "companName",
-                        "companyname",
-                        "issuername",
-                        "issuestartdate",
-                        "issueenddate",
-                        "listingdate",
-                        "tentativelistingdate",
+                        "companyName",
+                        "company",
+                        "issuerName",
+                        "issueStartDate",
+                        "issueEndDate",
+                        "listingDate",
+                        "tentativeListingDate",
+                        "dateOfListing",
                     )
                 )
             )
@@ -111,6 +113,45 @@ def _extract_records(payload: Any) -> list[dict[str, Any]]:
     unique: dict[str, dict[str, Any]] = {}
     for item in out:
         symbol = str(_first(item, "symbol", "trading_symbol", "issue_symbol") or "").upper().strip()
+        if symbol:
+            unique[symbol] = item
+    return list(unique.values())
+
+
+def _extract_forthcoming_records(payload: Any) -> list[dict[str, Any]]:
+    """
+    Parse NSE's Forthcoming Listing endpoint defensively. The endpoint's envelope
+    and column spelling have changed historically, so identify rows by exact exchange
+    identifiers rather than by a fixed top-level JSON key.
+    """
+    out: list[dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            symbol = str(_first(node, "symbol", "tradingSymbol", "securitySymbol") or "").upper().strip()
+            listing = _parse_date(
+                _first(
+                    node,
+                    "listingDate",
+                    "dateOfListing",
+                    "date_of_listing",
+                    "date",
+                    "listing_date",
+                )
+            )
+            isin = _first(node, "isin", "isinCode")
+            if symbol and (listing or isin):
+                out.append(node)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(payload)
+    unique: dict[str, dict[str, Any]] = {}
+    for item in out:
+        symbol = str(_first(item, "symbol", "tradingSymbol", "securitySymbol") or "").upper().strip()
         if symbol:
             unique[symbol] = item
     return list(unique.values())
@@ -176,7 +217,30 @@ class NseOfficialClient:
             for item in _extract_records(payload):
                 symbol = str(_first(item, "symbol", "trading_symbol", "issue_symbol") or "").upper().strip()
                 if symbol:
-                    records[symbol] = (item, source)
+                    prior = records.get(symbol)
+                    merged = dict(prior[0]) if prior else {}
+                    merged.update(item)
+                    records[symbol] = (merged, source)
+
+        # Final/near-final exchange listing rows override tentative issue metadata for
+        # symbol, ISIN, series and listing date. This is the authoritative pre-listing gate.
+        try:
+            payload = self.json(NSE_FORTHCOMING)
+            for item in _extract_forthcoming_records(payload):
+                symbol = str(
+                    _first(item, "symbol", "tradingSymbol", "securitySymbol") or ""
+                ).upper().strip()
+                if not symbol:
+                    continue
+                prior = records.get(symbol)
+                merged = dict(prior[0]) if prior else {}
+                merged.update(item)
+                records[symbol] = (merged, "NSE_FORTHCOMING_LISTING")
+        except Exception:
+            # Caller records source failure separately; issue feeds remain useful for
+            # research but live execution still waits if final listing metadata is absent.
+            pass
+
         return list(records.values())
 
     def trading_holidays(self) -> set[date]:
@@ -276,8 +340,20 @@ class DailyResearchService:
     @staticmethod
     def _candidate(item: dict[str, Any], source: str) -> dict[str, Any]:
         symbol = str(_first(item, "symbol", "trading_symbol", "issue_symbol") or "").upper().strip()
-        company = str(_first(item, "companyName", "company", "issuerName", "name") or symbol).strip()
-        listing = _parse_date(_first(item, "listingDate", "tentativeListingDate", "dateOfListing"))
+        company = str(
+            _first(item, "companyName", "company", "issuerName", "securityName", "name") or symbol
+        ).strip()
+        listing = _parse_date(
+            _first(
+                item,
+                "listingDate",
+                "dateOfListing",
+                "date_of_listing",
+                "listing_date",
+                "tentativeListingDate",
+                "date",
+            )
+        )
         start = _parse_date(_first(item, "issueStartDate", "startDate", "openDate", "issueOpenDate"))
         end = _parse_date(_first(item, "issueEndDate", "endDate", "closeDate", "issueCloseDate"))
         isin_raw = _first(item, "isin", "isinCode")
