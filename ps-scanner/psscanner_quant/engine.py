@@ -1389,7 +1389,10 @@ class Engine:
     def _worker_timeout_seconds(self,name,interval):
         explicit={"international":120.0,"broker_probe":90.0,"live_update":180.0,"market_snapshot":240.0,
                   "intraday":900.0,"weekly":1200.0,"monthly":1200.0,"etf":900.0,
-                  "circuit":600.0,"circuit_nextday":300.0,"global_india":600.0}
+                  "circuit":600.0,"circuit_nextday":300.0,"global_india":600.0,
+                  # Low-priority maintenance legitimately performs a paced multi-request
+                  # history hydration batch; 360s was below its existing transport envelope.
+                  "maintenance":900.0}
         return float(explicit.get(name,max(300.0,float(interval)*4.0)))
 
     def worker_status(self):
@@ -1427,6 +1430,30 @@ class Engine:
                        "rejection_counters":(detail.get("funnel") or {}),
                        "recovery_state":scan.get("contract") or scan.get("recovery_policy"),
                        "restart_count":int(self.worker_restarts.get(name,0))}
+        return out
+
+    def worker_status_cached(self):
+        """Pure in-memory worker liveness for passive health/sanity endpoints.
+
+        Detailed /api/workers telemetry may read scan state from SQLite. Passive health
+        paths must not open that second connection or wait behind worker telemetry writes.
+        """
+        now=datetime.now(IST);out={}
+        for name,t in self.workers.items():
+            spec=self.worker_specs.get(name,(300,None));interval=float(spec[0]);timeout=self._worker_timeout_seconds(name,interval)
+            state=dict(self.worker_runtime.get(name) or {})
+            started=state.get("started_at");elapsed=None
+            if state.get("state")=="RUNNING" and started:
+                try:
+                    s=datetime.fromisoformat(str(started));s=s if s.tzinfo else s.replace(tzinfo=IST)
+                    elapsed=max(0.0,(now-s).total_seconds())
+                except Exception:elapsed=None
+            out[name]={**state,"alive":bool(t.is_alive()),"thread":t.name,"timeout_seconds":timeout,
+                       "elapsed_seconds":round(elapsed,2) if elapsed is not None else state.get("duration_seconds"),
+                       "hung":bool(t.is_alive() and state.get("state")=="RUNNING" and elapsed is not None and elapsed>timeout),
+                       "current_stage":state.get("state"),"processed":None,"remaining":None,
+                       "rejection_counters":{},"recovery_state":None,
+                       "restart_count":int(self.worker_restarts.get(name,0)),"passive_cached":True}
         return out
 
     def _worker(self,name,interval,func,initial_delay=0):

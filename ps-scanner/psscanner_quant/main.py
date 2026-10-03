@@ -178,7 +178,7 @@ def health():
         if not recent:recent=[{"ts":now_iso(),"component":"health","level":"WARN","message":"bounded DB snapshot unavailable: "+db_error}]
     history_cached=history_control_status_cached()
     execution_cached=execution_readiness_cached_snapshot(order_count,state.get("position_reconciliation") or {})
-    workers=engine.worker_status()
+    workers=engine.worker_status_cached()
     evidence={
         "fundamentals":fundamentals,
         "trading_calendar":trading_calendar_status(),
@@ -268,7 +268,7 @@ def sanity():
     except Exception as exc:
         runtime_error=str(exc)[:180]
         runtime_db="TIME_BOUNDED" if "interrupted" in str(exc).lower() else "DEGRADED"
-    workers=engine.worker_status()
+    workers=engine.worker_status_cached()
     dead=[name for name,x in workers.items() if not x.get("alive")]
     hung=[name for name,x in workers.items() if x.get("hung")]
     persistent=[name for name,x in workers.items() if int(x.get("restart_count") or 0)>=3]

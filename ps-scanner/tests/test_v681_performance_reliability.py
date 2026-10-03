@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from psscanner_quant import analytics, db as dbmod, main
+from psscanner_quant import analytics, cross_market, db as dbmod, engine as enginemod, main, news_context
 
 
 class V681PerformanceReliabilityTests(unittest.TestCase):
@@ -91,6 +91,27 @@ class V681PerformanceReliabilityTests(unittest.TestCase):
         src = inspect.getsource(main.performance)
         self.assertIn("budget_seconds=2.5", src)
         self.assertIn("db_timeout_seconds=.5", src)
+
+    def test_news_batch_imports_state_writer(self):
+        self.assertTrue(callable(news_context.set_state))
+
+    def test_global_india_calibration_is_read_once_per_side_per_cycle(self):
+        src = inspect.getsource(cross_market.build_global_india_board)
+        self.assertIn("calibration={side:_calibration_adjustment(side)", src)
+        self.assertIn("+calibration[side]", src)
+        self.assertEqual(src.count("_calibration_adjustment("), 1)
+
+    def test_passive_health_worker_snapshot_is_db_free(self):
+        src = inspect.getsource(enginemod.Engine.worker_status_cached)
+        self.assertNotIn("db(", src)
+        self.assertIn("passive_cached", src)
+        self.assertIn("engine.worker_status_cached()", inspect.getsource(main.health))
+        self.assertIn("engine.worker_status_cached()", inspect.getsource(main.sanity))
+        self.assertIn("engine.worker_status()", inspect.getsource(main.workers))
+
+    def test_maintenance_watchdog_matches_paced_history_batch(self):
+        engine = enginemod.Engine()
+        self.assertGreaterEqual(engine._worker_timeout_seconds("maintenance", 90), 900.0)
 
 
 if __name__ == "__main__":

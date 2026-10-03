@@ -24,6 +24,21 @@ No network/broker call was found in the performance route.
 
 The first v6.8.1 production candidate exposed a second-order SQLite storage cost: although the SELECT was narrow, the chronology index was not covering. Ordinary performance statistics still had to revisit full recommendation table rows, and needed scalar columns such as created/updated/closed timestamps and result occur after large JSON payload fields in the record layout. On the preserved production ledger, those row visits exhausted the 2.5-second passive budget.
 
+## Real-Mac follow-up
+
+After the covering-index candidate was installed on the preserved production ledger,
+`group_by=book&limit=1000` completed successfully with `status=COMPLETE`,
+`selected_index=idx_recs_state_closed_perf_cover`, and about 32.7 ms internal elapsed time.
+
+The same fresh runtime audit exposed three independent producer/health reliability issues:
+- the news producer called `set_state()` without importing it;
+- Global→India recomputed the same two book-level calibration values inside the full-NSE
+  symbol loop, opening SQLite twice per stock and stretching a cycle beyond its 600-second watchdog;
+- passive health/sanity called the detailed worker-status path, opening an extra SQLite
+  connection even though health advertised a one-connection passive snapshot;
+- low-priority maintenance's 360-second watchdog was shorter than the transport envelope
+  of its existing paced multi-request history hydration batch.
+
 ## Fix
 
 v6.8.1:
@@ -35,7 +50,11 @@ v6.8.1:
 - uses SQLite's progress handler and explicit Python deadline checks;
 - returns `DEGRADED_BOUNDED` with `complete=false` and no partial groups if the request cannot finish inside the budget;
 - leaves unbounded internal learning analytics unchanged so evidence is not silently discarded;
-- leaves the validator timeout at 6 seconds and requires a complete bounded performance response.
+- leaves the validator timeout at 6 seconds and requires a complete bounded performance response;
+- imports the missing news telemetry state writer;
+- reads Global→India LONG/SHORT calibration once per cycle with identical scoring semantics;
+- gives health/sanity a DB-free in-memory worker-liveness snapshot while preserving detailed /api/workers telemetry;
+- aligns only the low-priority maintenance watchdog with its existing paced history-transport workload; scanner cadences are unchanged.
 
 ## Regression coverage
 
@@ -44,7 +63,11 @@ v6.8.1:
 - book analytics do not decode large JSON evidence columns;
 - busy/aborted bounded reads return explicit degraded telemetry with no partial statistics;
 - internal learning does not silently degrade;
-- the API route uses the short passive budget.
+- the API route uses the short passive budget;
+- news producer telemetry has its state writer;
+- Global→India calibration is outside the symbol loop;
+- passive health/sanity worker status is DB-free while /api/workers remains detailed;
+- maintenance watchdog telemetry reflects the existing paced batch envelope.
 
 ## Safety / architecture impact
 

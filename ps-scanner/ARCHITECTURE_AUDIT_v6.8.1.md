@@ -60,6 +60,24 @@ The release preserves:
 
 The new performance indexes reduce scan/sort pressure without changing recommendation data or write semantics. The first v6.8.1 production candidate still exhausted its 2.5-second passive budget because the chronology index was not covering: SQLite had to revisit table rows containing large audit/evidence payloads to retrieve later scalar columns. The covering-index path removes those table-row reads for ordinary performance modes.
 
+## Production runtime follow-up
+
+The installed covering-index candidate proved the performance path itself on the preserved
+production ledger. A fresh worker audit then identified a separate runtime cluster:
+
+- Global→India performed two identical calibration database reads per NSE symbol. Calibration
+  is book-level, so v6.8.1 now reads LONG and SHORT once per cycle and reuses the values without
+  changing any score, threshold, universe, or evidence gate.
+- The news producer had a deterministic missing `set_state` import; this is corrected.
+- `/api/health` and `/api/sanity` now use a pure in-memory worker-liveness snapshot.
+  The detailed `/api/workers` endpoint retains its bounded SQLite scan-detail read.
+- Maintenance remains the same low-priority history hydration work and cadence. Its watchdog
+  now reflects the already-existing multi-request paced transport envelope rather than
+  classifying a still-running 6-7 minute hydration cycle as a hung scanner.
+
+These changes remove redundant database work and passive-endpoint coupling; they do not
+serialize scanners, add network calls to passive APIs, reduce full-NSE breadth, or relax gates.
+
 ## No release-scope changes
 
 No scanner frequency, scoring threshold, target/stop rule, strategy promotion gate, horizon side policy, execution permission, risk cap or evidence freshness rule was changed. Warm-up states such as unavailable fundamentals/events or incomplete breadth immediately after restart remain telemetry states to be distinguished from defects rather than fabricated into READY values.

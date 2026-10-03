@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from .constants import IST
-from .db import db, health, now_iso
+from .db import db, health, now_iso, set_state
 
 POSITIVE = {'beats','beat','surge','wins','order','contract','approval','approved','growth','upgrade','raises','record','profit','launch','expands','acquisition','buyback','dividend'}
 NEGATIVE = {'misses','miss','falls','drop','fraud','probe','investigation','downgrade','cuts','loss','default','lawsuit','penalty','recall','warning','pledge','dilution'}

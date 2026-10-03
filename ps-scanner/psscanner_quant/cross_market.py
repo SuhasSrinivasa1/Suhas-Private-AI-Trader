@@ -83,6 +83,9 @@ def build_global_india_board() -> Dict[str,Any]:
     settings=load_settings();max_side=max(1,min(10,int(settings.get('global_india_max_per_side',5))))
     syms=full_nse_symbols()
     meta={str(x.get('symbol') or '').upper():x for x in universe()}
+    # Calibration depends only on the LONG/SHORT book's resolved outcomes, not on symbol.
+    # Read each side once per full-NSE cycle instead of opening SQLite twice per stock.
+    calibration={side:_calibration_adjustment(side) for side in ('LONG','SHORT')}
     candidates=[]
     for sym in [str(x or '').upper() for x in syms if x]:
         try:df=history(sym,'1day',allow_network=False)
@@ -104,7 +107,7 @@ def build_global_india_board() -> Dict[str,Any]:
             aligned=sign*combined
             if aligned<=0.12:continue
             trend_ok=sign*trend>=0
-            score=68+min(16,aligned*9)+(7 if trend_ok else -4)+min(7,adx/8)+_calibration_adjustment(side)
+            score=68+min(16,aligned*9)+(7 if trend_ok else -4)+min(7,adx/8)+calibration[side]
             if score<78:continue
             target_pct=max(.55,min(3.0,atr*1.15+min(1.0,abs(combined))*.35))
             stop_pct=max(.35,min(1.8,target_pct/1.6))
