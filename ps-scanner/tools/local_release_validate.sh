@@ -12,7 +12,7 @@ REPO_ROOT="$(git -C "$PS_DIR" rev-parse --show-toplevel)"
 BRANCH="$(git -C "$REPO_ROOT" branch --show-current)"
 HEAD_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 DIST_DIR="$REPO_ROOT/dist"
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/psscanner-v681.XXXXXX")"
+TMP_ROOT="$(mktemp -d "$REPO_ROOT/.psscanner-v681.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 fail() {
