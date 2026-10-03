@@ -7,12 +7,24 @@ on:
       - main
       - 'release/**'
     paths:
-      - 'ps-scanner/**'
+      - 'ps-scanner/psscanner_quant/**'
+      - 'ps-scanner/tests/**'
+      - 'ps-scanner/tools/**'
+      - 'ps-scanner/static/**'
+      - 'ps-scanner/requirements.txt'
+      - 'ps-scanner/install.sh'
+      - 'ps-scanner/run.sh'
       - '.github/workflows/ps-scanner-ci.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'ps-scanner/**'
+      - 'ps-scanner/psscanner_quant/**'
+      - 'ps-scanner/tests/**'
+      - 'ps-scanner/tools/**'
+      - 'ps-scanner/static/**'
+      - 'ps-scanner/requirements.txt'
+      - 'ps-scanner/install.sh'
+      - 'ps-scanner/run.sh'
       - '.github/workflows/ps-scanner-ci.yml'
 
 permissions:
@@ -23,8 +35,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  regression:
+  regression-ubuntu:
     name: Regression (ubuntu-latest)
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -70,11 +83,64 @@ jobs:
           zsh -n install.sh
           zsh -n run.sh
           zsh -n tools/local_release_validate.sh
+      - name: Secret leakage scan
+        run: python ../scripts/check_no_secrets.py
+      - name: Dependency consistency
+        run: python -m pip check
+
+  regression-macos:
+    name: Regression (macos-14)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: ps-scanner
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ps-scanner/requirements.txt
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile Python
+        run: python -m compileall -q psscanner_quant tests tools
+      - name: Initialize isolated database
+        run: python -c "from psscanner_quant.db import init_db; init_db()"
+      - name: Unit/regression suite
+        run: python -m unittest discover -s tests -v
+      - name: Validate UI JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html=Path("static/index.html").read_text()
+          js=html.rsplit("<script>",1)[1].split("</script>",1)[0]
+          Path("/tmp/ps-scanner-ui.js").write_text(js)
+          PY
+          node --check /tmp/ps-scanner-ui.js
+      - name: Validate shell syntax
+        run: |
+          zsh -n install.sh
+          zsh -n run.sh
+          zsh -n tools/local_release_validate.sh
+      - name: Secret leakage scan
+        run: python ../scripts/check_no_secrets.py
+      - name: Dependency consistency
+        run: python -m pip check
 
   package:
     name: Build installable ZIP
-    needs: regression
-    if: github.event_name != 'pull_request'
+    needs: [regression-ubuntu, regression-macos]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
