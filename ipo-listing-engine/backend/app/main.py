@@ -11,7 +11,7 @@ from .post_listing_monitor import PostListingOpportunityEngine, PostListingSnaps
 from .services import ExchangeCalendar, OwnedPositionRegistry, ShadowLedger
 from .strategy import ListingDecisionEngine
 
-app = FastAPI(title="IPO Sentinel", version="0.3.0")
+app = FastAPI(title="IPO Sentinel", version="0.4.0")
 app.include_router(connection_router)
 
 calendar = ExchangeCalendar()
@@ -65,7 +65,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "service": "ipo-sentinel",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "shadow_capital": shadow.starting_capital,
         "live_execution": False,
         "calendar_ready": calendar.source_ready,
