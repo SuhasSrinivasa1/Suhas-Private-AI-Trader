@@ -21,6 +21,10 @@ def listing_session_gate(
     nse_symbol_confirmed: bool,
     groww_instrument_resolved: bool,
     live_quote_available: bool,
+    buy_allowed: bool = True,
+    lot_size: int = 1,
+    live_price: float | None = None,
+    budget_rupees: int = 100_000,
 ) -> ListingSessionDecision:
     local = now.astimezone(IST)
     if local.date() != listing_date:
@@ -45,6 +49,19 @@ def listing_session_gate(
         return ListingSessionDecision("CLOSED", False, "Regular cash session is closed")
     if not live_quote_available:
         return ListingSessionDecision("WAIT_LIVE_QUOTE", False, "Live Groww quote/depth is not available yet")
+    if not buy_allowed:
+        return ListingSessionDecision("WAIT_BUY_NOT_ALLOWED", False, "Groww instrument master does not currently allow buying")
+    if lot_size <= 0:
+        return ListingSessionDecision("WAIT_INVALID_LOT", False, "Groww instrument lot size is invalid")
+    if live_price is None or live_price <= 0:
+        return ListingSessionDecision("WAIT_LIVE_PRICE", False, "Positive live price is required for budget/lot validation")
+    minimum_live_notional = lot_size * live_price
+    if minimum_live_notional > budget_rupees:
+        return ListingSessionDecision(
+            "WAIT_MIN_LOT_ABOVE_BUDGET",
+            False,
+            f"Minimum market lot requires about ₹{minimum_live_notional:.2f}, above live budget ₹{budget_rupees}",
+        )
     return ListingSessionDecision(
         "CONTINUOUS_TRADING",
         True,
