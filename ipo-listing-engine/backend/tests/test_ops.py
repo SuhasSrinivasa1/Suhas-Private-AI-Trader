@@ -34,3 +34,17 @@ def test_audit_export(monkeypatch, tmp_path: Path):
     exported = log.export(7)
     assert "TEST_EVENT" in exported
     assert "value" in exported
+
+
+def test_live_budget_is_locked_while_armed(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("IPO_SENTINEL_LIVE_STATE_FILE", str(tmp_path / "state.json"))
+    store = LiveStateStore()
+    store.save(True, 50_000)
+    try:
+        store.save(True, 60_000)
+        raised = False
+    except ValueError as exc:
+        raised = True
+        assert "locked" in str(exc).lower()
+    assert raised is True
+    assert store.load().budget_rupees == 50_000
