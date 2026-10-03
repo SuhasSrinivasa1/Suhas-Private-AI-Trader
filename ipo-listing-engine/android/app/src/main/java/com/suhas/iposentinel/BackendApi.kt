@@ -72,27 +72,41 @@ data class OrderEventBatch(
 )
 
 data class ResearchCandidate(
-    val symbol: String,
+    val candidateId: String,
+    val lifecycleState: String,
+    val symbol: String?,
     val companyName: String,
     val listingDate: String?,
+    val issueStartDate: String?,
+    val issueEndDate: String?,
+    val officialIssueId: String?,
     val isin: String?,
     val board: String?,
+    val isSme: Boolean,
+    val issueStatus: String?,
     val nseListingConfirmed: Boolean,
     val growwSymbol: String?,
     val growwSeries: String?,
     val buyAllowed: Boolean,
     val sellAllowed: Boolean,
     val symbolResolved: Boolean,
+    val growwResolutionStatus: String,
     val resolutionStatus: String
 )
 
 data class ResearchPlan(
     val generatedAt: String? = null,
     val sourceReady: Boolean = false,
+    val researchHealth: String = "UNKNOWN",
     val calendarReady: Boolean = false,
     val nextTradingDay: String? = null,
+    val candidateCount: Int = 0,
+    val nseIdentityConfirmedCount: Int = 0,
+    val growwResolvedCount: Int = 0,
+    val growwPendingCount: Int = 0,
     val nextTradingDayCandidates: List<ResearchCandidate> = emptyList(),
     val weekCandidates: List<ResearchCandidate> = emptyList(),
+    val allKnownCandidates: List<ResearchCandidate> = emptyList(),
     val errors: List<String> = emptyList()
 )
 
@@ -197,17 +211,25 @@ class BackendApi {
 
         fun parseCandidate(obj: JSONObject): ResearchCandidate =
             ResearchCandidate(
-                symbol = obj.optString("symbol"),
+                candidateId = obj.optString("candidate_id"),
+                lifecycleState = obj.optString("lifecycle_state", "RESEARCHING"),
+                symbol = obj.optString("symbol").ifBlank { null },
                 companyName = obj.optString("company_name"),
                 listingDate = obj.optString("listing_date").ifBlank { null },
+                issueStartDate = obj.optString("issue_start_date").ifBlank { null },
+                issueEndDate = obj.optString("issue_end_date").ifBlank { null },
+                officialIssueId = obj.optString("official_issue_id").ifBlank { null },
                 isin = obj.optString("isin").ifBlank { null },
                 board = obj.optString("board").ifBlank { null },
+                isSme = obj.optBoolean("is_sme", false),
+                issueStatus = obj.optString("issue_status").ifBlank { null },
                 nseListingConfirmed = obj.optBoolean("nse_listing_confirmed", false),
                 growwSymbol = obj.optString("groww_symbol").ifBlank { null },
                 growwSeries = obj.optString("groww_series").ifBlank { null },
                 buyAllowed = obj.optBoolean("buy_allowed", false),
                 sellAllowed = obj.optBoolean("sell_allowed", false),
                 symbolResolved = obj.optBoolean("symbol_resolved", false),
+                growwResolutionStatus = obj.optString("groww_resolution_status", "UNKNOWN"),
                 resolutionStatus = obj.optString("resolution_status", "UNKNOWN")
             )
 
@@ -230,10 +252,16 @@ class BackendApi {
         return result to ResearchPlan(
             generatedAt = json.optString("generated_at").ifBlank { null },
             sourceReady = json.optBoolean("source_ready", false),
+            researchHealth = json.optString("research_health", "UNKNOWN"),
             calendarReady = json.optBoolean("calendar_ready", false),
             nextTradingDay = json.optString("next_trading_day").ifBlank { null },
+            candidateCount = json.optInt("candidate_count", 0),
+            nseIdentityConfirmedCount = json.optInt("nse_identity_confirmed_count", 0),
+            growwResolvedCount = json.optInt("groww_resolved_count", 0),
+            growwPendingCount = json.optInt("groww_pending_count", 0),
             nextTradingDayCandidates = parseArray("next_trading_day_candidates"),
             weekCandidates = parseArray("week_candidates"),
+            allKnownCandidates = parseArray("all_known_candidates"),
             errors = errors
         )
     }
@@ -245,17 +273,25 @@ class BackendApi {
 
         fun parseCandidate(obj: JSONObject): ResearchCandidate =
             ResearchCandidate(
-                symbol = obj.optString("symbol"),
+                candidateId = obj.optString("candidate_id"),
+                lifecycleState = obj.optString("lifecycle_state", "RESEARCHING"),
+                symbol = obj.optString("symbol").ifBlank { null },
                 companyName = obj.optString("company_name"),
                 listingDate = obj.optString("listing_date").ifBlank { null },
+                issueStartDate = obj.optString("issue_start_date").ifBlank { null },
+                issueEndDate = obj.optString("issue_end_date").ifBlank { null },
+                officialIssueId = obj.optString("official_issue_id").ifBlank { null },
                 isin = obj.optString("isin").ifBlank { null },
                 board = obj.optString("board").ifBlank { null },
+                isSme = obj.optBoolean("is_sme", false),
+                issueStatus = obj.optString("issue_status").ifBlank { null },
                 nseListingConfirmed = obj.optBoolean("nse_listing_confirmed", false),
                 growwSymbol = obj.optString("groww_symbol").ifBlank { null },
                 growwSeries = obj.optString("groww_series").ifBlank { null },
                 buyAllowed = obj.optBoolean("buy_allowed", false),
                 sellAllowed = obj.optBoolean("sell_allowed", false),
                 symbolResolved = obj.optBoolean("symbol_resolved", false),
+                growwResolutionStatus = obj.optString("groww_resolution_status", "UNKNOWN"),
                 resolutionStatus = obj.optString("resolution_status", "UNKNOWN")
             )
 
@@ -276,10 +312,16 @@ class BackendApi {
         return result to ResearchPlan(
             generatedAt = json.optString("generated_at").ifBlank { null },
             sourceReady = json.optBoolean("source_ready", false),
+            researchHealth = json.optString("research_health", "UNKNOWN"),
             calendarReady = json.optBoolean("calendar_ready", false),
             nextTradingDay = json.optString("next_trading_day").ifBlank { null },
+            candidateCount = json.optInt("candidate_count", 0),
+            nseIdentityConfirmedCount = json.optInt("nse_identity_confirmed_count", 0),
+            growwResolvedCount = json.optInt("groww_resolved_count", 0),
+            growwPendingCount = json.optInt("groww_pending_count", 0),
             nextTradingDayCandidates = parseArray("next_trading_day_candidates"),
             weekCandidates = parseArray("week_candidates"),
+            allKnownCandidates = parseArray("all_known_candidates"),
             errors = errors
         )
     }
