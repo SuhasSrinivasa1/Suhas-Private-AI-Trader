@@ -167,6 +167,7 @@ class ResearchCandidate:
     isin: str | None
     board: str | None
     nse_source: str
+    nse_listing_confirmed: bool
     groww_symbol: str | None
     groww_exchange_token: str | None
     groww_series: str | None
@@ -186,6 +187,7 @@ class NseOfficialClient:
             headers=_BROWSER_HEADERS,
         )
         self._primed = False
+        self.forthcoming_ready = False
 
     def close(self) -> None:
         self._client.close()
@@ -226,6 +228,7 @@ class NseOfficialClient:
         # symbol, ISIN, series and listing date. This is the authoritative pre-listing gate.
         try:
             payload = self.json(NSE_FORTHCOMING)
+            self.forthcoming_ready = True
             for item in _extract_forthcoming_records(payload):
                 symbol = str(
                     _first(item, "symbol", "tradingSymbol", "securitySymbol") or ""
@@ -237,8 +240,9 @@ class NseOfficialClient:
                 merged.update(item)
                 records[symbol] = (merged, "NSE_FORTHCOMING_LISTING")
         except Exception:
-            # Caller records source failure separately; issue feeds remain useful for
-            # research but live execution still waits if final listing metadata is absent.
+            self.forthcoming_ready = False
+            # Issue feeds remain useful for research, but final listing confirmation
+            # stays false and therefore live execution remains blocked.
             pass
 
         return list(records.values())
@@ -387,6 +391,8 @@ class DailyResearchService:
                 raw_issues: list[tuple[dict[str, Any], str]] = []
                 try:
                     raw_issues = nse.issue_records()
+                    if not nse.forthcoming_ready:
+                        errors.append("NSE_FORTHCOMING_LISTING:UNAVAILABLE")
                 except Exception as exc:
                     errors.append("NSE_ISSUE_SOURCE:" + exc.__class__.__name__)
 
@@ -421,10 +427,18 @@ class DailyResearchService:
 
                     buy_allowed = str((row or {}).get("buy_allowed") or "").strip() in {"1", "true", "True"}
                     sell_allowed = str((row or {}).get("sell_allowed") or "").strip() in {"1", "true", "True"}
-                    resolved = row is not None
-                    status = "RESOLVED" if resolved else "WAIT_GROWW_INSTRUMENT"
+                    final_listing_confirmed = item["nse_source"] == "NSE_FORTHCOMING_LISTING"
+                    groww_resolved = row is not None
+                    resolved = final_listing_confirmed and groww_resolved
+
                     if item["listing_date"] is None:
                         status = "WAIT_OFFICIAL_LISTING_DATE"
+                    elif not final_listing_confirmed:
+                        status = "WAIT_NSE_LISTING_CONFIRMATION"
+                    elif not groww_resolved:
+                        status = "WAIT_GROWW_INSTRUMENT"
+                    else:
+                        status = "RESOLVED"
 
                     candidates.append(
                         ResearchCandidate(
@@ -436,6 +450,7 @@ class DailyResearchService:
                             isin=item["isin"],
                             board=item["board"],
                             nse_source=item["nse_source"],
+                            nse_listing_confirmed=final_listing_confirmed,
                             groww_symbol=str((row or {}).get("groww_symbol") or "").strip() or None,
                             groww_exchange_token=str((row or {}).get("exchange_token") or "").strip() or None,
                             groww_series=str((row or {}).get("series") or "").strip() or None,
