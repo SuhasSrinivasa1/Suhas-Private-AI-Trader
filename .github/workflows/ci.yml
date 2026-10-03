@@ -4,22 +4,48 @@ on:
   workflow_dispatch:
   push:
     branches: [main, feature/mac-local-llm]
-    paths-ignore:
-      - 'ps-scanner/**'
-      - 'android-stable/**'
-      - 'research360-build/**'
-      - 'UnivestAutoTrade/**'
-      - '.release/**'
-      - '.signing/**'
+    paths:
+      - 'backend/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'app.js'
+      - 'features.js'
+      - 'production.js'
+      - 'production21.js'
+      - 'production22.js'
+      - 'production23.js'
+      - 'production24.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'mac.css'
+      - '*.command'
+      - 'setup_mac_local_ai.sh'
+      - 'pyproject.toml'
+      - 'Brewfile'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'ps-scanner/**'
-      - 'android-stable/**'
-      - 'research360-build/**'
-      - 'UnivestAutoTrade/**'
-      - '.release/**'
-      - '.signing/**'
+    paths:
+      - 'backend/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'app.js'
+      - 'features.js'
+      - 'production.js'
+      - 'production21.js'
+      - 'production22.js'
+      - 'production23.js'
+      - 'production24.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'mac.css'
+      - '*.command'
+      - 'setup_mac_local_ai.sh'
+      - 'pyproject.toml'
+      - 'Brewfile'
+      - 'Makefile'
+      - '.github/workflows/ci.yml'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
