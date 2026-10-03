@@ -97,3 +97,28 @@ The TOTP token and secret are never returned by the settings APIs. They are encr
 5. Tap **Save Groww Settings**.
 6. Tap **Validate Groww + Static IP**.
 7. Live auto-trading remains locked until Groww authentication and the static-IP checks pass.
+
+
+## Stable Android notification behavior (v1.0)
+
+IPO Sentinel requests Android's notification permission on first launch on Android 13 and newer.
+
+Notification channels:
+- **Trade activity** — high-priority private notifications for order placement, broker submission, partial fills, executions, exits, cancellations and failures.
+- **Live trading monitor** — low-priority persistent foreground notification while live trading is armed.
+
+IPO Sentinel does **not** request Notification Access / notification-reading permission. It does not need to read Groww app notifications. Broker order status from the Groww API is the authoritative source.
+
+When live trading is armed, the foreground monitor consumes the durable trade-event stream and displays order lifecycle notifications even when the main activity is not on screen.
+
+The Strategies tab has a built-in local catalog fallback. If the execution service is not provisioned or temporarily unreachable, the app still shows all registered strategy families and correctly reports zero tested/champion families instead of displaying a service-unavailable page.
+
+### Stability audit fixes
+
+The v1.0 stabilization pass also:
+- corrected shadow P&L so entry and exit charges reconcile to marked account equity;
+- made the trade-event stream durable across backend restarts;
+- rebuilt position reconciliation atomically to prevent stale broker-position records;
+- added a Groww order execution adapter that emits auditable order lifecycle events;
+- added tests for trade events and long/short shadow-ledger accounting;
+- requires backend tests and Android lint/build to pass before the APK artifact is produced.
