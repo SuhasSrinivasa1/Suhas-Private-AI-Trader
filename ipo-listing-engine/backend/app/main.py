@@ -77,6 +77,7 @@ def health() -> dict:
         "live_execution": live_state_store.load().enabled,
         "calendar_ready": calendar.source_ready,
         "post_listing_monitor_days": 30,
+        "trade_event_notifications": True,
     }
 
 
