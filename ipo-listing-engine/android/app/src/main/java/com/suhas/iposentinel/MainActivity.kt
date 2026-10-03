@@ -1,8 +1,14 @@
 package com.suhas.iposentinel
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,12 +19,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -32,24 +41,126 @@ private val Amber = Color(0xFFFFC857)
 private enum class AppScreen { DASHBOARD, STRATEGIES, SETTINGS }
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            AppAudit.log(
+                this,
+                "NOTIFICATION_PERMISSION_RESULT",
+                JSONObject().put("granted", granted)
+            )
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.createChannels(this)
+        AppAudit.log(this, "APP_STARTED", JSONObject().put("version", BuildConfig.VERSION_NAME))
+
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         setContent { IpoSentinelApp() }
     }
 }
 
 @Composable
 private fun IpoSentinelApp() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var screen by rememberSaveable { mutableStateOf(AppScreen.DASHBOARD) }
     var liveEnabled by rememberSaveable { mutableStateOf(false) }
+    var liveBusy by remember { mutableStateOf(false) }
+    var liveMessage by remember { mutableStateOf<String?>(null) }
+    var liveMessageColor by remember { mutableStateOf(Muted) }
     var budget by rememberSaveable { mutableFloatStateOf(100_000f) }
     var lastValidation by remember { mutableStateOf<ValidationStatus?>(null) }
     var growwConfigured by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        val (_, savedStatus) = BackendApi().fetchStatus()
+        val api = BackendApi()
+        val (_, savedStatus) = api.fetchStatus()
         if (savedStatus != null) {
             growwConfigured = savedStatus.growwConfigured
+        }
+
+        val (_, liveState) = api.fetchLiveState()
+        if (liveState != null) {
+            liveEnabled = liveState.enabled
+            budget = liveState.budgetRupees.toFloat()
+            if (liveState.enabled && NotificationHelper.notificationsAllowed(context)) {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, LiveNotificationService::class.java)
+                )
+            }
+        }
+    }
+
+    fun requestLiveState(enabled: Boolean) {
+        if (liveBusy) return
+
+        if (enabled && !NotificationHelper.notificationsAllowed(context)) {
+            liveMessage = "Allow IPO Sentinel notifications before enabling live trading."
+            liveMessageColor = Danger
+            AppAudit.log(context, "LIVE_ENABLE_BLOCKED_NOTIFICATIONS")
+            return
+        }
+
+        if (enabled && lastValidation?.liveExecutionReady != true) {
+            liveMessage = "Validate Groww + Static IP in Settings before enabling live trading."
+            liveMessageColor = Danger
+            AppAudit.log(context, "LIVE_ENABLE_BLOCKED_VALIDATION")
+            return
+        }
+
+        liveBusy = true
+        scope.launch {
+            AppAudit.log(
+                context,
+                "LIVE_STATE_REQUEST",
+                JSONObject()
+                    .put("enabled", enabled)
+                    .put("budget_rupees", budget.toInt())
+            )
+            val (result, state) = BackendApi().setLiveState(enabled, budget.toInt())
+            liveBusy = false
+
+            if (result.ok && state != null) {
+                liveEnabled = state.enabled
+                if (state.enabled) {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, LiveNotificationService::class.java)
+                    )
+                    liveMessage = "Live trading enabled. Order notifications are active."
+                    liveMessageColor = Teal
+                } else {
+                    context.stopService(Intent(context, LiveNotificationService::class.java))
+                    liveMessage = "Live trading disabled."
+                    liveMessageColor = Muted
+                }
+                AppAudit.log(
+                    context,
+                    "LIVE_STATE_ACK",
+                    JSONObject()
+                        .put("enabled", state.enabled)
+                        .put("budget_rupees", state.budgetRupees)
+                )
+            } else {
+                liveMessage = result.error ?: "Live trading state could not be changed."
+                liveMessageColor = Danger
+                AppAudit.log(
+                    context,
+                    "LIVE_STATE_FAILED",
+                    JSONObject()
+                        .put("requested_enabled", enabled)
+                        .put("error", result.error ?: "unknown")
+                )
+            }
         }
     }
 
@@ -91,9 +202,10 @@ private fun IpoSentinelApp() {
                 AppScreen.DASHBOARD -> DashboardScreen(
                     modifier = Modifier.padding(padding),
                     liveEnabled = liveEnabled,
-                    onLiveEnabledChange = { requested ->
-                        liveEnabled = requested && (lastValidation?.liveExecutionReady == true)
-                    },
+                    liveBusy = liveBusy,
+                    liveMessage = liveMessage,
+                    liveMessageColor = liveMessageColor,
+                    onLiveEnabledChange = { requested -> requestLiveState(requested) },
                     budget = budget,
                     onBudgetChange = { budget = it },
                     growwConfigured = growwConfigured,
@@ -109,7 +221,9 @@ private fun IpoSentinelApp() {
                     onConfigurationSaved = { growwConfigured = true },
                     onValidated = {
                         lastValidation = it
-                        if (!it.liveExecutionReady) liveEnabled = false
+                        if (!it.liveExecutionReady && liveEnabled) {
+                            requestLiveState(false)
+                        }
                     }
                 )
             }
@@ -121,6 +235,9 @@ private fun IpoSentinelApp() {
 private fun DashboardScreen(
     modifier: Modifier,
     liveEnabled: Boolean,
+    liveBusy: Boolean,
+    liveMessage: String?,
+    liveMessageColor: Color,
     onLiveEnabledChange: (Boolean) -> Unit,
     budget: Float,
     onBudgetChange: (Float) -> Unit,
@@ -173,7 +290,8 @@ private fun DashboardScreen(
                         Text("Live auto-trading", fontWeight = FontWeight.SemiBold)
                         Text(
                             when {
-                                liveEnabled -> "ARMED — Groww and static IP checks passed"
+                                liveBusy -> "Changing live state…"
+                                liveEnabled -> "ARMED — order notifications active"
                                 validation?.liveExecutionReady == true -> "READY — switch on when you want live execution"
                                 else -> "LOCKED — Groww + static IP validation required"
                             },
@@ -183,9 +301,13 @@ private fun DashboardScreen(
                     }
                     Switch(
                         checked = liveEnabled,
-                        enabled = validation?.liveExecutionReady == true,
+                        enabled = !liveBusy,
                         onCheckedChange = onLiveEnabledChange
                     )
+                }
+
+                liveMessage?.let {
+                    Text(it, color = liveMessageColor, fontSize = 12.sp)
                 }
 
                 HorizontalDivider(color = Color(0xFF27313A))
@@ -197,6 +319,7 @@ private fun DashboardScreen(
                 )
                 Slider(
                     value = budget,
+                    enabled = !liveEnabled && !liveBusy,
                     onValueChange = { onBudgetChange((it / 5_000f).toInt() * 5_000f) },
                     valueRange = 10_000f..100_000f
                 )
@@ -208,8 +331,8 @@ private fun DashboardScreen(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MetricCard("Shadow capital", "₹1,00,000", Modifier.weight(1f))
-            MetricCard("Today P&L", "₹0", Modifier.weight(1f))
+            MetricCard("Shadow P&L", "₹0", Modifier.weight(1f))
+            MetricCard("Live P&L", if (liveEnabled) "₹0" else "OFF", Modifier.weight(1f))
         }
 
         StatusCard(
@@ -231,6 +354,7 @@ private fun DashboardScreen(
         Button(
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Danger),
+            enabled = !liveBusy,
             onClick = { onLiveEnabledChange(false) }
         ) {
             Text("Emergency Disable", fontWeight = FontWeight.Bold)
@@ -240,23 +364,31 @@ private fun DashboardScreen(
 
 @Composable
 private fun StrategiesScreen(modifier: Modifier) {
+    val context = LocalContext.current
     var summary by remember { mutableStateOf<StrategySummary?>(null) }
+    var sourceMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val client = remember { BackendApi() }
 
     fun refresh() {
         if (busy) return
         busy = true
-        error = null
         scope.launch {
             val (result, value) = client.fetchStrategySummary()
             busy = false
             if (result.ok && value != null) {
                 summary = value
+                sourceMessage = null
+                AppAudit.log(context, "STRATEGY_SUMMARY_SYNCED")
             } else {
-                error = result.error ?: "Unable to load strategy statistics"
+                summary = LocalStrategyCatalog.summary()
+                sourceMessage = "Showing the built-in strategy catalog. Replay statistics will sync when the trading service is available."
+                AppAudit.log(
+                    context,
+                    "STRATEGY_SUMMARY_FALLBACK",
+                    JSONObject().put("error", result.error ?: "unknown")
+                )
             }
         }
     }
@@ -281,16 +413,13 @@ private fun StrategiesScreen(modifier: Modifier) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        error?.let {
+        sourceMessage?.let {
             StatusCard(
-                title = "Strategy service",
-                primary = "UNAVAILABLE",
+                title = "Evidence status",
+                primary = "CATALOG AVAILABLE",
                 secondary = it,
-                primaryColor = Danger
+                primaryColor = Amber
             )
-            OutlinedButton(onClick = { refresh() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Retry")
-            }
         }
 
         summary?.let { data ->
@@ -314,7 +443,7 @@ private fun StrategiesScreen(modifier: Modifier) {
             SettingsSection("Top 5 Working Families") {
                 if (data.topFive.isEmpty()) {
                     Text(
-                        "No strategy family has enough recorded replay evidence yet. IPO Sentinel will not label an untested family as working.",
+                        "No family has enough recorded replay evidence to be called a top performer yet.",
                         color = Muted,
                         fontSize = 13.sp,
                         lineHeight = 19.sp
@@ -331,7 +460,7 @@ private fun StrategiesScreen(modifier: Modifier) {
 
             SettingsSection("Promotion Pipeline") {
                 Text(
-                    "CHAMPION requires mature positive evidence after costs. CHALLENGER has sufficient testing but has not passed all promotion gates. RESEARCH is untested or has a small sample.",
+                    "CHAMPION requires mature positive evidence after costs. CHALLENGER has sufficient testing but has not passed every promotion gate. RESEARCH is untested or has a small sample.",
                     color = Muted,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
@@ -354,12 +483,7 @@ private fun StrategiesScreen(modifier: Modifier) {
                 }
             }
 
-            Text(
-                data.rankingNote,
-                color = Muted,
-                fontSize = 11.sp,
-                lineHeight = 16.sp
-            )
+            Text(data.rankingNote, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
 
             OutlinedButton(
                 onClick = { refresh() },
@@ -369,6 +493,337 @@ private fun StrategiesScreen(modifier: Modifier) {
                 Text(if (busy) "Refreshing…" else "Refresh Strategy Evidence")
             }
         }
+    }
+}
+
+@Composable
+private fun GrowwSettingsScreen(
+    modifier: Modifier,
+    onConfigurationSaved: () -> Unit,
+    onValidated: (ValidationStatus) -> Unit
+) {
+    val context = LocalContext.current
+    var totpToken by remember { mutableStateOf("") }
+    var totpSecret by remember { mutableStateOf("") }
+    var staticIp by rememberSaveable { mutableStateOf("") }
+    var whitelistConfirmed by rememberSaveable { mutableStateOf(false) }
+
+    var busy by remember { mutableStateOf(false) }
+    var exportBusy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageColor by remember { mutableStateOf(Muted) }
+    var status by remember { mutableStateOf<ConnectionStatus?>(null) }
+    var validation by remember { mutableStateOf<ValidationStatus?>(null) }
+    var notificationAllowed by remember { mutableStateOf(NotificationHelper.notificationsAllowed(context)) }
+    val scope = rememberCoroutineScope()
+    val client = remember { BackendApi() }
+
+    fun refreshStatus(showMessage: Boolean) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val (result, value) = client.fetchStatus()
+            busy = false
+            notificationAllowed = NotificationHelper.notificationsAllowed(context)
+            if (result.ok && value != null) {
+                status = value
+                if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
+                whitelistConfirmed = value.staticIpConfirmed
+                if (showMessage) {
+                    message = "Settings status refreshed"
+                    messageColor = Teal
+                }
+            } else if (showMessage) {
+                message = result.error ?: "Unable to refresh settings"
+                messageColor = Danger
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val (result, value) = client.fetchStatus()
+        if (result.ok && value != null) {
+            status = value
+            if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
+            whitelistConfirmed = value.staticIpConfirmed
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "Groww credentials, static-IP validation, notifications and weekly audit export.",
+            color = Muted,
+            fontSize = 13.sp
+        )
+
+        SettingsSection("Order Notifications") {
+            CheckRow("Notification permission", notificationAllowed)
+            Text(
+                "IPO Sentinel requests normal Android notification permission. It does not request access to read notifications from other apps.",
+                color = Muted,
+                fontSize = 12.sp,
+                lineHeight = 18.sp
+            )
+            if (!notificationAllowed) {
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        }
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Notification Settings")
+                }
+            }
+        }
+
+        SettingsSection("Groww TOTP") {
+            OutlinedTextField(
+                value = totpToken,
+                onValueChange = { totpToken = it },
+                label = { Text("Groww TOTP token / API key") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = totpSecret,
+                onValueChange = { totpSecret = it },
+                label = { Text("Groww TOTP secret") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "The secret is stored encrypted and is never displayed again after saving.",
+                color = Muted,
+                fontSize = 12.sp
+            )
+        }
+
+        SettingsSection("Static IP") {
+            OutlinedTextField(
+                value = staticIp,
+                onValueChange = { staticIp = it.trim() },
+                label = { Text("Whitelisted static public IP") },
+                placeholder = { Text("203.0.113.10") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = whitelistConfirmed,
+                    onCheckedChange = { whitelistConfirmed = it }
+                )
+                Text(
+                    "I have whitelisted this IP in Groww",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                "This must be the fixed public IP registered in Groww for API order placement.",
+                color = Muted,
+                fontSize = 12.sp
+            )
+        }
+
+        Button(
+            onClick = {
+                if (totpToken.isBlank() || totpSecret.isBlank() || staticIp.isBlank()) {
+                    message = "Enter the Groww token, TOTP secret and static IP"
+                    messageColor = Danger
+                    return@Button
+                }
+                busy = true
+                scope.launch {
+                    val result = client.saveGrowwSettings(
+                        totpToken = totpToken,
+                        totpSecret = totpSecret,
+                        expectedStaticIp = staticIp,
+                        staticIpConfirmed = whitelistConfirmed
+                    )
+                    busy = false
+                    if (result.ok) {
+                        totpToken = ""
+                        totpSecret = ""
+                        onConfigurationSaved()
+                        message = "Groww settings saved securely"
+                        messageColor = Teal
+                        AppAudit.log(
+                            context,
+                            "GROWW_SETTINGS_SAVED",
+                            JSONObject()
+                                .put("static_ip", staticIp)
+                                .put("whitelist_confirmed", whitelistConfirmed)
+                        )
+                        refreshStatus(showMessage = false)
+                    } else {
+                        message = result.error ?: "Save failed"
+                        messageColor = Danger
+                        AppAudit.log(
+                            context,
+                            "GROWW_SETTINGS_SAVE_FAILED",
+                            JSONObject().put("error", result.error ?: "unknown")
+                        )
+                    }
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().height(50.dp)
+        ) {
+            Text("Save Groww Settings")
+        }
+
+        OutlinedButton(
+            onClick = {
+                busy = true
+                scope.launch {
+                    val (result, value) = client.validate()
+                    busy = false
+                    if (result.ok && value != null) {
+                        validation = value
+                        onValidated(value)
+                        message = if (value.liveExecutionReady) {
+                            "Validation passed — live execution can be armed"
+                        } else {
+                            "Validation completed — one or more checks failed"
+                        }
+                        messageColor = if (value.liveExecutionReady) Teal else Amber
+                        AppAudit.log(
+                            context,
+                            "GROWW_VALIDATION_RESULT",
+                            JSONObject()
+                                .put("ready", value.liveExecutionReady)
+                                .put("auth_ok", value.growwAuthOk)
+                                .put("static_ip_matches", value.staticIpMatches)
+                        )
+                    } else {
+                        message = result.error ?: "Validation failed"
+                        messageColor = Danger
+                    }
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().height(50.dp)
+        ) {
+            Text("Validate Groww + Static IP")
+        }
+
+        TextButton(
+            onClick = { refreshStatus(showMessage = true) },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Refresh Status")
+        }
+
+        if (busy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        message?.let {
+            Text(it, color = messageColor, fontWeight = FontWeight.SemiBold)
+        }
+
+        status?.let {
+            SettingsSection("Saved status") {
+                CheckRow("Secure credential vault", it.secretStoreReady)
+                CheckRow("Groww credentials saved", it.growwConfigured)
+                CheckRow("Static IP marked as whitelisted", it.staticIpConfirmed)
+            }
+        }
+
+        validation?.let {
+            SettingsSection("Validation result") {
+                CheckRow("Groww TOTP authentication", it.growwAuthOk)
+                CheckRow("Static public IP matches", it.staticIpMatches)
+                CheckRow("Groww whitelist confirmed", it.staticIpConfirmed)
+                CheckRow("Secure credential vault", it.secretStoreReady)
+                HorizontalDivider(color = Color(0xFF27313A))
+                Text(
+                    "Detected static IP: " + (it.detectedEgressIp ?: "Unavailable"),
+                    color = Muted,
+                    fontSize = 12.sp
+                )
+                Text(
+                    "Whitelisted IP: " + (it.expectedStaticIp ?: "Not configured"),
+                    color = Muted,
+                    fontSize = 12.sp
+                )
+                Text(
+                    if (it.liveExecutionReady) "LIVE EXECUTION READY" else "LIVE EXECUTION LOCKED",
+                    color = if (it.liveExecutionReady) Teal else Danger,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        SettingsSection("Weekly Verification Logs") {
+            Text(
+                "Exports the last 7 days of app audit events plus backend audit events when available. Broker secrets are excluded.",
+                color = Muted,
+                fontSize = 12.sp,
+                lineHeight = 18.sp
+            )
+            Button(
+                onClick = {
+                    if (exportBusy) return@Button
+                    exportBusy = true
+                    scope.launch {
+                        runCatching {
+                            val file = AppAudit.exportWeekly(context)
+                            AppAudit.shareExport(context, file)
+                        }.onFailure { error ->
+                            message = "Log export failed: " + (error.message ?: "unknown error")
+                            messageColor = Danger
+                        }
+                        exportBusy = false
+                    }
+                },
+                enabled = !exportBusy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (exportBusy) "Preparing logs…" else "Export Weekly Logs")
+            }
+        }
+
+        Text(
+            "Security: the TOTP token and secret are not shown after saving. Enter new values and save again if they need to be replaced.",
+            color = Muted,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun CheckRow(label: String, passed: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(if (passed) "✓" else "✕", color = if (passed) Teal else Danger, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = Muted)
     }
 }
 
@@ -453,267 +908,6 @@ private fun StrategyStatusBadge(status: String) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
         )
-    }
-}
-
-@Composable
-private fun GrowwSettingsScreen(
-    modifier: Modifier,
-    onConfigurationSaved: () -> Unit,
-    onValidated: (ValidationStatus) -> Unit
-) {
-    var totpToken by remember { mutableStateOf("") }
-    var totpSecret by remember { mutableStateOf("") }
-    var staticIp by rememberSaveable { mutableStateOf("") }
-    var whitelistConfirmed by rememberSaveable { mutableStateOf(false) }
-
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var messageColor by remember { mutableStateOf(Muted) }
-    var status by remember { mutableStateOf<ConnectionStatus?>(null) }
-    var validation by remember { mutableStateOf<ValidationStatus?>(null) }
-    val scope = rememberCoroutineScope()
-    val client = remember { BackendApi() }
-
-    fun refreshStatus(showMessage: Boolean) {
-        if (busy) return
-        busy = true
-        scope.launch {
-            val (result, value) = client.fetchStatus()
-            busy = false
-            if (result.ok && value != null) {
-                status = value
-                if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
-                whitelistConfirmed = value.staticIpConfirmed
-                if (showMessage) {
-                    message = "Settings status refreshed"
-                    messageColor = Teal
-                }
-            } else if (showMessage) {
-                message = result.error ?: "Unable to refresh settings"
-                messageColor = Danger
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        val (result, value) = client.fetchStatus()
-        if (result.ok && value != null) {
-            status = value
-            if (!value.expectedStaticIp.isNullOrBlank()) staticIp = value.expectedStaticIp
-            whitelistConfirmed = value.staticIpConfirmed
-        }
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text(
-            "Groww credentials and the whitelisted static public IP are managed here.",
-            color = Muted,
-            fontSize = 13.sp
-        )
-
-        SettingsSection("Groww TOTP") {
-            OutlinedTextField(
-                value = totpToken,
-                onValueChange = { totpToken = it },
-                label = { Text("Groww TOTP token / API key") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = totpSecret,
-                onValueChange = { totpSecret = it },
-                label = { Text("Groww TOTP secret") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                "The secret is stored encrypted and is never displayed again after saving.",
-                color = Muted,
-                fontSize = 12.sp
-            )
-        }
-
-        SettingsSection("Static IP") {
-            OutlinedTextField(
-                value = staticIp,
-                onValueChange = { staticIp = it.trim() },
-                label = { Text("Whitelisted static public IP") },
-                placeholder = { Text("203.0.113.10") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = whitelistConfirmed,
-                    onCheckedChange = { whitelistConfirmed = it }
-                )
-                Text(
-                    "I have whitelisted this IP in Groww",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Text(
-                "This must be the fixed public IP registered in Groww for API order placement.",
-                color = Muted,
-                fontSize = 12.sp
-            )
-        }
-
-        Button(
-            onClick = {
-                if (totpToken.isBlank() || totpSecret.isBlank() || staticIp.isBlank()) {
-                    message = "Enter the Groww token, TOTP secret and static IP"
-                    messageColor = Danger
-                    return@Button
-                }
-                busy = true
-                scope.launch {
-                    val result = client.saveGrowwSettings(
-                        totpToken = totpToken,
-                        totpSecret = totpSecret,
-                        expectedStaticIp = staticIp,
-                        staticIpConfirmed = whitelistConfirmed
-                    )
-                    busy = false
-                    if (result.ok) {
-                        totpToken = ""
-                        totpSecret = ""
-                        onConfigurationSaved()
-                        message = "Groww settings saved securely"
-                        messageColor = Teal
-                        refreshStatus(showMessage = false)
-                    } else {
-                        message = result.error ?: "Save failed"
-                        messageColor = Danger
-                    }
-                }
-            },
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth().height(50.dp)
-        ) {
-            Text("Save Groww Settings")
-        }
-
-        OutlinedButton(
-            onClick = {
-                busy = true
-                scope.launch {
-                    val (result, value) = client.validate()
-                    busy = false
-                    if (result.ok && value != null) {
-                        validation = value
-                        onValidated(value)
-                        message = if (value.liveExecutionReady) {
-                            "Validation passed — live execution can be armed"
-                        } else {
-                            "Validation completed — one or more checks failed"
-                        }
-                        messageColor = if (value.liveExecutionReady) Teal else Amber
-                    } else {
-                        message = result.error ?: "Validation failed"
-                        messageColor = Danger
-                    }
-                }
-            },
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth().height(50.dp)
-        ) {
-            Text("Validate Groww + Static IP")
-        }
-
-        TextButton(
-            onClick = { refreshStatus(showMessage = true) },
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Refresh Status")
-        }
-
-        if (busy) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-
-        message?.let {
-            Text(it, color = messageColor, fontWeight = FontWeight.SemiBold)
-        }
-
-        status?.let {
-            SettingsSection("Saved status") {
-                CheckRow("Secure credential vault", it.secretStoreReady)
-                CheckRow("Groww credentials saved", it.growwConfigured)
-                CheckRow("Static IP marked as whitelisted", it.staticIpConfirmed)
-            }
-        }
-
-        validation?.let {
-            SettingsSection("Validation result") {
-                CheckRow("Groww TOTP authentication", it.growwAuthOk)
-                CheckRow("Static public IP matches", it.staticIpMatches)
-                CheckRow("Groww whitelist confirmed", it.staticIpConfirmed)
-                CheckRow("Secure credential vault", it.secretStoreReady)
-                HorizontalDivider(color = Color(0xFF27313A))
-                Text(
-                    "Detected static IP: " + (it.detectedEgressIp ?: "Unavailable"),
-                    color = Muted,
-                    fontSize = 12.sp
-                )
-                Text(
-                    "Whitelisted IP: " + (it.expectedStaticIp ?: "Not configured"),
-                    color = Muted,
-                    fontSize = 12.sp
-                )
-                Text(
-                    if (it.liveExecutionReady) "LIVE EXECUTION READY" else "LIVE EXECUTION LOCKED",
-                    color = if (it.liveExecutionReady) Teal else Danger,
-                    fontWeight = FontWeight.Bold
-                )
-                it.growwError?.let { error ->
-                    Text("Groww: $error", color = Danger, fontSize = 12.sp)
-                }
-                it.egressError?.let { error ->
-                    Text("Static IP: $error", color = Danger, fontSize = 12.sp)
-                }
-            }
-        }
-
-        Text(
-            "Security: the TOTP token and secret are not shown after saving. Enter new values and save again if they need to be replaced.",
-            color = Muted,
-            fontSize = 12.sp
-        )
-    }
-}
-
-@Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = Card)) {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun CheckRow(label: String, passed: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(if (passed) "✓" else "✕", color = if (passed) Teal else Danger, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(8.dp))
-        Text(label, color = Muted)
     }
 }
 
