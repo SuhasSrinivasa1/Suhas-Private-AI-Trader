@@ -56,3 +56,16 @@ def test_shadow_ledger_includes_all_charges_once():
     assert status["charges"] == 22.0
     assert status["realized_pnl"] == 978.0
     assert status["net_pnl"] == 978.0
+
+
+def test_mixed_same_symbol_exposure_is_not_mutable():
+    registry = OwnedPositionRegistry()
+    registry.reconcile(
+        [
+            {"symbol": "ABC", "quantity": 10, "tag": "IPO_SENTINEL:D0", "product": "CNC"},
+            {"symbol": "ABC", "quantity": 25, "tag": "OTHER_APP", "product": "CNC"},
+        ]
+    )
+    assert registry.owned("ABC").quantity == 10
+    assert registry.external_quantity("ABC") == 25
+    assert registry.may_mutate("ABC") is False
