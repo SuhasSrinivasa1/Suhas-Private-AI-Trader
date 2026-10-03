@@ -1,20 +1,111 @@
-name: Univest AutoTrade v2.2.0 Private Signing Build (archived)
+name: Univest AutoTrade v2.2.0 Private Signing Build
 
 on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'ps-scanner/**'
+      - '.github/workflows/ps-scanner-ci.yml'
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  archived:
+  build-sign:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
-      - name: Archived workflow notice
+      - name: Checkout Univest source
+        shell: bash
         run: |
-          echo "The duplicate v2.2.0 PR signing workflow is archived."
-          echo "It no longer runs on every repository pull request."
+          set -euo pipefail
+          git clone --depth 1 --branch univest-v220-build https://github.com/SuhasSrinivasa1/AI-Trader.git source_repo
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/source_repo/.build-temp/univest-v220-work/source"
+          grep -q "versionCode 220" "$SRC/app/build.gradle"
+          grep -q "versionName '2.2.0'" "$SRC/app/build.gradle"
+          grep -R -q 'com.univest.capp' "$SRC/app/src/main/java"
+          ! grep -R -q 'ANDROID_NOTIFICATION_DUPLICATE_SUPPRESSED' "$SRC/app/src/main/java"
+          cd "$SRC"
+          gradle --no-daemon --console=plain clean testReleaseUnitTest assembleRelease | tee "$GITHUB_WORKSPACE/test-results.txt"
+
+      - name: Generate new signing identity and sign
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 24)"
+          KEYSTORE="$RUNNER_TEMP/univest-v220-release.jks"
+          ALIAS="univest-autotrade-v220"
+          keytool -genkeypair -v             -keystore "$KEYSTORE"             -storepass "$PASS"             -keypass "$PASS"             -alias "$ALIAS"             -keyalg RSA -keysize 4096 -validity 10000             -dname 'CN=Univest AutoTrade, OU=Private Android Signing, O=Univest AutoTrade, L=Bengaluru, ST=Karnataka, C=IN'
+
+          SRC="$GITHUB_WORKSPACE/source_repo/.build-temp/univest-v220-work/source"
+          APK="$(find "$SRC/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*.apk' | head -1)"
+          test -n "$APK" && test -s "$APK"
+          mkdir -p release
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$APK" "$RUNNER_TEMP/aligned.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign             --ks "$KEYSTORE"             --ks-pass "pass:$PASS"             --ks-key-alias "$ALIAS"             --key-pass "pass:$PASS"             --v1-signing-enabled true             --v2-signing-enabled true             --v3-signing-enabled true             --out release/Univest-AutoTrade-v2.2.0-SIGNED.apk             "$RUNNER_TEMP/aligned.apk"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/Univest-AutoTrade-v2.2.0-SIGNED.apk | tee release/APK-SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging release/Univest-AutoTrade-v2.2.0-SIGNED.apk | tee release/APK-BADGING.txt
+          grep -q "package: name='com.suhas.multyfideliverybuy'" release/APK-BADGING.txt
+          grep -q "versionCode='220'" release/APK-BADGING.txt
+          grep -q "versionName='2.2.0'" release/APK-BADGING.txt
+          sha256sum release/Univest-AutoTrade-v2.2.0-SIGNED.apk | tee release/APK-SHA256.txt
+          cp test-results.txt release/test-results.txt
+          rm -f "$KEYSTORE"
+
+      - name: Package source and report
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/source_repo/.build-temp/univest-v220-work/source"
+          (cd "$SRC" && zip -qr "$GITHUB_WORKSPACE/release/Univest-AutoTrade-v2.2.0-source.zip" . -x '*/build/*' '.gradle/*' '*.jks' '*.keystore')
+          unzip -t release/Univest-AutoTrade-v2.2.0-source.zip >/dev/null
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' release/APK-SIGNATURE.txt | head -1)"
+          {
+            echo "Univest AutoTrade v2.2.0 build: SUCCESS"
+            echo "package=com.suhas.multyfideliverybuy"
+            echo "versionCode=220"
+            echo "versionName=2.2.0"
+            echo "sourcePackage=com.univest.capp"
+            echo "product=NSE CASH / CNC DELIVERY ONLY"
+            echo "notificationDuplicateExecutionGate=removed"
+            echo "backInRangeBrokerFlat=INR 20000 missed initial entry"
+            echo "backInRangeHoldingExists=INR 5000 add"
+            echo "averaging=INR 5000 at -2/-4/-6 percent, max 3, initial fill anchor"
+            echo "signingCertificateSHA256=$CERT"
+            echo "signingIdentity=new v2.2.0 identity authorized by user"
+          } > release/Univest-AutoTrade-v2.2.0-build-report.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Univest-AutoTrade-v2.2.0-FINAL
+          retention-days: 30
+          path: release/*
+          if-no-files-found: error
