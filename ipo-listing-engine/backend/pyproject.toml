@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ipo-sentinel-backend"
-version = "0.5.0"
+version = "1.0.0"
 description = "Static-IP backend for IPO Sentinel"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,3 +28,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 110
+
+
+[tool.setuptools]
+packages = ["app"]
