@@ -152,9 +152,9 @@ def health():
         with db(timeout_seconds=.20) as con:
             deadline=time.monotonic()+1.0
             con.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0,1000)
-            recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
-            recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
-            decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
+            # Execution-critical cached fields come first. If optional telemetry later
+            # exhausts the passive budget, health still retains truthful fail-closed
+            # order-count and position-reconciliation state.
             order_count=int(con.execute(
                 "SELECT COUNT(*) FROM orders WHERE substr(created_at,1,10)=? AND state NOT IN ('FAILED','CANCELLED')",(today,)
             ).fetchone()[0])
@@ -162,6 +162,9 @@ def health():
             for row in con.execute(f"SELECT key,value_json FROM system_state WHERE key IN ({marks})",tuple(state_keys)).fetchall():
                 try:state[str(row[0])]=json.loads(row[1] or "{}")
                 except Exception:state[str(row[0])]={}
+            recent=[dict(r) for r in con.execute("SELECT ts,component,level,message FROM health_events ORDER BY id DESC LIMIT 30").fetchall()]
+            recs=con.execute("SELECT book,state,COUNT(*) n FROM recommendations GROUP BY book,state").fetchall()
+            decisions=con.execute("SELECT decision,COUNT(*) FROM trade_decisions WHERE ts>=datetime('now','-1 day') GROUP BY decision").fetchall()
             f=con.execute("SELECT COUNT(*),COUNT(DISTINCT symbol),MIN(asof),MAX(asof) FROM fundamental_snapshots").fetchone()
             e=con.execute("SELECT COUNT(*),SUM(CASE WHEN starts_at>=? THEN 1 ELSE 0 END) FROM market_events",(now_iso(),)).fetchone()
             fundamentals={
@@ -222,6 +225,7 @@ def health():
         "recent_health_events":recent,
         "health_contract":{"passive":True,"network_calls":False,"history_pacer_nonblocking":True,
             "db_connections":1,"db_snapshot_error":db_error,"db_wall_clock_budget_seconds":1.0,
+            "execution_snapshot_available":order_count is not None,
             "elapsed_ms":round((time.monotonic()-started)*1000.0,1)}}
 
 
