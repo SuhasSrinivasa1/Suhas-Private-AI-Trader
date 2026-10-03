@@ -44,15 +44,15 @@ jobs:
       run:
         working-directory: ps-scanner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: ps-scanner/requirements.txt
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Install zsh
@@ -97,15 +97,15 @@ jobs:
       run:
         working-directory: ps-scanner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: ps-scanner/requirements.txt
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Install dependencies
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Resolve release version
         id: version
         working-directory: ps-scanner
@@ -171,7 +171,7 @@ jobs:
           unzip -t "$GITHUB_WORKSPACE/$NAME.zip"
           sha256sum "$GITHUB_WORKSPACE/$NAME.zip" | tee "$GITHUB_WORKSPACE/$NAME.zip.sha256"
       - name: Upload installable package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PS_Scanner_Quant_v${{ steps.version.outputs.version }}
           path: |
