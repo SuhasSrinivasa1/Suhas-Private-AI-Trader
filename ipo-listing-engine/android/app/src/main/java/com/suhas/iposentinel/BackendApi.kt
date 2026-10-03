@@ -71,6 +71,30 @@ data class OrderEventBatch(
     val lastId: Long
 )
 
+data class ResearchCandidate(
+    val symbol: String,
+    val companyName: String,
+    val listingDate: String?,
+    val isin: String?,
+    val board: String?,
+    val growwSymbol: String?,
+    val growwSeries: String?,
+    val buyAllowed: Boolean,
+    val sellAllowed: Boolean,
+    val symbolResolved: Boolean,
+    val resolutionStatus: String
+)
+
+data class ResearchPlan(
+    val generatedAt: String? = null,
+    val sourceReady: Boolean = false,
+    val calendarReady: Boolean = false,
+    val nextTradingDay: String? = null,
+    val nextTradingDayCandidates: List<ResearchCandidate> = emptyList(),
+    val weekCandidates: List<ResearchCandidate> = emptyList(),
+    val errors: List<String> = emptyList()
+)
+
 data class ValidationStatus(
     val growwAuthOk: Boolean = false,
     val detectedEgressIp: String? = null,
@@ -162,6 +186,98 @@ class BackendApi {
             topFive = topFive,
             families = families,
             rankingNote = json.optString("ranking_note")
+        )
+    }
+
+    suspend fun fetchResearchPlan(): Pair<ApiResult, ResearchPlan?> {
+        val result = request("GET", "/research/plan", null)
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+
+        fun parseCandidate(obj: JSONObject): ResearchCandidate =
+            ResearchCandidate(
+                symbol = obj.optString("symbol"),
+                companyName = obj.optString("company_name"),
+                listingDate = obj.optString("listing_date").ifBlank { null },
+                isin = obj.optString("isin").ifBlank { null },
+                board = obj.optString("board").ifBlank { null },
+                growwSymbol = obj.optString("groww_symbol").ifBlank { null },
+                growwSeries = obj.optString("groww_series").ifBlank { null },
+                buyAllowed = obj.optBoolean("buy_allowed", false),
+                sellAllowed = obj.optBoolean("sell_allowed", false),
+                symbolResolved = obj.optBoolean("symbol_resolved", false),
+                resolutionStatus = obj.optString("resolution_status", "UNKNOWN")
+            )
+
+        fun parseArray(name: String): List<ResearchCandidate> {
+            val arr = json.optJSONArray(name) ?: return emptyList()
+            return buildList {
+                for (i in 0 until arr.length()) {
+                    add(parseCandidate(arr.getJSONObject(i)))
+                }
+            }
+        }
+
+        val errorsJson = json.optJSONArray("errors")
+        val errors = buildList {
+            if (errorsJson != null) {
+                for (i in 0 until errorsJson.length()) add(errorsJson.optString(i))
+            }
+        }
+
+        return result to ResearchPlan(
+            generatedAt = json.optString("generated_at").ifBlank { null },
+            sourceReady = json.optBoolean("source_ready", false),
+            calendarReady = json.optBoolean("calendar_ready", false),
+            nextTradingDay = json.optString("next_trading_day").ifBlank { null },
+            nextTradingDayCandidates = parseArray("next_trading_day_candidates"),
+            weekCandidates = parseArray("week_candidates"),
+            errors = errors
+        )
+    }
+
+    suspend fun refreshResearchPlan(): Pair<ApiResult, ResearchPlan?> {
+        val result = request("POST", "/research/refresh", "{}")
+        if (!result.ok) return result to null
+        val json = JSONObject(result.body)
+
+        fun parseCandidate(obj: JSONObject): ResearchCandidate =
+            ResearchCandidate(
+                symbol = obj.optString("symbol"),
+                companyName = obj.optString("company_name"),
+                listingDate = obj.optString("listing_date").ifBlank { null },
+                isin = obj.optString("isin").ifBlank { null },
+                board = obj.optString("board").ifBlank { null },
+                growwSymbol = obj.optString("groww_symbol").ifBlank { null },
+                growwSeries = obj.optString("groww_series").ifBlank { null },
+                buyAllowed = obj.optBoolean("buy_allowed", false),
+                sellAllowed = obj.optBoolean("sell_allowed", false),
+                symbolResolved = obj.optBoolean("symbol_resolved", false),
+                resolutionStatus = obj.optString("resolution_status", "UNKNOWN")
+            )
+
+        fun parseArray(name: String): List<ResearchCandidate> {
+            val arr = json.optJSONArray(name) ?: return emptyList()
+            return buildList {
+                for (i in 0 until arr.length()) add(parseCandidate(arr.getJSONObject(i)))
+            }
+        }
+
+        val errorsJson = json.optJSONArray("errors")
+        val errors = buildList {
+            if (errorsJson != null) {
+                for (i in 0 until errorsJson.length()) add(errorsJson.optString(i))
+            }
+        }
+
+        return result to ResearchPlan(
+            generatedAt = json.optString("generated_at").ifBlank { null },
+            sourceReady = json.optBoolean("source_ready", false),
+            calendarReady = json.optBoolean("calendar_ready", false),
+            nextTradingDay = json.optString("next_trading_day").ifBlank { null },
+            nextTradingDayCandidates = parseArray("next_trading_day_candidates"),
+            weekCandidates = parseArray("week_candidates"),
+            errors = errors
         )
     }
 
