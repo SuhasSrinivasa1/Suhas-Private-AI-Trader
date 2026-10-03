@@ -36,7 +36,7 @@ class V661IntegrityTests(unittest.TestCase):
             )
 
     def test_version_and_policy(self):
-        self.assertEqual(VERSION,"6.8.1")
+        self.assertEqual(VERSION,"6.8.2")
         self.assertEqual(lifecycle.lifecycle_payload()["policy_version"],
                          "V680_SHARED_EVIDENCE_FABRIC_ADAPTIVE_ALGORITHM")
 
