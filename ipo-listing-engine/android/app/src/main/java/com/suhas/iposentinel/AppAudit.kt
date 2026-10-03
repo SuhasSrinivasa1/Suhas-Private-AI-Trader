@@ -43,7 +43,10 @@ object AppAudit {
     }
 
     suspend fun exportWeekly(context: Context): File = withContext(Dispatchers.IO) {
-        val backendResult = BackendApi().exportAudit(7)
+        val api = BackendApi()
+        val backendResult = api.exportAudit(7)
+        val (_, liveState) = api.fetchLiveState()
+        val (_, strategySummary) = api.fetchStrategySummary()
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
         val safeTime = Instant.now().toString().replace(":", "-")
         val zipFile = File(exportDir, "IPO-Sentinel-Weekly-Audit-" + safeTime + ".zip")
@@ -66,14 +69,37 @@ object AppAudit {
             zip.write(backendText.toByteArray())
             zip.closeEntry()
 
-            zip.putNextEntry(ZipEntry("metadata.json"))
-            val metadata = JSONObject()
+            zip.putNextEntry(ZipEntry("weekly-summary.json"))
+            val summary = JSONObject()
                 .put("app_version", BuildConfig.VERSION_NAME)
                 .put("exported_at", Instant.now().toString())
                 .put("period_days", 7)
                 .put("backend_audit_included", backendResult.ok)
+                .put("live_enabled", liveState?.enabled)
+                .put("live_budget_rupees", liveState?.budgetRupees)
+                .put("strategy_total", strategySummary?.totalStrategyFamilies)
+                .put("strategy_tested", strategySummary?.testedFamilies)
+                .put("strategy_champions", strategySummary?.champions)
+                .put("strategy_challengers", strategySummary?.challengers)
+                .put("strategy_untested", strategySummary?.untestedFamilies)
+                .put("notification_permission", NotificationHelper.notificationsAllowed(context))
                 .put("note", "Groww TOTP token and secret are never included in audit exports.")
-            zip.write(metadata.toString(2).toByteArray())
+            zip.write(summary.toString(2).toByteArray())
+            zip.closeEntry()
+
+            zip.putNextEntry(ZipEntry("strategy-summary.json"))
+            val strategyJson = if (strategySummary != null) {
+                JSONObject()
+                    .put("total", strategySummary.totalStrategyFamilies)
+                    .put("tested", strategySummary.testedFamilies)
+                    .put("champions", strategySummary.champions)
+                    .put("challengers", strategySummary.challengers)
+                    .put("untested", strategySummary.untestedFamilies)
+                    .put("ranking_note", strategySummary.rankingNote)
+            } else {
+                JSONObject().put("available", false)
+            }
+            zip.write(strategyJson.toString(2).toByteArray())
             zip.closeEntry()
         }
 
