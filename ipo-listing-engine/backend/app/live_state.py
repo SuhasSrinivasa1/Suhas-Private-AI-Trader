@@ -37,9 +37,13 @@ class LiveStateStore:
                 return LiveState()
 
     def save(self, enabled: bool, budget_rupees: int) -> LiveState:
+        bounded_budget = max(10_000, min(100_000, int(budget_rupees)))
+        current = self.load()
+        if current.enabled and enabled and bounded_budget != current.budget_rupees:
+            raise ValueError("Live budget is locked while live execution is armed")
         state = LiveState(
             enabled=bool(enabled),
-            budget_rupees=max(10_000, min(100_000, int(budget_rupees))),
+            budget_rupees=bounded_budget,
             updated_at=datetime.now(timezone.utc).isoformat(),
         )
         with self._lock:
