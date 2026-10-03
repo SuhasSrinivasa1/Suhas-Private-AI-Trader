@@ -71,6 +71,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Publish backend validation summary
+        if: always()
+        shell: bash
+        run: |
+          echo '### IPO Sentinel backend validation' >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 120 ipo-backend-validation.log >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Enforce backend validation gate
         if: always()
         shell: bash
