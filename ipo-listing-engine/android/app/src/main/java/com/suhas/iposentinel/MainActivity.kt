@@ -132,6 +132,10 @@ private fun IpoSentinelApp() {
             if (result.ok && state != null) {
                 liveEnabled = state.enabled
                 if (state.enabled) {
+                    context.getSharedPreferences("ipo_sentinel_live_events", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putLong("last_order_event_id", state.eventId)
+                        .apply()
                     ContextCompat.startForegroundService(
                         context,
                         Intent(context, LiveNotificationService::class.java)
