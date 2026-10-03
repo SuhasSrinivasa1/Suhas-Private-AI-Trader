@@ -10,6 +10,7 @@ import httpx
 from .connection_api import store as groww_settings_store
 from .groww_session import GrowwCredentials, GrowwSession
 from .listing_session import IST, listing_session_gate
+from .live_pnl import live_ledger
 from .live_state import live_state_store
 from .order_events import order_events
 from .research_service import ResearchPlanStore
@@ -336,6 +337,7 @@ class GrowwExecutionService:
             else groww.TRANSACTION_TYPE_SELL
         )
 
+        reference_id = self._reference(symbol)
         try:
             response = groww.place_order(
                 trading_symbol=symbol,
@@ -348,7 +350,7 @@ class GrowwExecutionService:
                 transaction_type=transaction_type,
                 price=request.price,
                 trigger_price=request.trigger_price,
-                order_reference_id=self._reference(symbol),
+                order_reference_id=reference_id,
             )
         except Exception as exc:
             order_events.publish(
@@ -372,6 +374,27 @@ class GrowwExecutionService:
             order_id=order_id,
             message=f"Groww accepted order ({status})",
         )
+        if order_id:
+            try:
+                live_ledger.register_order(
+                    order_id=order_id,
+                    symbol=symbol,
+                    side=side,
+                    reference_id=reference_id,
+                )
+            except Exception as exc:
+                live_state_store.save(False, state.budget_rupees)
+                order_events.publish(
+                    "RISK_HALT",
+                    symbol=symbol,
+                    side=side,
+                    quantity=request.quantity,
+                    order_id=order_id,
+                    message="Live ledger registration failed after broker acknowledgement; live execution disabled",
+                    metadata={"error": exc.__class__.__name__},
+                )
+                response = dict(response)
+                response["ipo_sentinel_risk_halt"] = "LIVE_LEDGER_REGISTRATION_FAILED"
         return response
 
     def reconcile_order(
@@ -392,6 +415,30 @@ class GrowwExecutionService:
         filled = int(response.get("filled_quantity") or 0)
         average = response.get("average_fill_price")
         price = float(average) if average not in (None, "") else None
+
+        if filled > 0 and price and price > 0:
+            try:
+                live_ledger.record_cumulative_fill(
+                    order_id=groww_order_id,
+                    symbol=symbol,
+                    side=side,
+                    cumulative_quantity=filled,
+                    average_price=price,
+                )
+            except Exception as exc:
+                state = live_state_store.load()
+                if state.enabled:
+                    live_state_store.save(False, state.budget_rupees)
+                order_events.publish(
+                    "RISK_HALT",
+                    symbol=symbol,
+                    side=side,
+                    quantity=filled,
+                    price=price,
+                    order_id=groww_order_id,
+                    message="Live P&L reconciliation failed; live execution disabled",
+                    metadata={"error": exc.__class__.__name__},
+                )
 
         if status in self.TERMINAL_SUCCESS:
             order_events.publish(
