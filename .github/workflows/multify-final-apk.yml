@@ -1,0 +1,61 @@
+name: Multify Final APK
+
+on:
+  push:
+    branches:
+      - chatgpt-multify-final-20261005
+    paths:
+      - 'multify-final-build/**'
+      - '.github/workflows/multify-final-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct and verify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p multify-final-build/work
+          cat multify-final-build/parts/source.part* > multify-final-build/work/source.tar.gz.b64
+          echo "b681419a927e50864138b7dc1803ef608b1e63b6b3e8a61d487926fb01bdb705  multify-final-build/work/source.tar.gz.b64" | sha256sum -c -
+          base64 -d multify-final-build/work/source.tar.gz.b64 > multify-final-build/work/source.tar.gz
+          echo "9a58ca283886ef7f14fb26045502b4d3a0c2dca7b60d66ffacc38ad20d6ab9e9  multify-final-build/work/source.tar.gz" | sha256sum -c -
+          tar -xzf multify-final-build/work/source.tar.gz -C multify-final-build/work
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Run unit tests
+        working-directory: multify-final-build/work/android
+        run: gradle --no-daemon test --stacktrace
+
+      - name: Build release APK
+        working-directory: multify-final-build/work/android
+        run: gradle --no-daemon assembleRelease --stacktrace
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multify-Trader-Pro-v4.1.0-FINAL-unsigned
+          path: multify-final-build/work/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
