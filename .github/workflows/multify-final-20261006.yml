@@ -1,4 +1,4 @@
-name: Multify Trader Pro v4.1.0 Final Build
+name: Multify Trader Pro v4.1.1 TOTP R8 Fix
 
 on:
   pull_request:
@@ -31,6 +31,70 @@ jobs:
           tar -xzf multify-final-20261006/work/source.tar.gz -C multify-final-20261006/work
           test -f multify-final-20261006/work/android/app/build.gradle.kts
 
+      - name: Apply v4.1.1 TOTP release serialization fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("multify-final-20261006/work/android")
+
+          p = root / "app/build.gradle.kts"
+          s = p.read_text()
+          assert 'versionCode = 410' in s
+          assert 'versionName = "4.1.0-final-learning30"' in s
+          s = s.replace('versionCode = 410', 'versionCode = 411')
+          s = s.replace('versionName = "4.1.0-final-learning30"', 'versionName = "4.1.1-totp-r8-fix"')
+          p.write_text(s)
+
+          p = root / "app/proguard-rules.pro"
+          s = p.read_text()
+          keep = """
+# Groww/Retrofit/Gson DTOs are serialized reflectively. Keep field names in release
+# builds so JSON request keys such as 'totp' cannot be renamed by R8.
+-keep class com.multify.traderpro.data.network.** { *; }
+"""
+          if "com.multify.traderpro.data.network.**" not in s:
+              s += keep
+          p.write_text(s)
+
+          p = root / "app/src/main/java/com/multify/traderpro/data/network/GrowwModels.kt"
+          s = p.read_text()
+          s = s.replace(
+              '    val totp: String? = null,\n    val checksum: String? = null,\n    val timestamp: String? = null',
+              '    @SerializedName("totp") val totp: String? = null,\n'
+              '    @SerializedName("checksum") val checksum: String? = null,\n'
+              '    @SerializedName("timestamp") val timestamp: String? = null'
+          )
+          s = s.replace(
+              'data class TokenResponse(\n    val token: String? = null,',
+              'data class TokenResponse(\n    @SerializedName("token") val token: String? = null,'
+          )
+          s = s.replace(
+              '    val expiry: String? = null,',
+              '    @SerializedName("expiry") val expiry: String? = null,'
+          )
+          s = s.replace(
+              '    val status: String? = null,\n    val error: ApiError? = null',
+              '    @SerializedName("status") val status: String? = null,\n'
+              '    @SerializedName("error") val error: ApiError? = null'
+          )
+          s = s.replace(
+              'data class ApiError(val code: String? = null, val message: String? = null)',
+              'data class ApiError(\n'
+              '    @SerializedName("code") val code: String? = null,\n'
+              '    @SerializedName("message") val message: String? = null\n'
+              ')'
+          )
+          p.write_text(s)
+          PY
+
+          grep -q 'versionCode = 411' multify-final-20261006/work/android/app/build.gradle.kts
+          grep -q 'versionName = "4.1.1-totp-r8-fix"' multify-final-20261006/work/android/app/build.gradle.kts
+          grep -Fq -- '-keep class com.multify.traderpro.data.network.** { *; }' multify-final-20261006/work/android/app/proguard-rules.pro
+          grep -Fq '@SerializedName("totp") val totp' multify-final-20261006/work/android/app/src/main/java/com/multify/traderpro/data/network/GrowwModels.kt
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -59,18 +123,28 @@ jobs:
         working-directory: multify-final-20261006/work/android
         run: gradle --no-daemon :app:assembleRelease --stacktrace
 
+      - name: Verify R8 kept Groww network model names
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAP=multify-final-20261006/work/android/app/build/outputs/mapping/release/mapping.txt
+          test -f "$MAP"
+          grep -Fq 'com.multify.traderpro.data.network.TokenRequest -> com.multify.traderpro.data.network.TokenRequest:' "$MAP"
+          grep -Fq 'com.multify.traderpro.data.network.TokenResponse -> com.multify.traderpro.data.network.TokenResponse:' "$MAP"
+
       - name: Stage build outputs
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf multify-final-20261006/output
           mkdir -p multify-final-20261006/output
-          cp multify-final-20261006/work/android/app/build/outputs/apk/release/*.apk multify-final-20261006/output/MultifyTraderPro-v4.1.0-FINAL-unsigned.apk
-          sha256sum multify-final-20261006/output/MultifyTraderPro-v4.1.0-FINAL-unsigned.apk > multify-final-20261006/output/SHA256-UNSIGNED.txt
+          cp multify-final-20261006/work/android/app/build/outputs/apk/release/*.apk multify-final-20261006/output/MultifyTraderPro-v4.1.1-TOTP-FIX-unsigned.apk
+          sha256sum multify-final-20261006/output/MultifyTraderPro-v4.1.1-TOTP-FIX-unsigned.apk > multify-final-20261006/output/SHA256-UNSIGNED.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MultifyTraderPro-v4.1.0-FINAL-build
+          name: MultifyTraderPro-v4.1.1-TOTP-FIX-build
           path: multify-final-20261006/output/*
           if-no-files-found: error
           retention-days: 7
