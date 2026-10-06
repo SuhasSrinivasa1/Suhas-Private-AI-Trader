@@ -50,11 +50,7 @@ jobs:
 
           p = root / "app/proguard-rules.pro"
           s = p.read_text()
-          keep = """
-# Groww/Retrofit/Gson DTOs are serialized reflectively. Keep field names in release
-# builds so JSON request keys such as 'totp' cannot be renamed by R8.
--keep class com.multify.traderpro.data.network.** { *; }
-"""
+          keep = "\n# Groww/Retrofit/Gson DTOs are serialized reflectively. Keep field names in release\n# builds so JSON request keys such as 'totp' cannot be renamed by R8.\n-keep class com.multify.traderpro.data.network.** { *; }\n"
           if "com.multify.traderpro.data.network.**" not in s:
               s += keep
           p.write_text(s)
