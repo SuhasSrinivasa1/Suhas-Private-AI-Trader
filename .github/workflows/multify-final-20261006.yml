@@ -1,0 +1,76 @@
+name: Multify Trader Pro v4.1.0 Final Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'multify-final-20261006/**'
+      - '.github/workflows/multify-final-20261006.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p multify-final-20261006/work
+          cat multify-final-20261006/parts/source.part* > multify-final-20261006/work/source.tar.gz.b64
+          test "$(sha256sum multify-final-20261006/work/source.tar.gz.b64 | awk '{print $1}')" = "b966e6962e93de1931a18b63b4058d23ccb55badd7231c9b8eb63ba39b59cd07"
+          base64 -d multify-final-20261006/work/source.tar.gz.b64 > multify-final-20261006/work/source.tar.gz
+          test "$(sha256sum multify-final-20261006/work/source.tar.gz | awk '{print $1}')" = "1b875f28294ddc0b64c8342be929029debce7c759e5d4b4fadb97a358f51e0df"
+          tar -xzf multify-final-20261006/work/source.tar.gz -C multify-final-20261006/work
+          test -f multify-final-20261006/work/android/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Run unit tests
+        working-directory: multify-final-20261006/work/android
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
+      - name: Build release APK
+        working-directory: multify-final-20261006/work/android
+        run: gradle --no-daemon :app:assembleRelease --stacktrace
+
+      - name: Stage build outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p multify-final-20261006/output
+          cp multify-final-20261006/work/android/app/build/outputs/apk/release/*.apk multify-final-20261006/output/MultifyTraderPro-v4.1.0-FINAL-unsigned.apk
+          sha256sum multify-final-20261006/output/MultifyTraderPro-v4.1.0-FINAL-unsigned.apk > multify-final-20261006/output/SHA256-UNSIGNED.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultifyTraderPro-v4.1.0-FINAL-build
+          path: multify-final-20261006/output/*
+          if-no-files-found: error
+          retention-days: 7
