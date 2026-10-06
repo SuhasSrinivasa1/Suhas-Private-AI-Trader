@@ -1,4 +1,4 @@
-name: Multify Trader Pro v4.1.1 TOTP R8 Fix
+name: Multify Trader Pro v4.1.2 Raw TOTP Body
 
 on:
   pull_request:
@@ -31,7 +31,7 @@ jobs:
           tar -xzf multify-final-20261006/work/source.tar.gz -C multify-final-20261006/work
           test -f multify-final-20261006/work/android/app/build.gradle.kts
 
-      - name: Apply v4.1.1 TOTP release serialization fix
+      - name: Apply v4.1.2 raw TOTP request fix
         shell: bash
         run: |
           set -euo pipefail
@@ -44,13 +44,13 @@ jobs:
           s = p.read_text()
           assert 'versionCode = 410' in s
           assert 'versionName = "4.1.0-final-learning30"' in s
-          s = s.replace('versionCode = 410', 'versionCode = 411')
-          s = s.replace('versionName = "4.1.0-final-learning30"', 'versionName = "4.1.1-totp-r8-fix"')
+          s = s.replace('versionCode = 410', 'versionCode = 412')
+          s = s.replace('versionName = "4.1.0-final-learning30"', 'versionName = "4.1.2-totp-raw-body"')
           p.write_text(s)
 
           p = root / "app/proguard-rules.pro"
           s = p.read_text()
-          keep = "\n# Groww/Retrofit/Gson DTOs are serialized reflectively. Keep field names in release\n# builds so JSON request keys such as 'totp' cannot be renamed by R8.\n-keep class com.multify.traderpro.data.network.** { *; }\n"
+          keep = "\n# Keep Groww network DTOs stable under release R8/minification.\n-keep class com.multify.traderpro.data.network.** { *; }\n"
           if "com.multify.traderpro.data.network.**" not in s:
               s += keep
           p.write_text(s)
@@ -67,10 +67,7 @@ jobs:
               'data class TokenResponse(\n    val token: String? = null,',
               'data class TokenResponse(\n    @SerializedName("token") val token: String? = null,'
           )
-          s = s.replace(
-              '    val expiry: String? = null,',
-              '    @SerializedName("expiry") val expiry: String? = null,'
-          )
+          s = s.replace('    val expiry: String? = null,', '    @SerializedName("expiry") val expiry: String? = null,')
           s = s.replace(
               '    val status: String? = null,\n    val error: ApiError? = null',
               '    @SerializedName("status") val status: String? = null,\n'
@@ -84,12 +81,83 @@ jobs:
               ')'
           )
           p.write_text(s)
+
+          p = root / "app/src/main/java/com/multify/traderpro/data/network/GrowwApi.kt"
+          s = p.read_text()
+          if 'import okhttp3.RequestBody' not in s:
+              s = s.replace('package com.multify.traderpro.data.network\n\n', 'package com.multify.traderpro.data.network\n\nimport okhttp3.RequestBody\n')
+          old = '''    suspend fun createAccessToken(
+                  @Header("Authorization") authorization: String,
+                  @Body request: TokenRequest
+              ): TokenResponse'''
+          new = '''    suspend fun createAccessToken(
+                  @Header("Authorization") authorization: String,
+                  @Body request: RequestBody
+              ): TokenResponse'''
+          assert old in s
+          s = s.replace(old, new)
+          p.write_text(s)
+
+          p = root / "app/src/main/java/com/multify/traderpro/data/repository/TradingRepository.kt"
+          s = p.read_text()
+          s = s.replace('import com.multify.traderpro.data.network.TokenRequest\n', '')
+          anchor = 'import kotlinx.coroutines.flow.first\n'
+          additions = (
+              'import okhttp3.MediaType.Companion.toMediaType\n'
+              'import okhttp3.RequestBody.Companion.toRequestBody\n'
+              'import org.json.JSONObject\n'
+          )
+          if 'import org.json.JSONObject' not in s:
+              assert anchor in s
+              s = s.replace(anchor, anchor + additions)
+
+          old = '''        val totp = TotpGenerator.generate(totpSecret)
+              val tokenResponse = try {
+                  apiFactory.groww.createAccessToken(
+                      authorization = "Bearer $apiKey",
+                      request = TokenRequest(keyType = "totp", totp = totp)
+                  )
+              } catch (e: HttpException) {
+                  error(growwAuthError(e))
+              }'''
+          new = '''        val totp = TotpGenerator.generate(totpSecret)
+              require(totp.length == 6 && totp.all { it.isDigit() }) {
+                  "Local Groww TOTP generation failed validation"
+              }
+              val requestJson = JSONObject()
+                  .put("key_type", "totp")
+                  .put("totp", totp)
+                  .toString()
+              val requestBody = requestJson.toRequestBody("application/json; charset=utf-8".toMediaType())
+              auditLogger.log(
+                  "AUTH",
+                  "TOTP_REQUEST_READY",
+                  mapOf(
+                      "totp_generated" to true,
+                      "totp_length" to totp.length,
+                      "totp_digits_only" to totp.all { it.isDigit() },
+                      "totp_token_length" to apiKey.length,
+                      "request_keys" to "key_type,totp"
+                  )
+              )
+              val tokenResponse = try {
+                  apiFactory.groww.createAccessToken(
+                      authorization = "Bearer $apiKey",
+                      request = requestBody
+                  )
+              } catch (e: HttpException) {
+                  error(growwAuthError(e) + " Local check: generated a 6-digit TOTP and sent raw JSON keys key_type,totp.")
+              }'''
+          assert old in s
+          s = s.replace(old, new)
+          p.write_text(s)
           PY
 
-          grep -q 'versionCode = 411' multify-final-20261006/work/android/app/build.gradle.kts
-          grep -q 'versionName = "4.1.1-totp-r8-fix"' multify-final-20261006/work/android/app/build.gradle.kts
-          grep -Fq -- '-keep class com.multify.traderpro.data.network.** { *; }' multify-final-20261006/work/android/app/proguard-rules.pro
-          grep -Fq '@SerializedName("totp") val totp' multify-final-20261006/work/android/app/src/main/java/com/multify/traderpro/data/network/GrowwModels.kt
+          grep -q 'versionCode = 412' multify-final-20261006/work/android/app/build.gradle.kts
+          grep -q 'versionName = "4.1.2-totp-raw-body"' multify-final-20261006/work/android/app/build.gradle.kts
+          grep -Fq 'request = requestBody' multify-final-20261006/work/android/app/src/main/java/com/multify/traderpro/data/repository/TradingRepository.kt
+          grep -Fq '.put("totp", totp)' multify-final-20261006/work/android/app/src/main/java/com/multify/traderpro/data/repository/TradingRepository.kt
+          grep -Fq '@Body request: RequestBody' multify-final-20261006/work/android/app/src/main/java/com/multify/traderpro/data/network/GrowwApi.kt
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -119,13 +187,12 @@ jobs:
         working-directory: multify-final-20261006/work/android
         run: gradle --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Verify R8 kept Groww network model names
+      - name: Verify release mapping and raw auth path
         shell: bash
         run: |
           set -euo pipefail
           MAP=multify-final-20261006/work/android/app/build/outputs/mapping/release/mapping.txt
           test -f "$MAP"
-          grep -Fq 'com.multify.traderpro.data.network.TokenRequest -> com.multify.traderpro.data.network.TokenRequest:' "$MAP"
           grep -Fq 'com.multify.traderpro.data.network.TokenResponse -> com.multify.traderpro.data.network.TokenResponse:' "$MAP"
 
       - name: Stage build outputs
@@ -134,13 +201,13 @@ jobs:
           set -euo pipefail
           rm -rf multify-final-20261006/output
           mkdir -p multify-final-20261006/output
-          cp multify-final-20261006/work/android/app/build/outputs/apk/release/*.apk multify-final-20261006/output/MultifyTraderPro-v4.1.1-TOTP-FIX-unsigned.apk
-          sha256sum multify-final-20261006/output/MultifyTraderPro-v4.1.1-TOTP-FIX-unsigned.apk > multify-final-20261006/output/SHA256-UNSIGNED.txt
+          cp multify-final-20261006/work/android/app/build/outputs/apk/release/*.apk multify-final-20261006/output/MultifyTraderPro-v4.1.2-TOTP-RAW-unsigned.apk
+          sha256sum multify-final-20261006/output/MultifyTraderPro-v4.1.2-TOTP-RAW-unsigned.apk > multify-final-20261006/output/SHA256-UNSIGNED.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MultifyTraderPro-v4.1.1-TOTP-FIX-build
+          name: MultifyTraderPro-v4.1.2-TOTP-RAW-build
           path: multify-final-20261006/output/*
           if-no-files-found: error
           retention-days: 7
