@@ -1,0 +1,35 @@
+name: Export Android APK Signing Tools
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/export-apksigner-20261006.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" "build-tools;35.0.0"
+          mkdir -p /tmp/apktools/lib
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" /tmp/apktools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/apktools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/apktools/lib/
+      - name: Upload signing tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-signing-tools-35
+          path: /tmp/apktools
+          if-no-files-found: error
+          retention-days: 1
