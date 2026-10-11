@@ -1,0 +1,500 @@
+name: Build Multyfi V3.0.7 Dynamic Risk
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-v307-dynamic-risk:
+    if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Reuse verified V3.0.6 transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          wf = Path('.github/workflows/build-multyfi-v306-live-toggle.yml').read_text().splitlines()
+          def extract(step_name, out):
+              start = next(i for i,l in enumerate(wf) if l.strip() == f'- name: {step_name}')
+              run_i = next(i for i in range(start+1, len(wf)) if wf[i].strip() == 'run: |')
+              run_indent = len(wf[run_i]) - len(wf[run_i].lstrip())
+              body = []
+              for line in wf[run_i+1:]:
+                  if line.strip() == '':
+                      body.append('')
+                      continue
+                  indent = len(line) - len(line.lstrip())
+                  if indent <= run_indent:
+                      break
+                  body.append(line[min(len(line), run_indent+2):])
+              Path(out).write_text('\n'.join(body) + '\n')
+          extract('Reuse verified V3.0.5 data-quality patch', '/tmp/v306_base.sh')
+          extract('Apply V3.0.6 live trading master gate', '/tmp/v306_live.sh')
+          PY
+          bash /tmp/v306_base.sh
+          bash /tmp/v306_live.sh
+
+      - name: Apply V3.0.7 budget-only dynamic risk
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='Multyfi_Intraday_Mobile_V3_0'
+          SRC="$BASE/app/src/main/java/com/multyfi/intraday/mobile"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          base = Path('Multyfi_Intraday_Mobile_V3_0')
+          src = base/'app/src/main/java/com/multyfi/intraday/mobile'
+
+          p = base/'app/build.gradle.kts'
+          s = p.read_text().replace('versionCode = 306', 'versionCode = 307').replace('versionName = "3.0.6"', 'versionName = "3.0.7"')
+          p.write_text(s)
+
+          p = src/'Models.kt'
+          s = p.read_text()
+          needle = '    val realisedPnl: Double = 0.0,\n    val rawNotification: String = "",\n'
+          repl = '''    val realisedPnl: Double = 0.0,\n    val riskStopPct: Double = 0.0,\n    val riskTrailActivationPct: Double = 0.0,\n    val riskTrailDistancePct: Double = 0.0,\n    val riskMinHoldSeconds: Long = 0L,\n    val rawNotification: String = "",\n'''
+          if needle not in s: raise SystemExit('Models CandidateState hook not found')
+          p.write_text(s.replace(needle, repl, 1))
+
+          p = src/'AppRepository.kt'
+          s = p.read_text()
+          needle = '    fun notional(): Double = prefs.getString("paper_notional", "100000")?.toDoubleOrNull()?.coerceAtLeast(1000.0) ?: 100000.0\n'
+          repl = needle + '    fun saveBudget(value: String) { prefs.edit().putString("paper_notional", value.trim()).apply() }\n'
+          if needle not in s: raise SystemExit('AppRepository notional hook not found')
+          s = s.replace(needle, repl, 1)
+          needle = '        .put("qty", c.qty).put("bestPrice", c.bestPrice).put("realisedPnl", c.realisedPnl)\n        .put("rawNotification", c.rawNotification).put("notificationPackage", c.notificationPackage)\n'
+          repl = '''        .put("qty", c.qty).put("bestPrice", c.bestPrice).put("realisedPnl", c.realisedPnl)\n        .put("riskStopPct", c.riskStopPct).put("riskTrailActivationPct", c.riskTrailActivationPct)\n        .put("riskTrailDistancePct", c.riskTrailDistancePct).put("riskMinHoldSeconds", c.riskMinHoldSeconds)\n        .put("rawNotification", c.rawNotification).put("notificationPackage", c.notificationPackage)\n'''
+          if needle not in s: raise SystemExit('AppRepository serialize hook not found')
+          s = s.replace(needle, repl, 1)
+          needle = '        bestPrice = j.optDouble("bestPrice", 0.0), realisedPnl = j.optDouble("realisedPnl", 0.0),\n        rawNotification = j.optString("rawNotification", ""), notificationPackage = j.optString("notificationPackage", "")\n'
+          repl = '''        bestPrice = j.optDouble("bestPrice", 0.0), realisedPnl = j.optDouble("realisedPnl", 0.0),\n        riskStopPct = j.optDouble("riskStopPct", 0.0),\n        riskTrailActivationPct = j.optDouble("riskTrailActivationPct", 0.0),\n        riskTrailDistancePct = j.optDouble("riskTrailDistancePct", 0.0),\n        riskMinHoldSeconds = j.optLong("riskMinHoldSeconds", 0L),\n        rawNotification = j.optString("rawNotification", ""), notificationPackage = j.optString("notificationPackage", "")\n'''
+          if needle not in s: raise SystemExit('AppRepository deserialize hook not found')
+          p.write_text(s.replace(needle, repl, 1))
+
+          p = src/'MainActivity.kt'
+          s = p.read_text()
+          start = s.index('        sectionTitle("Paper risk",')
+          end = s.index('        sectionTitle("Live Buy & Sell",', start)
+          new = '''        sectionTitle("Trading budget", "Set only the rupee budget per candidate. Position quantity is derived from the current price. Stop, trailing exit and minimum hold are calculated automatically for every fresh entry from recent price behaviour, RVOL, VWAP distance and signal strength.")\n        val budget = editField("Budget per candidate (₹)", numericDecimal = true).apply { setText("%.0f".format(Locale.US, repo.notional())) }\n        addCard(budget, bottom = 10)\n        val dynamicRiskCard = cardBox(16, purpleSoft)\n        dynamicRiskCard.addView(t("DYNAMIC RISK — AUTO", 14f, purple, true))\n        dynamicRiskCard.addView(t("No manual stop %, trail activation %, trail distance or minimum-hold setting. Each new position locks its own automatically derived risk values for that trade, with bounded safety limits. Paper replay uses the same dynamic rule.", 13f, text).apply { setPadding(0, dp(6), 0, 0) })\n        addCard(dynamicRiskCard, bottom = 10)\n        addCard(primaryButton("Save Budget") {\n            if (token.text.toString().trim().isNotBlank()) repo.saveAccessToken(token.text.toString())\n            if (apiKey.text.toString().trim().isNotBlank()) repo.saveApiKey(apiKey.text.toString())\n            if (apiSecret.text.toString().trim().isNotBlank()) repo.saveApiSecret(apiSecret.text.toString())\n            repo.saveWhitelistIp(ip.text.toString())\n            repo.saveSourcePackage(pkg.text.toString())\n            repo.saveBudget(budget.text.toString())\n            toast("Budget saved • all other risk controls are automatic")\n            showSettings()\n        }, bottom = 20)\n\n'''
+          s = s[:start] + new + s[end:]
+          needle = '        box.addView(t("${c.trend} • score ${"%.2f".format(Locale.US, c.score)} • RVOL ${"%.2f".format(Locale.US, c.rvol)}× • VWAP ${signedPct(c.vwapPct)}", 13f, muted).apply { setPadding(0, dp(7), 0, 0) })\n'
+          repl = needle + '''        if (c.paperSide != "FLAT" && c.riskStopPct > 0.0) {\n            box.addView(t("AUTO RISK • stop ${"%.2f".format(Locale.US, c.riskStopPct)}% • trail ${"%.2f".format(Locale.US, c.riskTrailActivationPct)}/${"%.2f".format(Locale.US, c.riskTrailDistancePct)}% • hold ${c.riskMinHoldSeconds}s", 12f, muted).apply { setPadding(0, dp(6), 0, 0) })\n        }\n'''
+          if needle not in s: raise SystemExit('MainActivity candidate risk hook not found')
+          p.write_text(s.replace(needle, repl, 1))
+
+          p = src/'DiagnosticExporter.kt'
+          s = p.read_text().replace('V3.0.6 — FULL DAILY DIAGNOSTIC', 'V3.0.7 — FULL DAILY DIAGNOSTIC').replace('App version: 3.0.6', 'App version: 3.0.7')
+          needle = '            appendLine("Live Buy & Sell enabled: ${yesNo(repo.liveTradingEnabled())}")\n'
+          repl = needle + '            appendLine("Budget per candidate: ₹${money(repo.notional())}")\n            appendLine("Risk controls: DYNAMIC PER ENTRY — stop/trail/min-hold are not manually configured")\n'
+          if needle in s: s = s.replace(needle, repl, 1)
+          old = ' | liveQty=${repo.liveQty(x.id)} | realisedPnl=${x.realisedPnl} | score='
+          new = ' | liveQty=${repo.liveQty(x.id)} | realisedPnl=${x.realisedPnl} | autoStopPct=${x.riskStopPct} | autoTrailActivationPct=${x.riskTrailActivationPct} | autoTrailDistancePct=${x.riskTrailDistancePct} | autoMinHoldSeconds=${x.riskMinHoldSeconds} | score='
+          if old in s: s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+          cat > "$SRC/DynamicRisk.kt" <<'KOT'
+          package com.multyfi.intraday.mobile
+
+          import kotlin.math.abs
+          import kotlin.math.max
+          import kotlin.math.roundToInt
+
+          data class DynamicRiskParams(
+              val stopPct: Double,
+              val trailActivationPct: Double,
+              val trailDistancePct: Double,
+              val minHoldSeconds: Long,
+              val observedRangePct: Double
+          )
+
+          object DynamicRisk {
+              fun fromMarketTicks(ticks: List<MarketTick>, feature: SignalFeature): DynamicRiskParams {
+                  val points = ticks.map { it.ts to it.price }
+                  return derive(points, feature)
+              }
+
+              fun fromSignalFeatures(points: List<SignalFeature>, uptoIndex: Int): DynamicRiskParams {
+                  if (points.isEmpty()) return fallback(SignalFeature(0L, 0.0, 0.0, 1.0, 0.0, "WAITING"))
+                  val i = uptoIndex.coerceIn(0, points.lastIndex)
+                  val f = points[i]
+                  val startTs = f.ts - 180_000L
+                  val recent = points.subList(0, i + 1).filter { it.ts >= startTs }.map { it.ts to it.price }
+                  return derive(recent, f)
+              }
+
+              fun hasRecentContinuity(points: List<SignalFeature>, uptoIndex: Int, horizonMs: Long = 60_000L, maxGapMs: Long = 20_000L): Boolean {
+                  if (points.size < 5) return false
+                  val i = uptoIndex.coerceIn(0, points.lastIndex)
+                  val end = points[i].ts
+                  val recent = points.subList(0, i + 1).filter { it.ts >= end - horizonMs }
+                  if (recent.size < 5) return false
+                  if (end - recent.first().ts < 30_000L) return false
+                  return recent.zipWithNext().all { (a, b) -> b.ts - a.ts in 1..maxGapMs }
+              }
+
+              private fun derive(raw: List<Pair<Long, Double>>, feature: SignalFeature): DynamicRiskParams {
+                  val valid = raw.filter { it.second > 0.0 }.takeLast(60)
+                  if (valid.size < 4) return fallback(feature)
+                  val end = valid.last().first
+                  val recent = valid.filter { it.first >= end - 180_000L }.ifEmpty { valid }
+                  val prices = recent.map { it.second }
+                  val lo = prices.minOrNull() ?: feature.price
+                  val hi = prices.maxOrNull() ?: feature.price
+                  val rangePct = if (lo > 0.0) ((hi / lo) - 1.0) * 100.0 else 0.20
+                  val avgStepPct = recent.zipWithNext().mapNotNull { (a, b) ->
+                      if (a.second > 0.0) abs((b.second / a.second - 1.0) * 100.0) else null
+                  }.averageOrZero()
+                  val observedVol = max(rangePct * 0.45, avgStepPct * 3.0).coerceIn(0.10, 2.00)
+                  val rvolPressure = (feature.rvol - 1.0).coerceAtLeast(0.0) * 0.05
+                  val vwapPressure = abs(feature.vwapPct).coerceAtMost(2.0) * 0.08
+                  val strength = abs(feature.score).coerceIn(0.0, 1.0)
+                  val stop = (0.24 + observedVol * 0.55 + rvolPressure + vwapPressure).coerceIn(0.28, 1.25)
+                  val activation = (stop * 0.90 + 0.08 + strength * 0.10).coerceIn(0.35, 1.40)
+                  val distance = (stop * 0.40 + observedVol * 0.08).coerceIn(0.12, 0.55)
+                  val hold = (18.0 + (1.0 - strength) * 32.0 + if (feature.rvol < 0.80) 12.0 else 0.0)
+                      .roundToInt().coerceIn(18, 75).toLong()
+                  return DynamicRiskParams(stop, activation, distance, hold, rangePct)
+              }
+
+              private fun fallback(feature: SignalFeature): DynamicRiskParams {
+                  val strength = abs(feature.score).coerceIn(0.0, 1.0)
+                  val stop = (0.38 + abs(feature.vwapPct).coerceAtMost(1.5) * 0.08).coerceIn(0.30, 0.75)
+                  val activation = (stop * 0.90 + 0.10).coerceIn(0.38, 0.85)
+                  val distance = (stop * 0.42).coerceIn(0.14, 0.32)
+                  val hold = (24.0 + (1.0 - strength) * 28.0).roundToInt().coerceIn(20, 60).toLong()
+                  return DynamicRiskParams(stop, activation, distance, hold, 0.0)
+              }
+
+              private fun List<Double>.averageOrZero(): Double = if (isEmpty()) 0.0 else average()
+          }
+          KOT
+
+          cat > "$SRC/PaperEngine.kt" <<'KOT'
+          package com.multyfi.intraday.mobile
+
+          import kotlin.math.floor
+          import kotlin.math.max
+
+          object PaperEngine {
+              private fun sideReturnPct(side: String, entry: Double, price: Double): Double {
+                  if (entry <= 0.0) return 0.0
+                  val raw = (price / entry - 1.0) * 100.0
+                  return if (side == "LONG") raw else -raw
+              }
+
+              private fun pnl(side: String, entry: Double, price: Double, qty: Int): Double =
+                  if (side == "LONG") (price - entry) * qty else (entry - price) * qty
+
+              fun onQuote(repo: AppRepository, c0: CandidateState, ticks: List<MarketTick>): CandidateState {
+                  if (ticks.isEmpty()) return c0
+                  val f = SignalMath.latest(ticks)
+                  val continuousFeed = SignalMath.hasRecentContinuity(ticks)
+                  var c = c0.copy(lastLtp = f.price, lastUpdatedTs = f.ts, score = f.score, rvol = f.rvol, vwapPct = f.vwapPct, trend = f.trend)
+
+                  if (MarketClock.shouldForceFlat()) {
+                      if (c.paperSide != "FLAT") c = close(repo, c, f, "15:15 IST force-flat")
+                      return c.copy(status = "SESSION_LOCKED")
+                  }
+
+                  if (c.paperSide == "FLAT") {
+                      if (MarketClock.canOpenNewPaperRisk() && continuousFeed) {
+                          val cfg = repo.currentConfig()
+                          if (f.score >= cfg.enter) c = open(repo, c, f, ticks, "LONG")
+                          else if (f.score <= -cfg.enter) c = open(repo, c, f, ticks, "SHORT")
+                      }
+                      return c
+                  }
+
+                  val side = c.paperSide
+                  val best = if (side == "LONG") max(c.bestPrice, f.price) else if (c.bestPrice <= 0.0) f.price else minOf(c.bestPrice, f.price)
+                  c = c.copy(bestPrice = best)
+                  val heldSeconds = (f.ts - c.entryTs) / 1000L
+                  val currentRet = sideReturnPct(side, c.entryPrice, f.price)
+                  val bestRet = sideReturnPct(side, c.entryPrice, best)
+                  val cfg = repo.currentConfig()
+                  val risk = if (c.riskStopPct > 0.0 && c.riskTrailActivationPct > 0.0 && c.riskTrailDistancePct > 0.0 && c.riskMinHoldSeconds > 0L) {
+                      DynamicRiskParams(c.riskStopPct, c.riskTrailActivationPct, c.riskTrailDistancePct, c.riskMinHoldSeconds, 0.0)
+                  } else {
+                      DynamicRisk.fromMarketTicks(ticks, f).also { r ->
+                          c = c.copy(riskStopPct = r.stopPct, riskTrailActivationPct = r.trailActivationPct, riskTrailDistancePct = r.trailDistancePct, riskMinHoldSeconds = r.minHoldSeconds)
+                      }
+                  }
+
+                  val exitReason = when {
+                      currentRet <= -risk.stopPct -> "dynamic protective stop"
+                      bestRet >= risk.trailActivationPct && (bestRet - currentRet) >= risk.trailDistancePct -> "dynamic profit trail"
+                      continuousFeed && heldSeconds >= risk.minHoldSeconds && side == "LONG" && f.score <= -cfg.flip -> "LONG thesis failed on confirmed reversal"
+                      continuousFeed && heldSeconds >= risk.minHoldSeconds && side == "SHORT" && f.score >= cfg.flip -> "SHORT thesis failed on confirmed reversal"
+                      continuousFeed && heldSeconds >= risk.minHoldSeconds && kotlin.math.abs(f.score) <= cfg.exit -> "signal faded below exit threshold"
+                      else -> null
+                  }
+
+                  if (exitReason != null) {
+                      val oldSide = c.paperSide
+                      c = close(repo, c, f, exitReason)
+                      if (continuousFeed && exitReason.contains("confirmed reversal") && MarketClock.canOpenNewPaperRisk()) {
+                          c = open(repo, c, f, ticks, if (oldSide == "LONG") "SHORT" else "LONG", "confirmed flip")
+                      }
+                  }
+                  return c
+              }
+
+              fun forceFlat(repo: AppRepository, c: CandidateState, reason: String = "15:15 IST force-flat"): CandidateState {
+                  if (c.paperSide == "FLAT" || c.lastLtp <= 0.0) return c.copy(status = "SESSION_LOCKED")
+                  val f = SignalFeature(System.currentTimeMillis(), c.lastLtp, c.score, c.rvol, c.vwapPct, c.trend)
+                  return close(repo, c, f, reason).copy(status = "SESSION_LOCKED")
+              }
+
+              private fun open(repo: AppRepository, c: CandidateState, f: SignalFeature, ticks: List<MarketTick>, side: String, reason: String = "signal confirmed"): CandidateState {
+                  val qty = floor(repo.notional() / f.price).toInt()
+                  if (qty <= 0) return c
+                  val risk = DynamicRisk.fromMarketTicks(ticks, f)
+                  val updated = c.copy(
+                      paperSide = side,
+                      entryPrice = f.price,
+                      entryTs = f.ts,
+                      qty = qty,
+                      bestPrice = f.price,
+                      riskStopPct = risk.stopPct,
+                      riskTrailActivationPct = risk.trailActivationPct,
+                      riskTrailDistancePct = risk.trailDistancePct,
+                      riskMinHoldSeconds = risk.minHoldSeconds
+                  )
+                  repo.logTrade(TradeEvent(f.ts, c.id, c.symbol, side, "OPEN", f.price, qty, 0.0,
+                      "$side $reason • AUTO risk stop=${"%.2f".format(risk.stopPct)}% trail=${"%.2f".format(risk.trailActivationPct)}/${"%.2f".format(risk.trailDistancePct)}% hold=${risk.minHoldSeconds}s",
+                      f.score, f.rvol, f.vwapPct, 0.0))
+                  return updated
+              }
+
+              private fun close(repo: AppRepository, c: CandidateState, f: SignalFeature, reason: String): CandidateState {
+                  val realised = pnl(c.paperSide, c.entryPrice, f.price, c.qty)
+                  val mfe = pnl(c.paperSide, c.entryPrice, c.bestPrice, c.qty).coerceAtLeast(0.0)
+                  repo.logTrade(TradeEvent(f.ts, c.id, c.symbol, c.paperSide, "CLOSE", f.price, c.qty, realised, reason,
+                      f.score, f.rvol, f.vwapPct, mfe))
+                  return c.copy(
+                      paperSide = "FLAT", entryPrice = 0.0, entryTs = 0L, qty = 0, bestPrice = 0.0,
+                      realisedPnl = c.realisedPnl + realised,
+                      riskStopPct = 0.0, riskTrailActivationPct = 0.0, riskTrailDistancePct = 0.0, riskMinHoldSeconds = 0L
+                  )
+              }
+
+              fun unrealisedPnl(c: CandidateState): Double {
+                  if (c.paperSide == "FLAT" || c.entryPrice <= 0.0 || c.lastLtp <= 0.0) return 0.0
+                  return pnl(c.paperSide, c.entryPrice, c.lastLtp, c.qty)
+              }
+          }
+          KOT
+
+          cat > "$SRC/ReplayEngine.kt" <<'KOT'
+          package com.multyfi.intraday.mobile
+
+          import kotlin.math.floor
+          import kotlin.math.max
+
+          class ReplayEngine {
+              private data class SimTrade(val pnl: Double)
+
+              fun learn(repo: AppRepository): LearningResult {
+                  val now = System.currentTimeMillis()
+                  val champion = repo.currentConfig()
+                  val sessions = repo.replaySessions()
+                      .mapNotNull { (id, ticks) -> if (ticks.size >= 24) id to SignalMath.series(ticks) else null }
+                      .sortedBy { it.second.firstOrNull()?.ts ?: Long.MAX_VALUE }
+
+                  if (sessions.size < 6) {
+                      return LearningResult(now, false, false,
+                          "Collecting evidence: ${sessions.size}/6 completed replay sessions. The Champion is unchanged.",
+                          sessions.size, 0, 0, repo.evidenceVersion(), champion, champion, champion,
+                          LearningMetrics(), LearningMetrics(), LearningMetrics())
+                  }
+
+                  val split = max(4, (sessions.size * 0.75).toInt()).coerceAtMost(sessions.size - 2)
+                  val train = sessions.take(split)
+                  val validation = sessions.drop(split)
+                  val candidates = mutableListOf<SignalConfig>()
+                  for (de in listOf(-0.06, -0.03, 0.0, 0.03, 0.06)) for (df in listOf(-0.06, -0.03, 0.0, 0.03, 0.06)) for (dx in listOf(-0.04, 0.0, 0.04)) {
+                      candidates += SignalConfig((champion.enter + de).coerceIn(0.42, 0.90), (champion.flip + df).coerceIn(0.50, 0.95), (champion.exit + dx).coerceIn(0.08, 0.40))
+                  }
+                  fun objective(m: LearningMetrics): Double = m.pnl - 0.50 * m.maxDrawdown + 100.0 * m.accuracy + 35.0 * m.profitFactor.coerceAtMost(3.0)
+                  val challenger = candidates.maxBy { objective(metrics(train, it, repo)) }
+                  val trainM = metrics(train, challenger, repo)
+                  val valM = metrics(validation, challenger, repo)
+                  val champVal = metrics(validation, champion, repo)
+                  val gates = mutableListOf<String>()
+                  if (valM.accuracy < 0.45) gates += "validation accuracy ${pct(valM.accuracy)} is below 45%"
+                  if (valM.accuracy < champVal.accuracy + 0.03) gates += "validation accuracy did not beat Champion by 3 percentage points"
+                  if (valM.pnl <= champVal.pnl) gates += "validation P&L did not beat Champion"
+                  if (champVal.maxDrawdown > 0.0 && valM.maxDrawdown > champVal.maxDrawdown * 1.05) gates += "validation drawdown is more than 5% worse than Champion"
+                  if (valM.trades < 4) gates += "validation produced fewer than 4 closed legs"
+                  val promoted = gates.isEmpty()
+                  val reason = if (promoted) {
+                      "PROMOTED: Challenger cleared validation gates — accuracy ${pct(valM.accuracy)} vs ${pct(champVal.accuracy)}, P&L ₹${money(valM.pnl)} vs ₹${money(champVal.pnl)}, drawdown ₹${money(valM.maxDrawdown)}."
+                  } else "KEPT CHAMPION: " + gates.joinToString("; ") + "."
+                  val after = if (promoted) challenger else champion
+                  return LearningResult(now, true, promoted, reason, sessions.size, train.size, validation.size, repo.evidenceVersion(), champion, challenger, after, trainM, valM, champVal)
+              }
+
+              private fun metrics(sessions: List<Pair<String, List<SignalFeature>>>, cfg: SignalConfig, repo: AppRepository): LearningMetrics {
+                  val trades = sessions.flatMap { simulate(it.second, cfg, repo) }
+                  if (trades.isEmpty()) return LearningMetrics()
+                  val wins = trades.count { it.pnl > 0.0 }
+                  var running = 0.0; var peak = 0.0; var dd = 0.0; var gp = 0.0; var gl = 0.0
+                  trades.forEach { t -> running += t.pnl; peak = max(peak, running); dd = max(dd, peak - running); if (t.pnl > 0.0) gp += t.pnl else gl += -t.pnl }
+                  val pf = if (gl <= 0.0) if (gp > 0.0) 9.99 else 0.0 else gp / gl
+                  return LearningMetrics(trades.size, wins, wins.toDouble() / trades.size.toDouble(), trades.sumOf { it.pnl }, dd, pf)
+              }
+
+              private fun simulate(points: List<SignalFeature>, cfg: SignalConfig, repo: AppRepository): List<SimTrade> {
+                  if (points.size < 2) return emptyList()
+                  val out = mutableListOf<SimTrade>()
+                  var side = "FLAT"; var entry = 0.0; var entryTs = 0L; var qty = 0; var best = 0.0
+                  var risk = DynamicRiskParams(0.40, 0.45, 0.18, 30L, 0.0)
+                  fun signedReturn(price: Double): Double { val raw = if (entry > 0.0) (price / entry - 1.0) * 100.0 else 0.0; return if (side == "LONG") raw else -raw }
+                  fun close(price: Double) { if (side == "FLAT") return; val p = if (side == "LONG") (price - entry) * qty else (entry - price) * qty; out += SimTrade(p); side = "FLAT"; entry = 0.0; entryTs = 0L; qty = 0; best = 0.0 }
+                  fun open(s: String, p: SignalFeature, index: Int) {
+                      val q = floor(repo.notional() / p.price).toInt(); if (q <= 0) return
+                      side = s; entry = p.price; entryTs = p.ts; qty = q; best = p.price; risk = DynamicRisk.fromSignalFeatures(points, index)
+                  }
+
+                  points.forEachIndexed { i, p ->
+                      val continuous = DynamicRisk.hasRecentContinuity(points, i)
+                      if (side == "FLAT") {
+                          if (continuous) { if (p.score >= cfg.enter) open("LONG", p, i) else if (p.score <= -cfg.enter) open("SHORT", p, i) }
+                      } else {
+                          best = if (side == "LONG") max(best, p.price) else minOf(best, p.price)
+                          val currentRet = signedReturn(p.price); val bestRet = signedReturn(best); val held = (p.ts - entryTs) / 1000L
+                          val reverse = continuous && held >= risk.minHoldSeconds && ((side == "LONG" && p.score <= -cfg.flip) || (side == "SHORT" && p.score >= cfg.flip))
+                          val fade = continuous && held >= risk.minHoldSeconds && kotlin.math.abs(p.score) <= cfg.exit
+                          val stop = currentRet <= -risk.stopPct
+                          val trail = bestRet >= risk.trailActivationPct && (bestRet - currentRet) >= risk.trailDistancePct
+                          if (stop || trail || reverse || fade || i == points.lastIndex) {
+                              val old = side; close(p.price); if (reverse && i != points.lastIndex) open(if (old == "LONG") "SHORT" else "LONG", p, i)
+                          }
+                      }
+                  }
+                  if (side != "FLAT") close(points.last().price)
+                  return out
+              }
+
+              private fun pct(v: Double) = "%.1f%%".format(v * 100.0)
+              private fun money(v: Double) = "%.0f".format(v)
+          }
+          KOT
+
+          grep -q 'versionCode = 307' "$BASE/app/build.gradle.kts"
+          grep -q 'versionName = "3.0.7"' "$BASE/app/build.gradle.kts"
+          grep -q 'Trading budget' "$SRC/MainActivity.kt"
+          grep -q 'Save Budget' "$SRC/MainActivity.kt"
+          if grep -q 'Protective stop (%)' "$SRC/MainActivity.kt"; then exit 1; fi
+          if grep -q 'Trail activation (%)' "$SRC/MainActivity.kt"; then exit 1; fi
+          if grep -q 'Minimum hold (seconds)' "$SRC/MainActivity.kt"; then exit 1; fi
+          grep -q 'DYNAMIC RISK — AUTO' "$SRC/MainActivity.kt"
+          grep -q 'riskStopPct' "$SRC/Models.kt"
+          grep -q 'DynamicRisk.fromMarketTicks' "$SRC/PaperEngine.kt"
+          grep -q 'DynamicRisk.fromSignalFeatures' "$SRC/ReplayEngine.kt"
+          grep -q 'MULTYFI INTRADAY MOBILE V3.0.7' "$SRC/DiagnosticExporter.kt"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        run: gradle --no-daemon --console=plain clean assembleRelease
+
+      - name: Restore V3 update signing key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/multyfi-v3-signing
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10109117099/zip" \
+            -o /tmp/multyfi-v3-signing/previous.zip
+          unzip -j /tmp/multyfi-v3-signing/previous.zip \
+            'Multyfi-Intraday-V3-Update-Key.jks' \
+            'SIGNING-PASSWORD.txt' \
+            'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
+            -d /tmp/multyfi-v3-signing
+
+      - name: Sign and verify V3.0.7 update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED='Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.7-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_7_DYNAMIC_RISK_SIGNED_UPDATE.apk'
+          KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
+          PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
+          OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+
+          "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:"$PASS" --key-pass pass:"$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
+          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+          OLD_CERT="$("$APKSIGNER" verify --print-certs "$OLD_APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          NEW_CERT="$("$APKSIGNER" verify --print-certs "$SIGNED" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          test -n "$OLD_CERT" && test "$OLD_CERT" = "$NEW_CERT"
+          printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
+          grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
+          grep -q "versionCode='307'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.7'" out/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
+          sha256sum "$SIGNED" | tee out/SHA256.txt
+
+      - name: Upload verified V3.0.7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-V3.0.7-DYNAMIC-RISK
+          path: |
+            out/Multyfi_Intraday_Mobile_V3_0_7_DYNAMIC_RISK_SIGNED_UPDATE.apk
+            out/APK-SIGNATURE-VERIFY.txt
+            out/APK-BADGING.txt
+            out/ZIPALIGN-VERIFY.txt
+            out/ZIP-INTEGRITY.txt
+            out/UPDATE-SIGNER-MATCH.txt
+            out/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30

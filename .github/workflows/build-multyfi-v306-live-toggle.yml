@@ -1,0 +1,336 @@
+name: Build Multyfi V3.0.6 Live Toggle
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-v306-live-toggle:
+    if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Reuse verified V3.0.5 data-quality patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          wf = Path('.github/workflows/build-multyfi-v305-data-quality-fix.yml').read_text().splitlines()
+          step_name = 'Reuse V3.0.5 patch scripts and fix diagnostic version'
+          start = next(i for i,l in enumerate(wf) if l.strip() == f'- name: {step_name}')
+          run_i = next(i for i in range(start+1, len(wf)) if wf[i].strip() == 'run: |')
+          run_indent = len(wf[run_i]) - len(wf[run_i].lstrip())
+          body = []
+          for line in wf[run_i+1:]:
+              if line.strip() == '':
+                  body.append('')
+                  continue
+              indent = len(line) - len(line.lstrip())
+              if indent <= run_indent:
+                  break
+              body.append(line[min(len(line), run_indent+2):])
+          Path('/tmp/v305.sh').write_text('\n'.join(body) + '\n')
+          PY
+          bash /tmp/v305.sh
+
+      - name: Apply V3.0.6 live trading master gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='Multyfi_Intraday_Mobile_V3_0'
+          SRC="$BASE/app/src/main/java/com/multyfi/intraday/mobile"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          base = Path('Multyfi_Intraday_Mobile_V3_0')
+          src = base/'app/src/main/java/com/multyfi/intraday/mobile'
+
+          p = base/'app/build.gradle.kts'
+          s = p.read_text()
+          s = s.replace('versionCode = 305', 'versionCode = 306').replace('versionName = "3.0.5"', 'versionName = "3.0.6"')
+          p.write_text(s)
+
+          p = src/'AppRepository.kt'
+          s = p.read_text()
+          needle = '    fun saveSourcePackage(v: String) { prefs.edit().putString("source_package", v.trim()).apply() }\n\n'
+          repl = '''    fun saveSourcePackage(v: String) { prefs.edit().putString("source_package", v.trim()).apply() }\n\n    // Master gate for real broker orders. Missing preference always means OFF.\n    fun liveTradingEnabled(): Boolean = prefs.getBoolean("live_trading_enabled", false)\n    fun setLiveTradingEnabled(enabled: Boolean) { prefs.edit().putBoolean("live_trading_enabled", enabled).apply() }\n    fun liveEntryReady(): Boolean = growwValidated() && notificationAccessEnabled() && (whitelistIp().isBlank() || staticIpVerified())\n\n    private fun liveSideKey(candidateId: String) = "live_side_$candidateId"\n    private fun liveQtyKey(candidateId: String) = "live_qty_$candidateId"\n    private fun liveOrderKey(candidateId: String) = "live_order_$candidateId"\n    fun liveSide(candidateId: String): String = prefs.getString(liveSideKey(candidateId), "FLAT") ?: "FLAT"\n    fun liveQty(candidateId: String): Int = prefs.getInt(liveQtyKey(candidateId), 0)\n    fun liveOrderId(candidateId: String): String = prefs.getString(liveOrderKey(candidateId), "") ?: ""\n    fun setLivePosition(candidateId: String, side: String, qty: Int, orderId: String) {\n        prefs.edit().putString(liveSideKey(candidateId), side).putInt(liveQtyKey(candidateId), qty).putString(liveOrderKey(candidateId), orderId).apply()\n    }\n    fun clearLivePosition(candidateId: String) {\n        prefs.edit().putString(liveSideKey(candidateId), "FLAT").putInt(liveQtyKey(candidateId), 0).remove(liveOrderKey(candidateId)).apply()\n    }\n\n'''
+          if needle not in s: raise SystemExit('AppRepository source-package hook not found')
+          s = s.replace(needle, repl, 1)
+          p.write_text(s)
+
+          p = src/'GrowwClient.kt'
+          s = p.read_text()
+          needle = '    fun detectPublicIp(): String {\n'
+          live_api = '''    data class GrowwOrderResult(val orderId: String, val orderStatus: String, val referenceId: String, val remark: String)\n\n    fun placeMarketOrder(accessToken: String, symbol: String, quantity: Int, transactionType: String, referenceId: String): GrowwOrderResult {\n        require(accessToken.isNotBlank()) { "Groww access token is missing" }\n        require(quantity > 0) { "Order quantity must be positive" }\n        require(transactionType == "BUY" || transactionType == "SELL") { "Transaction type must be BUY or SELL" }\n        require(referenceId.length in 8..20 && referenceId.all { it.isLetterOrDigit() || it == '-' }) { "Invalid order reference id" }\n        val conn = connection(URL("$BASE/order/create"), "POST", accessToken).apply {\n            doOutput = true\n            setRequestProperty("Content-Type", "application/json")\n        }\n        return try {\n            val payload = JSONObject()\n                .put("trading_symbol", symbol.uppercase(Locale.US))\n                .put("quantity", quantity)\n                .put("validity", "DAY")\n                .put("exchange", "NSE")\n                .put("segment", "CASH")\n                .put("product", "MIS")\n                .put("order_type", "MARKET")\n                .put("transaction_type", transactionType)\n                .put("order_reference_id", referenceId)\n                .toString()\n            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }\n            val body = read(conn)\n            if (conn.responseCode !in 200..299) error("Groww order HTTP ${conn.responseCode}: ${body.take(300)}")\n            val root = JSONObject(body)\n            if (!root.optString("status").equals("SUCCESS", true)) error("Groww order failed: ${body.take(300)}")\n            val out = root.optJSONObject("payload") ?: error("Groww order response has no payload")\n            val status = out.optString("order_status", "UNKNOWN")\n            if (status.equals("REJECTED", true) || status.equals("FAILED", true) || status.equals("CANCELLED", true)) {\n                error("Groww order $status: ${out.optString("remark", "")}")\n            }\n            GrowwOrderResult(\n                orderId = out.optString("groww_order_id", ""),\n                orderStatus = status,\n                referenceId = out.optString("order_reference_id", referenceId),\n                remark = out.optString("remark", "")\n            )\n        } finally {\n            conn.disconnect()\n        }\n    }\n\n'''
+          if needle not in s: raise SystemExit('GrowwClient detectPublicIp hook not found')
+          s = s.replace(needle, live_api + needle, 1)
+          p.write_text(s)
+
+          p = src/'MultyfiNotificationService.kt'
+          s = p.read_text()
+          old = '''                    .forEach { c ->\n                        val flat = PaperEngine.forceFlat(repo, c)\n                        if (flat != c) repo.saveCandidate(flat)\n                    }\n'''
+          new = '''                    .forEach { c ->\n                        val flat = PaperEngine.forceFlat(repo, c)\n                        LiveTradeEngine.sync(repo, c, flat)\n                        if (flat != c) repo.saveCandidate(flat)\n                    }\n'''
+          if old not in s: raise SystemExit('force-flat service hook not found')
+          s = s.replace(old, new, 1)
+          old = '''                        val updated = PaperEngine.onQuote(repo, c, repo.ticks(c.id).takeLast(240))\n                        repo.saveCandidate(updated)\n'''
+          new = '''                        val updated = PaperEngine.onQuote(repo, c, repo.ticks(c.id).takeLast(240))\n                        LiveTradeEngine.sync(repo, c, updated)\n                        repo.saveCandidate(updated)\n'''
+          if old not in s: raise SystemExit('paper transition service hook not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = src/'MainActivity.kt'
+          s = p.read_text()
+          s = s.replace('import android.app.Activity\n', 'import android.app.Activity\nimport android.app.AlertDialog\n', 1)
+          s = s.replace('import android.widget.TextView\n', 'import android.widget.TextView\nimport android.widget.Switch\n', 1)
+          s = s.replace('        row.addView(pill("PAPER ONLY", purple, purpleSoft))\n', '''        val live = repo.liveTradingEnabled()\n        row.addView(pill(if (live) "LIVE ARMED" else "PAPER ONLY", if (live) red else purple, if (live) redSoft else purpleSoft))\n''', 1)
+          s = s.replace('        s.addView(statusRow("Multyfi notification access", if (listener) "ENABLED" else "DISABLED", listener))\n', '''        s.addView(statusRow("Multyfi notification access", if (listener) "ENABLED" else "DISABLED", listener))\n        s.addView(statusRow("Live Buy & Sell", if (repo.liveTradingEnabled()) "ARMED" else "OFF", if (repo.liveTradingEnabled()) true else null))\n''', 1)
+          old = '''        val paper = cardBox(16, purpleSoft)\n        paper.addView(t("PAPER AUTO", 16f, purple, true))\n        paper.addView(t("Every captured candidate is tracked with live Groww quotes. Entries, reversals, exits, RVOL, rolling sampled VWAP and favorable excursion are stored for replay learning.", 13f, text).apply { setPadding(0, dp(7), 0, 0) })\n        paper.addView(t("No broker orders are placed by V3.0.", 13f, purple, true).apply { setPadding(0, dp(8), 0, 0) })\n        addCard(paper, top = 6)\n'''
+          new = '''        val paper = cardBox(16, if (repo.liveTradingEnabled()) redSoft else purpleSoft)\n        paper.addView(t(if (repo.liveTradingEnabled()) "LIVE BUY & SELL ARMED" else "PAPER AUTO", 16f, if (repo.liveTradingEnabled()) red else purple, true))\n        paper.addView(t("Every captured candidate continues to be paper tracked with live Groww quotes. Entries, reversals, exits, RVOL, rolling sampled VWAP and favorable excursion are stored for replay learning.", 13f, text).apply { setPadding(0, dp(7), 0, 0) })\n        paper.addView(t(if (repo.liveTradingEnabled()) "Real NSE CASH MIS market orders are allowed for NEW confirmed paper entries. Existing paper positions are never copied when you arm live trading." else "Live Buy & Sell is OFF. No new broker position can be opened.", 13f, if (repo.liveTradingEnabled()) red else purple, true).apply { setPadding(0, dp(8), 0, 0) })\n        addCard(paper, top = 6)\n'''
+          if old not in s: raise SystemExit('paper-auto card hook not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('        sectionTitle("Paper risk", "These controls apply to paper simulation and replay only; V3.0 never submits broker orders.")\n', '        sectionTitle("Paper risk", "These controls define paper/replay sizing and are also used as the requested quantity when Live Buy & Sell is explicitly armed.")\n', 1)
+          needle = '        sectionTitle("Daily diagnostic", "One file contains today\'s candidates, every paper leg, activity/errors, learning comparison and raw captured market ticks. Secrets are excluded.")\n'
+          block = '''        sectionTitle("Live Buy & Sell", "Master safety gate for real Groww orders. It is OFF by default. Paper tracking and learning continue whether this is ON or OFF.")\n        val liveCard = cardBox(18, if (repo.liveTradingEnabled()) redSoft else greenSoft)\n        val liveSwitch = Switch(this).apply {\n            text = if (repo.liveTradingEnabled()) "LIVE BUY & SELL — ON" else "LIVE BUY & SELL — OFF"\n            isChecked = repo.liveTradingEnabled()\n            textSize = 16f\n            setTextColor(if (repo.liveTradingEnabled()) red else green)\n            setPadding(0, dp(4), 0, dp(4))\n        }\n        liveCard.addView(liveSwitch)\n        liveCard.addView(t(if (repo.liveTradingEnabled()) "ARMED: new confirmed paper entries can submit real NSE CASH MIS market orders. Turning this OFF blocks new live risk and attempts to flatten any live position tracked by this app." else "SAFE DEFAULT: no new broker positions can be opened. Turn this on yourself only when you are satisfied with the observed validation/accuracy.", 13f, text).apply { setPadding(0, dp(8), 0, 0) })\n        addCard(liveCard, bottom = 20)\n\n        liveSwitch.setOnCheckedChangeListener { button, checked ->\n            val current = repo.liveTradingEnabled()\n            if (checked == current) return@setOnCheckedChangeListener\n            if (checked) {\n                button.isChecked = false\n                when {\n                    !repo.growwValidated() -> toast("Validate Groww first before arming live trading")\n                    !repo.notificationAccessEnabled() -> toast("Enable Multyfi notification access first")\n                    repo.whitelistIp().isNotBlank() && !repo.staticIpVerified() -> toast("Verify the configured static IP first")\n                    else -> AlertDialog.Builder(this)\n                        .setTitle("Enable LIVE Buy & Sell?")\n                        .setMessage("This allows REAL Groww NSE CASH MIS market orders from NEW confirmed strategy entries. Existing paper positions will not be copied. Paper tracking and learning stay active.")\n                        .setNegativeButton("Cancel", null)\n                        .setPositiveButton("Enable LIVE") { _, _ ->\n                            repo.setLiveTradingEnabled(true)\n                            repo.logActivity("LIVE", "Live trading enabled", "User armed real Groww NSE CASH MIS order submission. Existing paper positions were not copied.", "WARN")\n                            toast("LIVE Buy & Sell armed")\n                            showSettings()\n                        }\n                        .show()\n                }\n            } else {\n                repo.setLiveTradingEnabled(false)\n                repo.logActivity("LIVE", "Live trading disabled", "User disabled new live risk. Any tracked live position will be flattened/retried until closed.")\n                toast("Live trading OFF — closing any tracked live position")\n                worker.execute {\n                    val result = LiveTradeEngine.flattenAll(repo)\n                    runOnUiThread {\n                        toast("Live OFF • closed ${result.closed} • remaining ${result.remaining}")\n                        showSettings()\n                    }\n                }\n            }\n        }\n\n'''
+          if needle not in s: raise SystemExit('daily diagnostic settings hook not found')
+          s = s.replace(needle, block + needle, 1)
+          p.write_text(s)
+
+          p = src/'DiagnosticExporter.kt'
+          s = p.read_text()
+          s = s.replace('V3.0.5 — FULL DAILY DIAGNOSTIC', 'V3.0.6 — FULL DAILY DIAGNOSTIC')
+          s = s.replace('App version: 3.0.5', 'App version: 3.0.6')
+          s = s.replace('appendLine("Mode: PAPER ONLY — NO BROKER ORDERS")', 'appendLine("Mode: ${if (repo.liveTradingEnabled()) "LIVE BUY & SELL ARMED" else "PAPER / LIVE GATE OFF"}")')
+          s = s.replace('            appendLine("Notification access enabled: ${yesNo(repo.notificationAccessEnabled())}")\n', '            appendLine("Notification access enabled: ${yesNo(repo.notificationAccessEnabled())}")\n            appendLine("Live Buy & Sell enabled: ${yesNo(repo.liveTradingEnabled())}")\n')
+          s = s.replace('                appendLine("${x.symbol} | ${x.source} | accepted=${sdf.format(Date(x.acceptedTs))} | status=${x.status} | LTP=${x.lastLtp} | paper=${x.paperSide} | realisedPnl=${x.realisedPnl} | score=${"%.3f".format(Locale.US, x.score)} | RVOL=${"%.2f".format(Locale.US, x.rvol)} | VWAP%=${"%.3f".format(Locale.US, x.vwapPct)} | trend=${x.trend}")\n', '                appendLine("${x.symbol} | ${x.source} | accepted=${sdf.format(Date(x.acceptedTs))} | status=${x.status} | LTP=${x.lastLtp} | paper=${x.paperSide} | live=${repo.liveSide(x.id)} | liveQty=${repo.liveQty(x.id)} | realisedPnl=${x.realisedPnl} | score=${"%.3f".format(Locale.US, x.score)} | RVOL=${"%.2f".format(Locale.US, x.rvol)} | VWAP%=${"%.3f".format(Locale.US, x.vwapPct)} | trend=${x.trend}")\n')
+          p.write_text(s)
+          PY
+
+          cat > "$SRC/LiveTradeEngine.kt" <<'KOT'
+          package com.multyfi.intraday.mobile
+
+          import java.util.Locale
+          import java.util.UUID
+          import kotlin.math.floor
+          import kotlin.math.max
+
+          object LiveTradeEngine {
+              data class FlattenResult(val closed: Int, val remaining: Int)
+
+              @Synchronized
+              fun sync(repo: AppRepository, before: CandidateState, after: CandidateState) {
+                  val id = after.id
+                  val enabled = repo.liveTradingEnabled()
+                  val liveSide = repo.liveSide(id).uppercase(Locale.US)
+                  val desired = after.paperSide.uppercase(Locale.US)
+
+                  if (liveSide != "FLAT") {
+                      val mustClose = !enabled || desired == "FLAT" || desired != liveSide
+                      if (mustClose) {
+                          val oldLiveSide = liveSide
+                          val oldQty = repo.liveQty(id)
+                          val closed = close(repo, after, oldLiveSide, oldQty)
+                          if (!closed) return
+
+                          // Re-open only for a genuine live reversal. Never enter late after the user armed mid-paper-trade.
+                          if (enabled && desired != "FLAT" && desired != oldLiveSide && before.paperSide.equals(oldLiveSide, true)) {
+                              open(repo, after, desired)
+                          }
+                      }
+                      return
+                  }
+
+                  if (!enabled) return
+                  // New live risk begins only on a fresh paper FLAT -> LONG/SHORT transition after arming.
+                  if (before.paperSide.equals("FLAT", true) && desired != "FLAT") {
+                      open(repo, after, desired)
+                  }
+              }
+
+              @Synchronized
+              fun flattenAll(repo: AppRepository): FlattenResult {
+                  var closed = 0
+                  repo.candidates().forEach { c ->
+                      val side = repo.liveSide(c.id)
+                      if (!side.equals("FLAT", true)) {
+                          val qty = repo.liveQty(c.id)
+                          if (close(repo, c, side, qty)) closed++
+                      }
+                  }
+                  val remaining = repo.candidates().count { !repo.liveSide(it.id).equals("FLAT", true) }
+                  return FlattenResult(closed, remaining)
+              }
+
+              private fun open(repo: AppRepository, c: CandidateState, side: String): Boolean {
+                  if (!repo.liveTradingEnabled()) return false
+                  if (!repo.liveEntryReady()) {
+                      repo.logActivity("LIVE", "Live entry blocked • ${c.symbol}", "Live master gate is ON, but Groww validation / notification access / configured static-IP verification is not ready.", "WARN")
+                      return false
+                  }
+                  val token = repo.accessToken()
+                  if (token.isBlank()) return false
+                  val qty = if (c.qty > 0) c.qty else if (c.lastLtp > 0.0) max(1, floor(repo.notional() / c.lastLtp).toInt()) else 0
+                  if (qty <= 0) {
+                      repo.logActivity("LIVE", "Live entry blocked • ${c.symbol}", "No valid quantity was available for the live order.", "WARN")
+                      return false
+                  }
+                  val tx = if (side.equals("LONG", true)) "BUY" else "SELL"
+                  val ref = referenceId(tx)
+                  return runCatching {
+                      val r = GrowwClient.placeMarketOrder(token, c.symbol, qty, tx, ref)
+                      repo.setLivePosition(c.id, side.uppercase(Locale.US), qty, r.orderId)
+                      repo.logActivity("LIVE", "LIVE ${side.uppercase(Locale.US)} opened • ${c.symbol}", "$tx MARKET MIS qty=$qty • order=${r.orderId} • status=${r.orderStatus} • ref=${r.referenceId}", "WARN")
+                      true
+                  }.onFailure { e ->
+                      repo.logActivity("LIVE", "Live entry FAILED • ${c.symbol}", "$tx MARKET MIS qty=$qty • ${e.message ?: "Groww order failed"}", "WARN")
+                  }.getOrDefault(false)
+              }
+
+              private fun close(repo: AppRepository, c: CandidateState, side: String, qty: Int): Boolean {
+                  if (qty <= 0) {
+                      repo.logActivity("LIVE", "Live state cleared • ${c.symbol}", "Tracked live side $side had no valid quantity; local live state was cleared.", "WARN")
+                      repo.clearLivePosition(c.id)
+                      return true
+                  }
+                  val token = repo.accessToken()
+                  if (token.isBlank()) {
+                      repo.logActivity("LIVE", "Live exit pending • ${c.symbol}", "Groww access token is unavailable; tracked live $side qty=$qty remains pending for exit.", "WARN")
+                      return false
+                  }
+                  val tx = if (side.equals("LONG", true)) "SELL" else "BUY"
+                  val ref = referenceId(tx)
+                  return runCatching {
+                      val r = GrowwClient.placeMarketOrder(token, c.symbol, qty, tx, ref)
+                      repo.clearLivePosition(c.id)
+                      repo.logActivity("LIVE", "LIVE ${side.uppercase(Locale.US)} closed • ${c.symbol}", "$tx MARKET MIS qty=$qty • order=${r.orderId} • status=${r.orderStatus} • ref=${r.referenceId}", "WARN")
+                      true
+                  }.onFailure { e ->
+                      repo.logActivity("LIVE", "Live exit FAILED • ${c.symbol}", "$tx MARKET MIS qty=$qty • ${e.message ?: "Groww order failed"}. Exit will be retried by the scanner loop.", "WARN")
+                  }.getOrDefault(false)
+              }
+
+              private fun referenceId(action: String): String = "MFI${action.take(1)}${UUID.randomUUID().toString().replace("-", "").take(12)}"
+          }
+          KOT
+
+          grep -q 'versionCode = 306' "$BASE/app/build.gradle.kts"
+          grep -q 'versionName = "3.0.6"' "$BASE/app/build.gradle.kts"
+          grep -q 'fun liveTradingEnabled(): Boolean = prefs.getBoolean("live_trading_enabled", false)' "$SRC/AppRepository.kt"
+          grep -q 'LIVE BUY & SELL — OFF' "$SRC/MainActivity.kt"
+          grep -q 'LiveTradeEngine.sync' "$SRC/MultyfiNotificationService.kt"
+          grep -q 'product", "MIS"' "$SRC/GrowwClient.kt"
+          grep -q 'New live risk begins only on a fresh paper FLAT' "$SRC/LiveTradeEngine.kt"
+          grep -q 'MULTYFI INTRADAY MOBILE V3.0.6' "$SRC/DiagnosticExporter.kt"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        run: gradle --no-daemon --console=plain clean assembleRelease
+
+      - name: Restore V3 update signing key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/multyfi-v3-signing
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10109117099/zip" \
+            -o /tmp/multyfi-v3-signing/previous.zip
+          unzip -j /tmp/multyfi-v3-signing/previous.zip \
+            'Multyfi-Intraday-V3-Update-Key.jks' \
+            'SIGNING-PASSWORD.txt' \
+            'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
+            -d /tmp/multyfi-v3-signing
+          test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
+          test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
+          test -s /tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk
+
+      - name: Sign and verify V3.0.6 update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED='Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.6-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_6_LIVE_TOGGLE_SIGNED_UPDATE.apk'
+          KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
+          PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
+          OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+
+          "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-pass pass:"$PASS" \
+            --key-pass pass:"$PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$SIGNED" "$ALIGNED"
+
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
+          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+
+          OLD_CERT="$("$APKSIGNER" verify --print-certs "$OLD_APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          NEW_CERT="$("$APKSIGNER" verify --print-certs "$SIGNED" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          test -n "$OLD_CERT" && test "$OLD_CERT" = "$NEW_CERT"
+          printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
+
+          grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
+          grep -q "versionCode='306'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.6'" out/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
+          sha256sum "$SIGNED" | tee out/SHA256.txt
+
+      - name: Upload verified V3.0.6 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-V3.0.6-LIVE-TOGGLE
+          path: |
+            out/Multyfi_Intraday_Mobile_V3_0_6_LIVE_TOGGLE_SIGNED_UPDATE.apk
+            out/APK-SIGNATURE-VERIFY.txt
+            out/APK-BADGING.txt
+            out/ZIPALIGN-VERIFY.txt
+            out/ZIP-INTEGRITY.txt
+            out/UPDATE-SIGNER-MATCH.txt
+            out/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
