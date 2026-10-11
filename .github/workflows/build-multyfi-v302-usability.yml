@@ -1,0 +1,159 @@
+name: Build Multyfi V3.0.9 Feed Resilience
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-v309-feed-resilience:
+    if: contains(github.event.pull_request.title, '[BUILD-MULTYFI-V3]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Apply verified V3.0.8 baseline transformations
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin refs/heads/build/multyfi-v308-polling-20260911
+          git show FETCH_HEAD:.github/workflows/build-multyfi-v302-usability.yml > /tmp/v308-workflow.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          wf = Path('/tmp/v308-workflow.yml').read_text().splitlines()
+          def extract(step_name, out):
+              start = next(i for i,l in enumerate(wf) if l.strip() == f'- name: {step_name}')
+              run_i = next(i for i in range(start+1, len(wf)) if wf[i].strip() == 'run: |')
+              run_indent = len(wf[run_i]) - len(wf[run_i].lstrip())
+              body = []
+              for line in wf[run_i+1:]:
+                  if line.strip() == '':
+                      body.append('')
+                      continue
+                  indent = len(line) - len(line.lstrip())
+                  if indent <= run_indent:
+                      break
+                  body.append(line[min(len(line), run_indent+2):])
+              Path(out).write_text('\n'.join(body) + '\n')
+          extract('Reuse verified V3.0.7 transformation', '/tmp/v308_base.sh')
+          extract('Apply V3.0.8 adaptive polling and evidence UI', '/tmp/v308_patch.sh')
+          PY
+          bash /tmp/v308_base.sh
+          bash /tmp/v308_patch.sh
+          grep -q 'versionCode = 308' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'versionName = "3.0.8"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+
+      - name: Apply V3.0.9 feed resilience
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/build-scripts/apply-v309-feed-resilience.py
+          grep -q 'versionCode = 309' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'versionName = "3.0.9"' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+          grep -q 'minSdk = 26' Multyfi_Intraday_Mobile_V3_0/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android API 35 from preinstalled sdkmanager
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          which sdkmanager
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: Multyfi_Intraday_Mobile_V3_0
+        run: gradle --no-daemon --console=plain clean assembleRelease
+
+      - name: Restore V3 update signing key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/multyfi-v3-signing
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10109117099/zip" \
+            -o /tmp/multyfi-v3-signing/previous.zip
+          unzip -j /tmp/multyfi-v3-signing/previous.zip \
+            'Multyfi-Intraday-V3-Update-Key.jks' \
+            'SIGNING-PASSWORD.txt' \
+            'Multyfi_Intraday_Mobile_V3_0_SIGNED.apk' \
+            -d /tmp/multyfi-v3-signing
+          test -s /tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks
+          test -s /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt
+
+      - name: Sign and verify V3.0.9 update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED='Multyfi_Intraday_Mobile_V3_0/app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='out/Multyfi-Intraday-Mobile-V3.0.9-aligned.apk'
+          SIGNED='out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk'
+          KEYSTORE='/tmp/multyfi-v3-signing/Multyfi-Intraday-V3-Update-Key.jks'
+          PASS="$(tr -d '\r\n' < /tmp/multyfi-v3-signing/SIGNING-PASSWORD.txt)"
+          OLD_APK='/tmp/multyfi-v3-signing/Multyfi_Intraday_Mobile_V3_0_SIGNED.apk'
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -s "$UNSIGNED"
+          "$ZIPALIGN" -P 16 -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:"$PASS" --key-pass pass:"$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$SIGNED" "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee out/APK-SIGNATURE-VERIFY.txt
+          "$AAPT" dump badging "$SIGNED" | tee out/APK-BADGING.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$SIGNED" | tee out/ZIPALIGN-VERIFY.txt
+          unzip -t "$SIGNED" | tee out/ZIP-INTEGRITY.txt
+          OLD_CERT="$("$APKSIGNER" verify --print-certs "$OLD_APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          NEW_CERT="$("$APKSIGNER" verify --print-certs "$SIGNED" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          test -n "$OLD_CERT"
+          test "$OLD_CERT" = "$NEW_CERT"
+          printf 'Previous signer SHA-256: %s\nNew signer SHA-256: %s\nMATCH: YES\n' "$OLD_CERT" "$NEW_CERT" | tee out/UPDATE-SIGNER-MATCH.txt
+          grep -q "package: name='com.multyfi.intraday.mobile'" out/APK-BADGING.txt
+          grep -q "versionCode='309'" out/APK-BADGING.txt
+          grep -q "versionName='3.0.9'" out/APK-BADGING.txt
+          grep -q "sdkVersion:'26'" out/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APK-SIGNATURE-VERIFY.txt
+          grep -q 'No errors detected' out/ZIP-INTEGRITY.txt
+          sha256sum "$SIGNED" | tee out/SHA256.txt
+
+      - name: Upload verified V3.0.9 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multyfi-V3.0.9-FEED-RESILIENCE
+          path: |
+            out/Multyfi_Intraday_Mobile_V3_0_9_FEED_RESILIENCE_SIGNED_UPDATE.apk
+            out/APK-SIGNATURE-VERIFY.txt
+            out/APK-BADGING.txt
+            out/ZIPALIGN-VERIFY.txt
+            out/ZIP-INTEGRITY.txt
+            out/UPDATE-SIGNER-MATCH.txt
+            out/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
