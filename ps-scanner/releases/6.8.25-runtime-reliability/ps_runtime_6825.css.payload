@@ -1,0 +1,10 @@
+/* PS_RUNTIME_RELIABILITY_V6825 */
+#ps-runtime-6825-strip.ps-runtime-6825{
+  box-sizing:border-box;width:100%;padding:.48rem .75rem;
+  border-bottom:1px solid rgba(127,127,127,.28);
+  font:12px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  position:relative;z-index:20
+}
+#ps-runtime-6825-strip.normal{background:rgba(40,130,70,.08)}
+#ps-runtime-6825-strip.degraded{background:rgba(190,130,0,.12)}
+#ps-runtime-6825-strip.severe{background:rgba(190,45,45,.12)}
