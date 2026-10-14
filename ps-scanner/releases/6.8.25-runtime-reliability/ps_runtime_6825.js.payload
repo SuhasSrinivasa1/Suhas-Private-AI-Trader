@@ -1,0 +1,47 @@
+/* PS_RUNTIME_RELIABILITY_V6825 */
+(function () {
+  "use strict";
+  var ID = "ps-runtime-6825-strip";
+  function cov(x) {
+    if (!x || !x.total) return "-";
+    var p = x.ratio == null ? "" : " (" + Math.round(Number(x.ratio) * 100) + "%)";
+    return String(x.ready) + "/" + String(x.total) + p;
+  }
+  function strip() {
+    var x = document.getElementById(ID);
+    if (x) return x;
+    x = document.createElement("div");
+    x.id = ID;
+    x.setAttribute("role", "status");
+    x.setAttribute("aria-live", "polite");
+    if (document.body.firstChild) document.body.insertBefore(x, document.body.firstChild);
+    else document.body.appendChild(x);
+    return x;
+  }
+  function txt(v) { return v == null ? "-" : String(v); }
+  async function refresh() {
+    var x = strip();
+    try {
+      var r = await fetch("/api/runtime/reliability", {cache:"no-store"});
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      var d = await r.json(), q = d.data_quality || {}, w = q.recent_warnings || {}, s = q.last_intraday_scan || {};
+      var st = String(q.state || "STARTING").toUpperCase();
+      x.className = "ps-runtime-6825 " + (st === "SEVERE" ? "severe" : (st === "DEGRADED" ? "degraded" : "normal"));
+      x.textContent = "PS Scanner 6.8.25 | Data " + st +
+        " | LTP " + cov(q.full_market_ltp) +
+        " | Intraday history " + cov(q.intraday_history) +
+        " | 429s/15m " + txt(w.history_429 || 0) +
+        " | Last scan " + txt(s.completed_at) +
+        " | " + (d.pause_detected_this_tick ? "PAUSE DETECTED" : "runtime heartbeat OK") +
+        " | observability only - gates unchanged";
+      x.title = (q.reasons || []).join("; ") || "Runtime/data-plane status";
+    } catch (e) {
+      x.className = "ps-runtime-6825 degraded";
+      x.textContent = "PS Scanner 6.8.25 | runtime telemetry unavailable | gates unchanged";
+    }
+  }
+  window.addEventListener("DOMContentLoaded", function () {
+    refresh();
+    window.setInterval(refresh, 30000);
+  });
+})();
