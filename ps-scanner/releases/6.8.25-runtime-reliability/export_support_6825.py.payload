@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, json, os, sqlite3, tempfile, zipfile
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+IST=ZoneInfo("Asia/Kolkata")
+POLICY="V6825_BOUNDED_SUPPORT_EXPORT_READ_ONLY"
+
+def tail(path: Path, n=2_000_000):
+    try:
+        with path.open("rb") as f:
+            f.seek(0,os.SEEK_END);size=f.tell();f.seek(max(0,size-n));return f.read()
+    except Exception:return b""
+
+def rows(con,sql,args=()):
+    try:return [dict(r) for r in con.execute(sql,args).fetchall()]
+    except Exception as exc:return [{"export_error":str(exc)[:200]}]
+
+def dump(path: Path,data):
+    with path.open("w",encoding="utf-8") as f:
+        for r in data:f.write(json.dumps(r,default=str,separators=(",",":"))+"\n")
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--app-root",default=str(Path.home()/"Applications"/"PS_Scanner_Final"))
+    ap.add_argument("--output",default="")
+    a=ap.parse_args()
+    root=Path(a.app_root).expanduser().resolve()
+    dbp=root/"data"/"psscanner_quant.db"
+    if not dbp.exists():raise SystemExit("database not found: "+str(dbp))
+    stamp=datetime.now(IST).strftime("%Y%m%d-%H%M%S")
+    out=Path(a.output).expanduser() if a.output else root/"data"/("PS_Scanner_Logs_6.8.25_compact-"+stamp+".zip")
+    with tempfile.TemporaryDirectory(prefix="pss6825-") as td:
+        t=Path(td);(t/"logs").mkdir();(t/"diagnostics").mkdir()
+        con=sqlite3.connect("file:"+str(dbp)+"?mode=ro",uri=True,timeout=2.0);con.row_factory=sqlite3.Row
+        manifest={"policy":POLICY,"generated_at":datetime.now(IST).isoformat(timespec="seconds"),
+                  "database_bytes":dbp.stat().st_size,"read_only":True,
+                  "excluded":["raw history caches","institutional snapshot directories",
+                              "full feature_snapshot_json","full audit_envelope_json"]}
+        try:
+            try:manifest["sqlite_quick_check"]=con.execute("PRAGMA quick_check").fetchone()[0]
+            except Exception as exc:manifest["sqlite_quick_check"]="unavailable: "+str(exc)
+            dump(t/"diagnostics"/"health_events.jsonl",rows(con,
+                "SELECT id,ts,component,level,message,payload_json FROM health_events ORDER BY id DESC LIMIT 5000"))
+            dump(t/"diagnostics"/"scan_runs.jsonl",rows(con,"SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1000"))
+            dump(t/"diagnostics"/"recommendations.jsonl",rows(con,
+                "SELECT recommendation_id,book,period_key,symbol,exchange,side,state,score,confidence,"
+                "entry_price,current_price,target_price,stop_price,target_pct,horizon,regime,data_confidence,"
+                "created_at,updated_at,closed_at,result,close_reason,max_favourable_pct,max_adverse_pct,"
+                "software_version,decision_id FROM recommendations ORDER BY created_at DESC LIMIT 5000"))
+            st=rows(con,
+                "SELECT key,value_json,updated_at FROM system_state WHERE key IN ("
+                "'runtime_reliability_status','data_quality_status','position_reconciliation',"
+                "'execution_integrity_worker','last_verified_backup','live_price_cache_status',"
+                "'daily_history_warm_status','last_intraday_history_warm','full_breadth_discovery',"
+                "'adaptive_algorithm_current') ORDER BY key")
+            for r in st:
+                v=str(r.get("value_json") or "")
+                if len(v)>250000:
+                    r["value_json"]=v[:250000];r["value_truncated"]=True;r["original_chars"]=len(v)
+            dump(t/"diagnostics"/"system_state.jsonl",st)
+        finally:con.close()
+        for n in ("service.log","service-error.log"):(t/"logs"/n).write_bytes(tail(root/"logs"/n))
+        (t/"manifest.json").write_text(json.dumps(manifest,indent=2,default=str))
+        out.parent.mkdir(parents=True,exist_ok=True)
+        with zipfile.ZipFile(out,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+            for p in sorted(t.rglob("*")):
+                if p.is_file():z.write(p,p.relative_to(t))
+    print(out)
+
+if __name__=="__main__":main()
