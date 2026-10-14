@@ -1,0 +1,50 @@
+name: PS Scanner 6.8.25 Package
+
+on:
+  push:
+    branches:
+      - release/ps-scanner-v6.8.25-runtime-reliability-package
+    paths:
+      - 'ps-scanner/releases/6.8.25-runtime-reliability/**'
+      - 'ps-scanner/tests/test_release_6825_package.py'
+      - '.github/workflows/ps-scanner-6825-package.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Compile release Python
+        run: |
+          python -m py_compile ps-scanner/releases/6.8.25-runtime-reliability/apply_runtime_6825.py
+          python -m py_compile ps-scanner/releases/6.8.25-runtime-reliability/runtime_reliability.py.payload
+          python -m py_compile ps-scanner/releases/6.8.25-runtime-reliability/export_support_6825.py.payload
+      - name: Run release package contract test
+        working-directory: ps-scanner
+        run: python -m unittest tests.test_release_6825_package -v
+      - name: Build checksum manifest
+        working-directory: ps-scanner/releases/6.8.25-runtime-reliability
+        run: |
+          sha256sum README.txt apply_runtime_6825.py runtime_reliability.py.payload             ps_runtime_6825.js.payload ps_runtime_6825.css.payload             export_support_6825.py.payload verify_6825.sh > PACKAGE_SHA256.txt
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS_Scanner_6.8.25_Runtime_Reliability
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ps-scanner/releases/6.8.25-runtime-reliability/README.txt
+            ps-scanner/releases/6.8.25-runtime-reliability/apply_runtime_6825.py
+            ps-scanner/releases/6.8.25-runtime-reliability/runtime_reliability.py.payload
+            ps-scanner/releases/6.8.25-runtime-reliability/ps_runtime_6825.js.payload
+            ps-scanner/releases/6.8.25-runtime-reliability/ps_runtime_6825.css.payload
+            ps-scanner/releases/6.8.25-runtime-reliability/export_support_6825.py.payload
+            ps-scanner/releases/6.8.25-runtime-reliability/verify_6825.sh
+            ps-scanner/releases/6.8.25-runtime-reliability/PACKAGE_SHA256.txt
