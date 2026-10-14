@@ -1,0 +1,1 @@
+Installer source will be added after structural validation. This branch is a release-package branch and does not modify the application root.
