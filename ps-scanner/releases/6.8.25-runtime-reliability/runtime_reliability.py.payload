@@ -1,0 +1,455 @@
+from __future__ import annotations
+
+import json
+import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .constants import IST, MARKET_OPEN, MARKET_CLOSE, VERSION
+from .db import db, get_state, health, now_iso, set_state
+from .paths import DB_PATH, DATA
+from .trading_calendar import is_regular_trading_day
+from .history_control import status_cached as history_control_status_cached
+
+POLICY = "V6825_RUNTIME_RELIABILITY_AND_DATA_QUALITY_PASSIVE"
+PAUSE_POLICY = "V6825_SYSTEM_SUSPEND_OR_LONG_PAUSE_DETECTION"
+DATA_POLICY = "V6825_DATA_QUALITY_OBSERVABILITY_NO_GATE_RELAXATION"
+LEDGER_POLICY = "V6825_DURABLE_MARKET_SESSION_LEDGER"
+
+_INTERVAL = 15.0
+_PAUSE_THRESHOLD = 120.0
+_LOCK = threading.RLock()
+_STOP = threading.Event()
+_THREAD: Optional[threading.Thread] = None
+_LAST_WALL: Optional[float] = None
+_LAST_MONO: Optional[float] = None
+_LAST_STATUS: Dict[str, Any] = {}
+_LAST_DQ: Dict[str, Any] = {}
+
+
+def _parse_iso(v: Any) -> Optional[datetime]:
+    if not v:
+        return None
+    try:
+        d = datetime.fromisoformat(str(v))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=IST)
+        return d.astimezone(IST)
+    except Exception:
+        return None
+
+
+def _flags(now: datetime) -> Dict[str, Any]:
+    regular = bool(is_regular_trading_day(now.date()))
+    t = now.time().replace(tzinfo=None)
+    return {
+        "day": now.date().isoformat(),
+        "regular_trading_day": regular,
+        "market_open": bool(regular and MARKET_OPEN <= t <= MARKET_CLOSE),
+    }
+
+
+def _ensure_schema() -> None:
+    with db(timeout_seconds=1.0) as con:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS runtime_session_ledger (
+          day TEXT PRIMARY KEY,
+          started_at TEXT NOT NULL,
+          last_heartbeat_at TEXT NOT NULL,
+          heartbeat_count INTEGER NOT NULL DEFAULT 0,
+          regular_trading_day INTEGER NOT NULL DEFAULT 0,
+          pause_events INTEGER NOT NULL DEFAULT 0,
+          longest_pause_seconds REAL NOT NULL DEFAULT 0,
+          last_pause_at TEXT,
+          last_scan_id INTEGER,
+          last_scan_started_at TEXT,
+          last_scan_completed_at TEXT,
+          data_quality_state TEXT,
+          ltp_received INTEGER,
+          ltp_requested INTEGER,
+          intraday_history_ready INTEGER,
+          intraday_history_total INTEGER,
+          notes_json TEXT NOT NULL DEFAULT '{}',
+          updated_at TEXT NOT NULL
+        )
+        """)
+
+
+def _state_batch(keys: List[str]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    try:
+        marks = ",".join("?" for _ in keys)
+        with db(timeout_seconds=.35) as con:
+            rows = con.execute(
+                "SELECT key,value_json FROM system_state WHERE key IN (" + marks + ")",
+                tuple(keys),
+            ).fetchall()
+        for r in rows:
+            try:
+                out[str(r[0])] = json.loads(r[1] or "{}")
+            except Exception:
+                out[str(r[0])] = {}
+    except Exception:
+        pass
+    return out
+
+
+def _latest_intraday_scan() -> Dict[str, Any]:
+    try:
+        with db(timeout_seconds=.35) as con:
+            r = con.execute(
+                "SELECT id,started_at,completed_at,status,scan_scope_total,processed,"
+                "funnel_json,payload_json FROM scan_runs "
+                "WHERE book='INTRADAY' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not r:
+            return {}
+        d = dict(r)
+        for src, dst in (("funnel_json", "funnel"), ("payload_json", "payload")):
+            try:
+                d[dst] = json.loads(d.get(src) or "{}")
+            except Exception:
+                d[dst] = {}
+        return d
+    except Exception:
+        return {}
+
+
+def _recent_warnings(now: datetime) -> Dict[str, Any]:
+    cutoff = (now - timedelta(minutes=15)).isoformat(timespec="seconds")
+    out = {"history_429": 0, "groww_market_data": 0, "live_ltp": 0, "history": 0, "latest": []}
+    try:
+        with db(timeout_seconds=.35) as con:
+            rows = con.execute(
+                "SELECT ts,component,level,message FROM health_events "
+                "WHERE ts>=? AND component IN "
+                "('history_rate_limit','groww_market_data','live_ltp','history') "
+                "ORDER BY id DESC LIMIT 200",
+                (cutoff,),
+            ).fetchall()
+        for r in rows:
+            c = str(r["component"])
+            key = "history_429" if c == "history_rate_limit" else c
+            if key in out:
+                out[key] += 1
+            if len(out["latest"]) < 8:
+                out["latest"].append({
+                    "ts": r["ts"], "component": c, "level": r["level"],
+                    "message": str(r["message"] or "")[:180],
+                })
+    except Exception as exc:
+        out["telemetry_error"] = str(exc)[:160]
+    return out
+
+
+def _coverage(ready: Any, total: Any) -> Dict[str, Any]:
+    try:
+        n = int(ready)
+    except Exception:
+        n = 0
+    try:
+        d = int(total)
+    except Exception:
+        d = 0
+    return {"ready": n, "total": d, "ratio": round(n / d, 4) if d > 0 else None}
+
+
+def _dq_snapshot(now: Optional[datetime] = None) -> Dict[str, Any]:
+    now = now or datetime.now(IST)
+    states = _state_batch([
+        "live_price_cache_status",
+        "daily_history_warm_status",
+        "last_intraday_history_warm",
+        "full_breadth_discovery",
+        "universe_status",
+    ])
+    live = dict(states.get("live_price_cache_status") or {})
+    daily = dict(states.get("daily_history_warm_status") or {})
+    intra = dict(states.get("last_intraday_history_warm") or {})
+    breadth = dict(states.get("full_breadth_discovery") or {})
+    universe = dict(states.get("universe_status") or {})
+    scan = _latest_intraday_scan()
+    warnings = _recent_warnings(now)
+
+    ltp_total = live.get("requested") or live.get("network_requested") or breadth.get("universe") or universe.get("n") or 0
+    ltp_ready = live.get("network_received") or live.get("fresh_returned") or breadth.get("live_prices") or 0
+    ltp = _coverage(ltp_ready, ltp_total)
+
+    payload = dict(scan.get("payload") or {})
+    funnel = dict(scan.get("funnel") or {})
+    scan_total = scan.get("scan_scope_total") or payload.get("universe") or funnel.get("scan_scope_total") or 0
+    scan_ready = payload.get("history_ready")
+    if scan_ready is None:
+        scan_ready = funnel.get("history_ready")
+    if scan_ready is None:
+        scan_ready = intra.get("ready") or 0
+    ih = _coverage(scan_ready, scan_total)
+
+    dc = dict(daily.get("coverage") or {})
+    dtotal = dc.get("symbols") or breadth.get("universe") or universe.get("n") or 0
+    dready = dc.get("ready")
+    if dready is None:
+        dready = breadth.get("daily_history_ready") or 0
+    dh = _coverage(dready, dtotal)
+
+    completed = _parse_iso(scan.get("completed_at"))
+    scan_age = max(0.0, (now - completed).total_seconds()) if completed else None
+
+    try:
+        hp = dict(history_control_status_cached() or {})
+    except Exception as exc:
+        hp = {"status": "UNAVAILABLE", "detail": str(exc)[:160]}
+
+    state = "NORMAL"
+    reasons: List[str] = []
+    lr = ltp.get("ratio")
+    ir = ih.get("ratio")
+    if lr is not None and lr < .75:
+        state = "SEVERE"; reasons.append("full-market LTP coverage below 75%")
+    elif lr is not None and lr < .90:
+        state = "DEGRADED"; reasons.append("full-market LTP coverage below 90%")
+    if ir is not None and ir < .60:
+        state = "SEVERE"; reasons.append("intraday history coverage below 60%")
+    elif ir is not None and ir < .80 and state != "SEVERE":
+        state = "DEGRADED"; reasons.append("intraday history coverage below 80%")
+    if int(warnings.get("history_429") or 0) >= 5 and state == "NORMAL":
+        state = "DEGRADED"; reasons.append("repeated Groww history HTTP 429")
+    if int(warnings.get("groww_market_data") or 0) >= 5 and state == "NORMAL":
+        state = "DEGRADED"; reasons.append("repeated Groww market-data warnings")
+
+    return {
+        "policy": DATA_POLICY,
+        "at": now.isoformat(timespec="seconds"),
+        **_flags(now),
+        "state": state,
+        "reasons": reasons,
+        "full_market_ltp": ltp,
+        "intraday_history": ih,
+        "daily_history": dh,
+        "last_intraday_scan": {
+            "id": scan.get("id"),
+            "status": scan.get("status"),
+            "started_at": scan.get("started_at"),
+            "completed_at": scan.get("completed_at"),
+            "processed": scan.get("processed"),
+            "scan_scope_total": scan.get("scan_scope_total"),
+            "age_seconds": round(scan_age, 1) if scan_age is not None else None,
+        },
+        "recent_warnings": warnings,
+        "history_control": hp,
+        "observability_only": True,
+        "gate_relaxation": False,
+    }
+
+
+def _storage() -> Dict[str, Any]:
+    p = Path(DB_PATH)
+    def sz(x: Path) -> int:
+        try:
+            return int(x.stat().st_size)
+        except Exception:
+            return 0
+    return {
+        "database_bytes": sz(p),
+        "wal_bytes": sz(Path(str(p) + "-wal")),
+        "shm_bytes": sz(Path(str(p) + "-shm")),
+        "data_root": str(DATA),
+        "policy": "NON_DESTRUCTIVE_STORAGE_TELEMETRY_ONLY",
+    }
+
+
+def _ledger(now: datetime, dq: Dict[str, Any], pause: Optional[float]) -> None:
+    f = _flags(now)
+    scan = dict(dq.get("last_intraday_scan") or {})
+    ltp = dict(dq.get("full_market_ltp") or {})
+    ih = dict(dq.get("intraday_history") or {})
+    ts = now.isoformat(timespec="seconds")
+    notes = json.dumps({
+        "policy": LEDGER_POLICY,
+        "software_version": VERSION,
+        "market_open": f["market_open"],
+        "data_quality_reasons": dq.get("reasons") or [],
+    }, sort_keys=True, default=str)
+    with db(timeout_seconds=.5) as con:
+        con.execute(
+            """
+            INSERT INTO runtime_session_ledger (
+              day,started_at,last_heartbeat_at,heartbeat_count,regular_trading_day,
+              pause_events,longest_pause_seconds,last_pause_at,last_scan_id,
+              last_scan_started_at,last_scan_completed_at,data_quality_state,
+              ltp_received,ltp_requested,intraday_history_ready,intraday_history_total,
+              notes_json,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(day) DO UPDATE SET
+              last_heartbeat_at=excluded.last_heartbeat_at,
+              heartbeat_count=runtime_session_ledger.heartbeat_count+1,
+              regular_trading_day=excluded.regular_trading_day,
+              pause_events=runtime_session_ledger.pause_events + CASE WHEN ? THEN 1 ELSE 0 END,
+              longest_pause_seconds=MAX(runtime_session_ledger.longest_pause_seconds, ?),
+              last_pause_at=CASE WHEN ? THEN excluded.last_pause_at ELSE runtime_session_ledger.last_pause_at END,
+              last_scan_id=excluded.last_scan_id,
+              last_scan_started_at=excluded.last_scan_started_at,
+              last_scan_completed_at=excluded.last_scan_completed_at,
+              data_quality_state=excluded.data_quality_state,
+              ltp_received=excluded.ltp_received,
+              ltp_requested=excluded.ltp_requested,
+              intraday_history_ready=excluded.intraday_history_ready,
+              intraday_history_total=excluded.intraday_history_total,
+              notes_json=excluded.notes_json,
+              updated_at=excluded.updated_at
+            """,
+            (
+                f["day"], ts, ts, 1, 1 if f["regular_trading_day"] else 0,
+                1 if pause is not None else 0, float(pause or 0), ts if pause is not None else None,
+                scan.get("id"), scan.get("started_at"), scan.get("completed_at"),
+                dq.get("state"), ltp.get("ready"), ltp.get("total"),
+                ih.get("ready"), ih.get("total"), notes, ts,
+                1 if pause is not None else 0, float(pause or 0), 1 if pause is not None else 0,
+            ),
+        )
+
+
+def _tick() -> None:
+    global _LAST_WALL, _LAST_MONO, _LAST_STATUS, _LAST_DQ
+    nw = time.time()
+    nm = time.monotonic()
+    now = datetime.now(IST)
+    wall_gap = mono_gap = None
+    pause = None
+    if _LAST_WALL is not None and _LAST_MONO is not None:
+        wall_gap = max(0.0, nw - _LAST_WALL)
+        mono_gap = max(0.0, nm - _LAST_MONO)
+        gap = max(wall_gap, mono_gap)
+        if gap >= _PAUSE_THRESHOLD:
+            pause = gap
+            health(
+                "runtime_reliability", "WARN",
+                "SYSTEM_SUSPEND_OR_LONG_PAUSE_DETECTED gap=%.1fs" % gap,
+                {
+                    "wall_gap_seconds": round(wall_gap, 2),
+                    "monotonic_gap_seconds": round(mono_gap, 2),
+                    "market_open": _flags(now)["market_open"],
+                    "policy": PAUSE_POLICY,
+                },
+            )
+    _LAST_WALL, _LAST_MONO = nw, nm
+    dq = _dq_snapshot(now)
+    status = {
+        "policy": POLICY,
+        "pause_policy": PAUSE_POLICY,
+        "ledger_policy": LEDGER_POLICY,
+        "at": now.isoformat(timespec="seconds"),
+        **_flags(now),
+        "monitor_interval_seconds": _INTERVAL,
+        "pause_threshold_seconds": _PAUSE_THRESHOLD,
+        "last_tick_wall_gap_seconds": round(wall_gap, 2) if wall_gap is not None else None,
+        "last_tick_monotonic_gap_seconds": round(mono_gap, 2) if mono_gap is not None else None,
+        "pause_detected_this_tick": pause is not None,
+        "last_pause_gap_seconds": round(pause, 2) if pause is not None else None,
+        "data_quality": dq,
+        "storage": _storage(),
+        "execution_policy_unchanged": True,
+        "research_gate_relaxation": False,
+        "safety_contract": [
+            "no order submission or preview creation",
+            "no Static IP policy change",
+            "no broker reconciliation policy change",
+            "no market-hours or holiday policy change",
+            "no qualification or freshness gate relaxation",
+        ],
+    }
+    try:
+        _ledger(now, dq, pause)
+    except Exception as exc:
+        status["ledger_error"] = str(exc)[:180]
+    with _LOCK:
+        _LAST_DQ = dq
+        _LAST_STATUS = status
+    try:
+        set_state("runtime_reliability_status", status)
+        set_state("data_quality_status", dq)
+    except Exception:
+        pass
+
+
+def _run() -> None:
+    try:
+        _ensure_schema()
+    except Exception as exc:
+        health("runtime_reliability", "WARN", "runtime ledger schema unavailable: " + str(exc)[:180])
+    while not _STOP.is_set():
+        try:
+            _tick()
+        except Exception as exc:
+            health("runtime_reliability", "WARN", "monitor tick failed: " + str(exc)[:220])
+        _STOP.wait(_INTERVAL)
+
+
+def start() -> Dict[str, Any]:
+    global _THREAD
+    with _LOCK:
+        if _THREAD and _THREAD.is_alive():
+            return {"started": False, "reason": "ALREADY_RUNNING", "policy": POLICY}
+        _STOP.clear()
+        _THREAD = threading.Thread(target=_run, name="ps-runtime-reliability-6825", daemon=True)
+        _THREAD.start()
+        return {"started": True, "policy": POLICY}
+
+
+def stop() -> None:
+    _STOP.set()
+    t = _THREAD
+    if t and t.is_alive():
+        t.join(timeout=2.0)
+
+
+def data_quality_cached() -> Dict[str, Any]:
+    with _LOCK:
+        if _LAST_DQ:
+            return dict(_LAST_DQ)
+    try:
+        x = get_state("data_quality_status", {}) or {}
+        if x:
+            return dict(x)
+    except Exception:
+        pass
+    return {"policy": DATA_POLICY, "state": "STARTING", "at": now_iso(),
+            "observability_only": True, "gate_relaxation": False}
+
+
+def status_cached() -> Dict[str, Any]:
+    with _LOCK:
+        if _LAST_STATUS:
+            return dict(_LAST_STATUS)
+    try:
+        x = get_state("runtime_reliability_status", {}) or {}
+        if x:
+            return dict(x)
+    except Exception:
+        pass
+    return {"policy": POLICY, "status": "STARTING", "at": now_iso(),
+            "data_quality": data_quality_cached(),
+            "execution_policy_unchanged": True, "research_gate_relaxation": False}
+
+
+def session_ledger(limit: int = 14) -> List[Dict[str, Any]]:
+    n = max(1, min(90, int(limit)))
+    try:
+        _ensure_schema()
+        with db(timeout_seconds=.5) as con:
+            rows = con.execute(
+                "SELECT * FROM runtime_session_ledger ORDER BY day DESC LIMIT ?", (n,)
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["notes"] = json.loads(d.pop("notes_json", "{}") or "{}")
+            except Exception:
+                d["notes"] = {}
+            out.append(d)
+        return out
+    except Exception:
+        return []
